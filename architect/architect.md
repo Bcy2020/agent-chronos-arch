@@ -173,6 +173,8 @@ Any complex project requires clear architecture, hence this phase is added.
 #### 4.2.3 Function & Interface Contract Design Phase
 To achieve strong decoupling in subsequent engineering, API and function specifications must be designed first.
 
+**Tip: This is the most important part of the project. It is very difficult to implement with only one LLM, so we propose another experimental approach. See docs/recursive-decomposit and experiment/recursive-decomposition for details.**
+
 **Involved Agents**: System Architect Designer, Frontend-Backend Integration Specialist
 
 **Specific Process**: Have the System Architect Designer review the architecture document again and start stepwise interface design: first design frontend and backend interfaces separately, design each function's purpose and required external APIs, producing a function and interface specification document; then have the Integration Specialist review, confirm rationality, and iterate modifications; next, have the system expert explicitly design each function's input/output and specific functionality, producing a function and interface contract document; then have the Integration Specialist review whether frontend and backend interfaces align, confirm rationality, and iterate modifications.
