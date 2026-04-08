@@ -1,3 +1,5 @@
+**作者提出了一种改进的，基于分解树的架构。可能近期会更新文档2.0版本。具体参见 docs/Tree-Centered Implementation Refinement.md**
+
 # 多Agent协作开发架构
 
 ## 第0章：前置说明

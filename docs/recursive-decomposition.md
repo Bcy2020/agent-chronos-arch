@@ -1,3 +1,5 @@
+**The author proposes an improved architecture based on decomposition trees. Documentation version 2.0 may be updated in the near future. For details, please refer to docs/Tree-Centered Implementation Refinement.md**
+
 # Recursive Decomposition
 
 ## Overview
