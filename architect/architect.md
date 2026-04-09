@@ -1,3 +1,4 @@
+**The author proposes an improved decomposition tree-based architecture and has achieved phased results in MVP verification (see experiment/Tree-Centered Implementation for details). Document version 2.0 may be updated in the near future. For details, refer to docs/Tree-Centered Implementation Refinement.md**
 # Multi-Agent Collaborative Development Architecture
 
 ## Chapter 0: Preface
