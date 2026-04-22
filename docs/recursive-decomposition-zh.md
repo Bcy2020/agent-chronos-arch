@@ -1,3 +1,4 @@
+# Recursive Decomposition / 递归分解
 **作者基于分解树提出了改进架构。2.0版文档可能近期更新，详情请参阅 docs/Tree-Centered Implementation Refinement-zh.md**
 
 # 递归分解
