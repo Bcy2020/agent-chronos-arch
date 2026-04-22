@@ -1,0 +1,264 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DecompositionTreeNode",
+  "description": "分解树节点格式 - 用于验证分解-反向验证范式",
+  "type": "object",
+  "required": ["node_id", "name", "depth", "function_spec", "boundary", "implementation"],
+  "properties": {
+    "node_id": {
+      "type": "string",
+      "description": "节点唯一标识符，格式: depth_index (如 0_0, 1_0, 1_1)"
+    },
+    "name": {
+      "type": "string",
+      "description": "节点/函数名称，使用snake_case命名"
+    },
+    "depth": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "节点深度，根节点为0"
+    },
+    "parent_id": {
+      "type": ["string", "null"],
+      "description": "父节点ID，根节点为null"
+    },
+    
+    "function_spec": {
+      "type": "object",
+      "description": "完整的功能规格说明",
+      "required": ["purpose", "detailed_description", "inputs", "outputs"],
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "description": "一句话概括功能目的"
+        },
+        "detailed_description": {
+          "type": "string",
+          "description": "详细的功能说明，包括：业务逻辑、边界条件、异常情况处理、数据转换规则等"
+        },
+        "inputs": {
+          "type": "array",
+          "description": "输入参数列表",
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "description"],
+            "properties": {
+              "name": {"type": "string", "description": "参数名"},
+              "type": {"type": "string", "description": "Python类型，如 str, int, List[dict], Optional[str]"},
+              "description": {"type": "string", "description": "参数含义和用途"},
+              "required": {"type": "boolean", "default": true},
+              "default_value": {"type": ["string", "number", "boolean", "null"], "description": "默认值"},
+              "constraints": {"type": "string", "description": "约束条件，如 '>=0', '非空字符串', '枚举值: A|B|C'"}
+            }
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "description": "返回值说明",
+          "required": ["type", "description"],
+          "properties": {
+            "type": {"type": "string", "description": "返回类型"},
+            "description": {"type": "string", "description": "返回值含义"},
+            "structure": {"type": "string", "description": "如果是复杂类型，描述其结构"}
+          }
+        },
+        "side_effects": {
+          "type": "string",
+          "description": "副作用描述，如'修改全局变量X'、'写入文件'、'无副作用'"
+        },
+        "error_handling": {
+          "type": "string",
+          "description": "错误处理策略：异常类型、触发条件、处理方式"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "前置条件列表"
+        },
+        "postconditions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "后置条件列表"
+        },
+        "invariants": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "不变量：执行过程中保持不变的条件"
+        }
+      }
+    },
+    
+    "boundary": {
+      "type": "object",
+      "description": "职责边界",
+      "required": ["in_scope", "out_of_scope"],
+      "properties": {
+        "in_scope": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "本节点负责的功能"
+        },
+        "out_of_scope": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "本节点不负责的功能（由其他节点或外部处理）"
+        }
+      }
+    },
+    
+    "global_variables": {
+      "type": "object",
+      "description": "全局变量依赖",
+      "properties": {
+        "required": {
+          "type": "array",
+          "description": "所需的全局变量",
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "access_mode", "description"],
+            "properties": {
+              "name": {"type": "string", "description": "变量名"},
+              "type": {"type": "string", "description": "类型"},
+              "access_mode": {
+                "type": "string",
+                "enum": ["read", "write", "read-write"],
+                "description": "访问模式"
+              },
+              "description": {"type": "string", "description": "用途说明"},
+              "initial_value": {"type": ["string", "number", "boolean", "null"], "description": "建议初始值"}
+            }
+          }
+        },
+        "operations_pushed_to_leaves": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否已将全局变量操作下放到叶子节点"
+        }
+      }
+    },
+    
+    "implementation": {
+      "type": "object",
+      "description": "实现信息",
+      "required": ["is_leaf"],
+      "properties": {
+        "is_leaf": {
+          "type": "boolean",
+          "description": "是否为叶子节点（不再分解）"
+        },
+        "stop_reason": {
+          "type": "string",
+          "description": "停止分解的原因：independently_implementable, atomic_operation, below_line_threshold 等"
+        },
+        "estimated_lines": {
+          "type": "integer",
+          "description": "预估代码行数"
+        },
+        "code": {
+          "type": "string",
+          "description": "生成的Python代码（假设子节点已实现）"
+        },
+        "code_file": {
+          "type": "string",
+          "description": "代码存储文件路径（按层级存储）"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "依赖的子节点ID列表"
+        },
+        "child_interaction_flow": {
+          "type": "string",
+          "description": "子节点交互流程描述（非叶子节点）"
+        },
+        "composition_logic": {
+          "type": "string",
+          "description": "组合逻辑说明：如何通过子节点实现父节点功能"
+        }
+      }
+    },
+    
+    "interface_preservation": {
+      "type": "object",
+      "description": "接口保持验证",
+      "properties": {
+        "parent_inputs_covered_by": {
+          "type": "object",
+          "description": "父节点输入如何被子节点覆盖 {parent_input: [child_node_ids]}"
+        },
+        "parent_outputs_produced_by": {
+          "type": "object",
+          "description": "父节点输出由哪些子节点产生 {parent_output: child_node_id}"
+        },
+        "internal_interfaces": {
+          "type": "array",
+          "description": "内部接口（子节点间传递的数据）",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from_node": {"type": "string"},
+              "to_node": {"type": "string"},
+              "data_type": {"type": "string"},
+              "description": {"type": "string"}
+            }
+          }
+        },
+        "external_interface": {
+          "type": "object",
+          "description": "对外接口（与父接口一致）",
+          "properties": {
+            "inputs": {"type": "array"},
+            "outputs": {"type": "array"}
+          }
+        },
+        "validation_passed": {
+          "type": "boolean",
+          "description": "接口保持验证是否通过"
+        },
+        "validation_notes": {
+          "type": "string",
+          "description": "验证说明"
+        }
+      }
+    },
+    
+    "validation": {
+      "type": "object",
+      "description": "验证信息",
+      "properties": {
+        "decomposition_quality": {
+          "type": "string",
+          "enum": ["excellent", "good", "acceptable", "needs_refinement"],
+          "description": "分解质量评估"
+        },
+        "issues": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "发现的问题"
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "改进建议"
+        }
+      }
+    },
+    
+    "children": {
+      "type": "array",
+      "items": {"$ref": "#"},
+      "description": "子节点列表"
+    },
+    
+    "metadata": {
+      "type": "object",
+      "description": "元数据",
+      "properties": {
+        "created_at": {"type": "string"},
+        "model_used": {"type": "string"},
+        "tokens_used": {"type": "integer"},
+        "decomposition_round": {"type": "integer"}
+      }
+    }
+  }
+}

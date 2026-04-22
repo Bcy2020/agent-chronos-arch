@@ -146,25 +146,36 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 ### Basic Usage
 
 ```bash
-python main.py --prd test_prd.md --output ./output
+python main.py --input test_prd.md
+python main.py --input test_prd.md --output my_output --name MySystem
+python main.py --input prd.txt --max-depth 4 --max-children 6
+python main.py --input prd.txt --temperature 0.2 --max-retries 5
 ```
 
 ### CLI Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--prd` | Required | Path to PRD markdown file |
-| `--output` | `./output` | Output directory for generated files |
+| `--input`, `-i` | Required | Path to PRD input file |
+| `--output`, `-o` | `output` | Output directory for generated files |
+| `--name`, `-n` | Derived from input | System name for the root node |
 | `--max-depth` | 3 | Maximum decomposition depth |
-| `--max-children` | 5 | Maximum children per node |
-| `--temperature` | 0.3 | LLM temperature |
-| `--model` | deepseek-chat | LLM model name |
+| `--max-children` | 4 | Maximum children per node |
+| `--max-lines` | 50 | Lines threshold for semantic stopping |
+| `--temperature`, `-t` | 0.3 | LLM temperature |
+| `--max-retries` | 3 | Maximum API retries |
+| `--max-decompose-retries` | 3 | Maximum decomposition retries on failure |
+| `--api-key` | Env var | DeepSeek API key |
+| `--base-url` | `https://api.deepseek.com` | API base URL |
+| `--model` | `deepseek-chat` | Model name |
+| `--timeout` | 120 | API timeout in seconds |
+| `--verbose`, `-v` | False | Enable verbose output |
 
 ## Output Structure
 
 ```
 output/
-├── decomposition_tree.json    # Complete tree with all node metadata
+├── personaltaskmanager_decomposition_tree.json   # Complete tree with all node metadata
 └── nodes/
     ├── root_PersonalTaskManager.py      # Root node
     ├── root_0_handle_create_task.py     # Level 1 node
