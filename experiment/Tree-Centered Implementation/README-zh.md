@@ -8,7 +8,7 @@
 |------|------|------|
 | `mvp-schema-improved/` | **当前活跃** | 最新实现：JsonPRD/SubPRD 模式、全局状态守恒、签名锁定 |
 | `mvp-chinese/` | 已跟踪 | 原始 MVP（中文分解支持） |
-| `mvp-legacy/` | 已忽略 | 原始 MVP（英文）- 已重命名供参考 |
+|                        |              |                                                       |
 
 ## 概述
 

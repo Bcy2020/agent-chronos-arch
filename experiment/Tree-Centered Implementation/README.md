@@ -8,7 +8,7 @@ A proof-of-concept implementation of the **Tree-Centered Implementation Refineme
 |-----------|--------|-------------|
 | `mvp-schema-improved/` | **Active** | Current implementation with JsonPRD/SubPRD schemas, global state conservation, signature locking |
 | `mvp-chinese/` | Tracked | Original MVP with Chinese-language decomposition support |
-| `mvp-legacy/` | Ignored | Original MVP (English) - renamed for reference |
+|                        |            |                                                              |
 
 ## Overview
 
