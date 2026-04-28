@@ -191,6 +191,9 @@ You MUST distribute these global_vars among children based on their responsibili
             last_brace = content.rfind("}")
             content = content[:last_brace + 1]
         
+        # Normalize Python string prefixes (f"..." → "...") that LLM may output in JSON values
+        content = re.sub(r'(?<=[\s:,\[{])[fFrRuUbB]+(")', r'\1', content)
+
         try:
             return json.loads(content)
         except json.JSONDecodeError as e:
