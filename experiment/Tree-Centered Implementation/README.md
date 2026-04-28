@@ -8,7 +8,6 @@ A proof-of-concept implementation of the **Tree-Centered Implementation Refineme
 |-----------|--------|-------------|
 | `mvp-schema-improved/` | **Active** | Current implementation with JsonPRD/SubPRD schemas, global state conservation, signature locking |
 | `mvp-chinese/` | Tracked | Original MVP with Chinese-language decomposition support |
-|                        |            |                                                              |
 
 ## Overview
 
@@ -20,42 +19,6 @@ This implementation validates the core concepts of the tree-centered decompositi
 4. **Decomposition-Verification Loop** - Each decomposition is validated through composition before proceeding; failures trigger re-decomposition or code regeneration depending on error type
 
 ## Architecture
-
-### Three-LLM Information Flow
-
-```
-                        ┌──────────────────────────────────────────────┐
-                        │              JsonPRD (from PRD)              │
-                        │  Global state sources, I/O spec, glossary    │
-                        └──────────┬───────────────────────────────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              ▼                    ▼                     ▼
-     ┌────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-     │  Decomposer LLM │  │  Code Generator  │  │    Validator     │
-     │                 │  │      LLM         │  │      LLM         │
-     │ Input:          │  │ Input:           │  │ Input:           │
-     │ • SubPRD        │  │ • SubPRD         │  │ • SubPRD         │
-     │ • Global state  │  │ • Child contracts│  │ • Generated code │
-     │ • Previous errs │  │ • Signature lock │  │ • Child contracts│
-     │                 │  │ • Previous errs  │  │ • State ops      │
-     │ Output:         │  │                  │  │                  │
-     │ • Child nodes   │  │ Output:          │  │ Output:          │
-     │ • Contracts     │  │ • Python code    │  │ • Validation     │
-     │ • Rationale     │  │                  │  │   report         │
-     └────────┬────────┘  └────────┬─────────┘  └────────┬─────────┘
-              │                    │                      │
-              └────────────────────┼──────────────────────┘
-                                   ▼
-                    ┌─────────────────────────────┐
-                    │     Per-Node Tight Loop     │
-                    │                             │
-                    │  Decompose → Conservation   │
-                    │  Check → Code Gen → AST     │
-                    │  Validate → Re-decompose/   │
-                    │  Retry                      │
-                    └─────────────────────────────┘
-```
 
 ### Key Components
 
