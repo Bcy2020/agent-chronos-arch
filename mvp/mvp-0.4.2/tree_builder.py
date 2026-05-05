@@ -39,7 +39,7 @@ class TreeBuilder:
     def _build_interface_summary(self) -> str:
         lines = []
         for iface in self.interface_plan.interfaces:
-            lines.append(f"  - {iface.interface_id}: {iface.function_name}{iface.parameters}")
+            lines.append(f"  - {iface.interface_id}: {iface.signature}")
             if iface.description:
                 lines.append(f"    Description: {iface.description}")
         return "\n".join(lines)

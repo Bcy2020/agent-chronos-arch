@@ -440,7 +440,7 @@ Return ONLY valid JSON with this structure:
             for interface_id in node.granted_capabilities.granted_interfaces:
                 iface = self._interface_map.get(interface_id)
                 if iface:
-                    lines.append(f"  - {iface.function_name}{iface.parameters}")
+                    lines.append(f"  - {iface.signature}")
                     lines.append(f"    Description: {iface.description}")
                     if iface.signature:
                         lines.append(f"    Signature: {iface.signature}")
