@@ -1,11 +1,8 @@
-def CheckStock(items: list) -> Tuple[bool, list]:
-    product_details_list = []
-    stock_ok_list = []
+def CheckStock(items: list) -> Tuple[bool, Optional[str]]:
     for item in items:
         product_id = item['product_id']
         quantity = item['quantity']
-        details, ok = GetProductDetails(product_id, quantity)
-        product_details_list.append(details)
-        stock_ok_list.append(ok)
-    stock_ok, product_details = AggregateStockResults(items, product_details_list, stock_ok_list)
-    return stock_ok, product_details
+        stock_ok, error_message = CheckSingleItem(product_id, quantity)
+        if not stock_ok:
+            return (False, error_message)
+    return (True, None)

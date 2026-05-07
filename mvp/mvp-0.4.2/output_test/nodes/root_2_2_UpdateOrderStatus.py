@@ -1,3 +1,4 @@
-def UpdateOrderStatus(order_id: int) -> bool:
-    update_order(order_id, {'status': 'shipped'})
-    return True
+def UpdateOrderStatus(order_id: int) -> dict:
+    updates = {'status': 'shipped'}
+    updated_order = update_order(order_id, updates)
+    return updated_order

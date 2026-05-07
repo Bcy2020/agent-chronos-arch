@@ -1,8 +1,8 @@
-def DeductStock(items: list, product_details: list) -> bool:
-    for item, detail in zip(items, product_details):
+def DeductStock(items: list) -> Tuple[bool, Optional[str]]:
+    for item in items:
         product_id = item['product_id']
         quantity = item['quantity']
-        current_stock = detail['stock']
-        if not DeductSingleProductStock(product_id, quantity, current_stock):
-            return False
-    return True
+        success, error = DeductSingleItemStock(product_id, quantity)
+        if not success:
+            return False, error
+    return True, None

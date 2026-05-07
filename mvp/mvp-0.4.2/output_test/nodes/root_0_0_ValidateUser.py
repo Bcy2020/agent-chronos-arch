@@ -1,2 +1,2 @@
-def ValidateUser(user_id: int) -> bool:
-    return user_exists(user_id)
+def ValidateUser(user_id: int) -> Optional[dict]:
+    return get_user(user_id)

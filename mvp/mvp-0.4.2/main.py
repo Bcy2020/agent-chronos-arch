@@ -15,7 +15,9 @@ from tree_builder import TreeBuilder
 from api_client import APIClient
 from prd_converter import PRDConverter
 from interface_planner import InterfacePlanner
-from interface_codegen import InterfaceCodeGenerator
+from interface_normalizer import InterfaceNormalizer
+from interface_impl_generator import InterfaceImplementationGenerator
+from interface_verifier import InterfaceVerifier
 from models import Node, InputParam, OutputParam, Boundary, GlobalVar, JsonPRD, DataSource, SubPRD, Traceability, AcceptanceCriterion, InterfacePlan
 
 
@@ -353,20 +355,38 @@ Examples:
         print("-" * 60)
         print("Interface Code Generation Phase (Phase 3)")
         print("-" * 60)
-        codegen = InterfaceCodeGenerator()
-        interface_code = codegen.generate(interface_plan)
-        validation_errors = codegen.validate(interface_code)
-        if validation_errors:
-            print(f"  Interface code validation FAILED:")
-            for err in validation_errors:
+
+        # Step 1: Normalize & validate plan
+        normalizer = InterfaceNormalizer()
+        normalizer.normalize_plan(interface_plan)
+        plan_errors = normalizer.validate_plan(interface_plan)
+        if plan_errors:
+            print(f"  Interface Plan validation issues ({len(plan_errors)}):")
+            for err in plan_errors:
                 print(f"    - {err}")
         else:
-            interface_dir = os.path.join(args.output, "generated")
-            os.makedirs(interface_dir, exist_ok=True)
-            interface_path = os.path.join(interface_dir, "interfaces.py")
-            with open(interface_path, "w", encoding="utf-8") as f:
-                f.write(interface_code)
-            print(f"  Generated: {interface_path}")
+            print(f"  Interface Plan validation: PASSED ({len(interface_plan.resources)} resources, {len(interface_plan.interfaces)} interfaces)")
+
+        # Step 2: Generate interface code via LLM
+        impl_gen = InterfaceImplementationGenerator(config, api_client)
+        interface_code = impl_gen.generate(interface_plan)
+
+        # Step 3: Verify generated code
+        verifier = InterfaceVerifier(interface_plan)
+        verify_errors = verifier.verify(interface_code)
+        if verify_errors:
+            print(f"  Interface code verification FAILED ({len(verify_errors)} issues):")
+            for err in verify_errors:
+                print(f"    - {err}")
+        else:
+            print(f"  Interface code verification: PASSED")
+
+        interface_dir = os.path.join(args.output, "generated")
+        os.makedirs(interface_dir, exist_ok=True)
+        interface_path = os.path.join(interface_dir, "interfaces.py")
+        with open(interface_path, "w", encoding="utf-8") as f:
+            f.write(interface_code)
+        print(f"  Generated: {interface_path}")
         print()
     elif interface_plan and args.skip_interface_codegen:
         print("Interface Code Generation skipped (--skip-interface-codegen)")

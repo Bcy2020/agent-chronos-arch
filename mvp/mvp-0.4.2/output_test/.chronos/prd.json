@@ -11,7 +11,8 @@
       "description": "User creates an order with user ID and item list. Check user existence, product stock, calculate total price, deduct stock, create order record with status pending.",
       "priority": "high",
       "related_nfr_ids": [
-        "NFR-001"
+        "NFR-001",
+        "NFR-002"
       ],
       "depends_on": []
     },
@@ -21,7 +22,8 @@
       "description": "User pays for an order. Check order exists and status is pending, check user balance, deduct balance, update order status to paid.",
       "priority": "high",
       "related_nfr_ids": [
-        "NFR-001"
+        "NFR-001",
+        "NFR-002"
       ],
       "depends_on": [
         "FR-001"
@@ -53,7 +55,8 @@
       "description": "Cancel an order. Check order exists and status is pending or paid, restore product stock, refund balance if paid, update status to cancelled.",
       "priority": "high",
       "related_nfr_ids": [
-        "NFR-001"
+        "NFR-001",
+        "NFR-002"
       ],
       "depends_on": [
         "FR-001"
@@ -62,7 +65,7 @@
     {
       "fr_id": "FR-006",
       "title": "List Orders",
-      "description": "List orders with optional filters by user and status. Display order details including items, total price, status, and time.",
+      "description": "List orders with optional filters by user and status. Display order details including items, total price, status, and creation time.",
       "priority": "medium",
       "related_nfr_ids": [],
       "depends_on": []
@@ -78,7 +81,7 @@
     {
       "fr_id": "FR-008",
       "title": "List Products",
-      "description": "List products with info and current stock. Optionally filter low stock products.",
+      "description": "List all products with info and stock. Optionally filter low-stock products.",
       "priority": "low",
       "related_nfr_ids": [],
       "depends_on": []
@@ -88,13 +91,18 @@
     {
       "nfr_id": "NFR-001",
       "category": "reliability",
-      "description": "Balance and stock must be consistent across operations. Deductions and restorations must be atomic."
+      "description": "Balance and stock must maintain consistency across operations (deduction and restoration)."
+    },
+    {
+      "nfr_id": "NFR-002",
+      "category": "reliability",
+      "description": "Order status transitions must follow the correct flow: pending -> paid -> shipped -> completed, with cancellation allowed from pending or paid."
     }
   ],
   "acceptance_criteria": [
     {
       "ac_id": "AC-001",
-      "description": "Create order with valid user and sufficient stock succeeds, stock deducted, order created with status pending.",
+      "description": "Create order successfully when user exists and stock sufficient.",
       "verification_method": "automated_test",
       "related_fr_ids": [
         "FR-001"
@@ -102,7 +110,7 @@
     },
     {
       "ac_id": "AC-002",
-      "description": "Create order with insufficient stock fails with error message and no stock change.",
+      "description": "Create order fails with appropriate error when user does not exist.",
       "verification_method": "automated_test",
       "related_fr_ids": [
         "FR-001"
@@ -110,15 +118,15 @@
     },
     {
       "ac_id": "AC-003",
-      "description": "Pay order with sufficient balance succeeds, balance deducted, order status becomes paid.",
+      "description": "Create order fails with appropriate error when stock insufficient.",
       "verification_method": "automated_test",
       "related_fr_ids": [
-        "FR-002"
+        "FR-001"
       ]
     },
     {
       "ac_id": "AC-004",
-      "description": "Pay order with insufficient balance fails with error message.",
+      "description": "Pay order successfully when order is pending and balance sufficient.",
       "verification_method": "automated_test",
       "related_fr_ids": [
         "FR-002"
@@ -126,29 +134,74 @@
     },
     {
       "ac_id": "AC-005",
-      "description": "Cancel pending order restores stock, no refund, status cancelled.",
+      "description": "Pay order fails when order not found or status not pending.",
       "verification_method": "automated_test",
       "related_fr_ids": [
-        "FR-005"
+        "FR-002"
       ]
     },
     {
       "ac_id": "AC-006",
-      "description": "Cancel paid order restores stock and refunds balance, status cancelled.",
+      "description": "Pay order fails when balance insufficient.",
+      "verification_method": "automated_test",
+      "related_fr_ids": [
+        "FR-002"
+      ]
+    },
+    {
+      "ac_id": "AC-007",
+      "description": "Ship order successfully when order is paid.",
+      "verification_method": "automated_test",
+      "related_fr_ids": [
+        "FR-003"
+      ]
+    },
+    {
+      "ac_id": "AC-008",
+      "description": "Complete order successfully when order is shipped.",
+      "verification_method": "automated_test",
+      "related_fr_ids": [
+        "FR-004"
+      ]
+    },
+    {
+      "ac_id": "AC-009",
+      "description": "Cancel order successfully when order is pending or paid, with stock and balance restoration.",
       "verification_method": "automated_test",
       "related_fr_ids": [
         "FR-005"
       ]
     },
     {
-      "ac_id": "AC-007",
-      "description": "Order status transitions correctly: pending -> paid -> shipped -> completed.",
+      "ac_id": "AC-010",
+      "description": "Cancel order fails when order status is shipped or completed.",
       "verification_method": "automated_test",
       "related_fr_ids": [
-        "FR-001",
-        "FR-002",
-        "FR-003",
-        "FR-004"
+        "FR-005"
+      ]
+    },
+    {
+      "ac_id": "AC-011",
+      "description": "List orders returns correct orders with filters.",
+      "verification_method": "automated_test",
+      "related_fr_ids": [
+        "FR-006"
+      ]
+    },
+    {
+      "ac_id": "AC-012",
+      "description": "Get user orders returns correct statistics.",
+      "verification_method": "automated_test",
+      "related_fr_ids": [
+        "FR-007"
+      ]
+    },
+    {
+      "ac_id": "AC-013",
+      "description": "List products returns correct product list with optional low-stock filter.",
+      "verification_method": "automated_test",
+      "related_fr_ids": [
+        "FR-008"
       ]
     }
   ],
@@ -163,7 +216,7 @@
     },
     "ui": {
       "type": "api",
-      "details": "Function call interface manage_order(command, order_data)"
+      "details": "External interface via manage_order function with JSON input/output."
     },
     "language": "Python"
   },
@@ -173,104 +226,111 @@
     "paid": "Order status after successful payment.",
     "shipped": "Order status after shipment.",
     "completed": "Final order status after delivery completion.",
-    "cancelled": "Order status when cancelled, with possible resource restoration."
+    "cancelled": "Order status after cancellation, with possible stock and balance restoration."
   },
   "global_state_sources": [
     {
       "source_id": "users",
-      "type": "dict",
-      "description": "Stores user information keyed by user_id.",
-      "initial_state": {
-        "1": {
+      "type": "list",
+      "description": "Stores user information including balance.",
+      "initial_state": [
+        {
           "user_id": 1,
           "name": "张三",
           "email": "zhang@test.com",
           "balance": 500.0
         },
-        "2": {
+        {
           "user_id": 2,
           "name": "李四",
           "email": "li@test.com",
           "balance": 300.0
         },
-        "3": {
+        {
           "user_id": 3,
           "name": "王五",
           "email": "wang@test.com",
           "balance": 100.0
         }
-      },
+      ],
       "item_schema": {
         "user_id": "int",
-        "name": "str",
-        "email": "str",
+        "name": "string",
+        "email": "string",
         "balance": "float"
       }
     },
     {
       "source_id": "products",
-      "type": "dict",
-      "description": "Stores product information keyed by product_id.",
-      "initial_state": {
-        "1": {
+      "type": "list",
+      "description": "Stores product information and stock.",
+      "initial_state": [
+        {
           "product_id": 1,
           "name": "手机",
           "price": 999.0,
           "stock": 10
         },
-        "2": {
+        {
           "product_id": 2,
           "name": "耳机",
           "price": 99.9,
           "stock": 20
         },
-        "3": {
+        {
           "product_id": 3,
           "name": "充电器",
           "price": 49.9,
           "stock": 50
         },
-        "4": {
+        {
           "product_id": 4,
           "name": "数据线",
           "price": 19.9,
           "stock": 100
         },
-        "5": {
+        {
           "product_id": 5,
           "name": "手机壳",
           "price": 29.9,
           "stock": 30
         }
-      },
+      ],
       "item_schema": {
         "product_id": "int",
-        "name": "str",
+        "name": "string",
         "price": "float",
         "stock": "int"
       }
     },
     {
       "source_id": "orders",
-      "type": "dict",
-      "description": "Stores order records keyed by order_id.",
-      "initial_state": {},
+      "type": "list",
+      "description": "Stores order records.",
+      "initial_state": [],
       "item_schema": {
         "order_id": "int",
         "user_id": "int",
         "items": "list",
         "total_price": "float",
-        "status": "str",
-        "created_at": "str"
+        "status": "string",
+        "created_at": "string"
       }
     }
   ],
   "input_spec": {
     "format": "json",
-    "description": "Input is a JSON object with command and order_data fields, passed to manage_order function.",
+    "description": "Input is a JSON object passed to the manage_order function. The command field specifies the operation, and order_data contains parameters.",
     "schema": {
       "command": "string (one of: create_order, pay_order, ship_order, complete_order, cancel_order, list_orders, get_user_orders, list_products)",
-      "order_data": "object containing relevant fields: user_id (int), order_id (int), items (list of {product_id: int, quantity: int}), status_filter (string), user_filter (int), low_stock (bool)"
+      "order_data": {
+        "user_id": "int (optional)",
+        "order_id": "int (optional)",
+        "items": "list of objects with product_id (int) and quantity (int) (optional)",
+        "status_filter": "string (optional)",
+        "user_filter": "int (optional)",
+        "low_stock": "bool (optional)"
+      }
     },
     "examples": [
       {
@@ -284,16 +344,28 @@
             }
           ]
         }
+      },
+      {
+        "command": "pay_order",
+        "order_data": {
+          "order_id": 1
+        }
+      },
+      {
+        "command": "list_products",
+        "order_data": {
+          "low_stock": true
+        }
       }
     ]
   },
   "output_spec": {
     "format": "json",
-    "description": "Output is a JSON object with success, message, and data fields.",
+    "description": "Output is a JSON object with success flag, message, and optional data.",
     "schema": {
-      "success": "boolean",
-      "message": "string describing result",
-      "data": "object containing relevant data (e.g., order_id, total_price, new_balance, orders list, products list)"
+      "success": "bool",
+      "message": "string",
+      "data": "object (optional, varies by command)"
     },
     "examples": [
       {
@@ -302,6 +374,15 @@
         "data": {
           "order_id": 1,
           "total_price": 199.8
+        }
+      },
+      {
+        "success": false,
+        "message": "商品库存不足",
+        "data": {
+          "product_id": 1,
+          "available": 10,
+          "requested": 15
         }
       }
     ]

@@ -55,6 +55,7 @@ class InterfaceCodeGenerator:
 
     def _generate_interface_function(self, resource: ResourceSpec, iface: InterfaceSpec) -> str:
         resource_id = resource.resource_id
+        params = self._extract_params(iface.signature)
         return_type = self._extract_return_type(iface.signature)
 
         if resource.storage_model == "dict":
@@ -66,7 +67,11 @@ class InterfaceCodeGenerator:
         else:
             body = f"    # Unsupported storage_model: {resource.storage_model}\n    pass"
 
-        lines = [f"def {iface.function_name}{self._extract_params(iface.signature)}:"]
+        sig = f"def {iface.function_name}{params}"
+        if return_type:
+            sig += f" -> {return_type}"
+        sig += ":"
+        lines = [sig]
         if iface.description:
             lines.append(f'    """{iface.description}"""')
         lines.append(body)
@@ -74,13 +79,13 @@ class InterfaceCodeGenerator:
         return "\n".join(lines)
 
     def _extract_params(self, signature: str) -> str:
-        match = re.search(r"def\s+\w+(\(.*?\))\s*(->.*?)?:", signature)
+        match = re.search(r"def\s+\w+(\(.*?\))\s*(->.*?)?:?\s*$", signature)
         if match:
             return match.group(1)
         return "()"
 
     def _extract_return_type(self, signature: str) -> str:
-        match = re.search(r"->\s*(.*?):", signature)
+        match = re.search(r"->\s*(.*?):?\s*$", signature)
         if match:
             return match.group(1).strip()
         return "None"

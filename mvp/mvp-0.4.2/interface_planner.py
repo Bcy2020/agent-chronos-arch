@@ -66,7 +66,7 @@ INTERFACE_PLANNER_SYSTEM_PROMPT = """You are a resource interface designer. Your
       "resource_id": "which resource this interface operates on",
       "operation": "get or list or create or update or delete or exists",
       "function_name": "snake_case_function_name",
-      "signature": "def function_name(params) -> return_type",
+      "signature": "def function_name(params) -> return_type:",
       "description": "what this function does",
       "preconditions": ["conditions that must be true before call"],
       "postconditions": ["conditions that will be true after call"]
@@ -143,12 +143,16 @@ Remember:
 
         interfaces = []
         for i in data.get("interfaces", []):
+            # Normalize signature to include trailing ':' (Python def syntax)
+            signature = i.get("signature", "")
+            if signature and not signature.strip().endswith(":"):
+                signature = signature.strip() + ":"
             interfaces.append(InterfaceSpec(
                 interface_id=i.get("interface_id", ""),
                 resource_id=i.get("resource_id", ""),
                 operation=i.get("operation", "read"),
                 function_name=i.get("function_name", ""),
-                signature=i.get("signature", ""),
+                signature=signature,
                 description=i.get("description", ""),
                 preconditions=i.get("preconditions", []),
                 postconditions=i.get("postconditions", [])

@@ -18,6 +18,7 @@ class CodeGenerator:
         self.config = config
         self.api_client = api_client
         self._interface_map: Dict[str, InterfaceSpec] = {}
+        self._resource_schemas: Dict[str, Dict[str, Any]] = {}
     
     def _build_system_prompt_for_parent(self) -> str:
         return """You are a Python code generator. Your task is to implement a function by composing its child functions.
@@ -231,6 +232,10 @@ Return ONLY valid JSON with this structure:
                 lines.append(f"```")
             lines.append(f"Please fix these issues in your new code.")
 
+        schema_ref = self._build_schema_reference()
+        if schema_ref:
+            lines.append(schema_ref)
+
         lines.append(f"")
         lines.append(f"=" * 60)
         lines.append(f"INTERFACE ENFORCEMENT - LOCKED SIGNATURE")
@@ -362,6 +367,7 @@ RULES:
 5. You can use standard Python libraries (os, json, datetime, typing, etc.).
 6. Call the granted interface functions as normal function calls (they are imported externally).
 7. Handle edge cases and errors appropriately.
+8. Dict key names MUST match the Data Schema Reference exactly (e.g., use order['total_price'], not order['total']).
 
 SIGNATURE ENFORCEMENT - YOUR FUNCTION SIGNATURE IS LOCKED:
 - Your function's parameter names, types, and return type are specified and non-negotiable.
@@ -449,6 +455,10 @@ Return ONLY valid JSON with this structure:
             lines.append(f"")
             lines.append(f" >>> Call these functions directly by name. They are available in scope. <<<")
             lines.append(f" >>> Do NOT declare 'global' variables. Do NOT use op_root_*. <<<")
+
+        schema_ref = self._build_schema_reference()
+        if schema_ref:
+            lines.append(schema_ref)
 
         if previous_errors:
             lines.append(f"")
@@ -567,10 +577,40 @@ Return ONLY valid JSON with this structure:
     def set_interface_plan(self, plan: InterfacePlan) -> None:
         for iface in plan.interfaces:
             self._interface_map[iface.interface_id] = iface
+        for resource in plan.resources:
+            self._resource_schemas[resource.resource_id] = {
+                "description": resource.description,
+                "storage_model": resource.storage_model,
+                "item_schema": resource.item_schema,
+                "invariants": resource.invariants,
+            }
+
+    def _build_schema_reference(self) -> str:
+        """Build a schema reference block for LLM prompts."""
+        if not self._resource_schemas:
+            return ""
+        lines = [
+            "",
+            "=" * 60,
+            "DATA SCHEMA REFERENCE (use these EXACT field names when accessing dict keys)",
+            "=" * 60,
+        ]
+        for resource_id, schema_info in self._resource_schemas.items():
+            lines.append(f"  {resource_id} dict fields:")
+            for field, field_type in schema_info.get("item_schema", {}).items():
+                lines.append(f"    - {field}: {field_type}")
+            if schema_info.get("invariants"):
+                for inv in schema_info["invariants"]:
+                    lines.append(f"    (invariant) {inv}")
+        lines.append("")
+        lines.append(">>> When accessing a dict field, ALWAYS use the exact field name from the schema above. <<<")
+        lines.append(">>> If a schema is listed under 'orders dict fields', then 'order' should use those fields. <<<")
+        lines.append("")
+        return "\n".join(lines)
 
     def generate(
-        self, 
-        node: Node, 
+        self,
+        node: Node,
         previous_errors: List[str] = None,
         previous_code: str = None
     ) -> Tuple[str, List[str]]:

@@ -1,3 +1,5 @@
-def ListProducts(low_stock: bool) -> Tuple[bool, str, dict]:
-    products = FetchProducts(low_stock)
-    return True, "Products retrieved successfully", {"products": products}
+def ListProducts(order_data: dict) -> dict:
+    products = ListAllProducts()
+    low_stock = order_data.get('low_stock', False)
+    filtered_products = FilterLowStockProducts(products, low_stock)
+    return {'success': True, 'data': {'products': filtered_products}}

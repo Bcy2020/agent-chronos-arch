@@ -6,79 +6,85 @@ This layer is the ONLY layer allowed to directly access global variables.
 import datetime
 
 
-# === Resource: users (dict) ===
-# Stores user information keyed by user_id.
+# === Resource: users ===
 
-# Invariant: user_id is unique and non-negative
-# Invariant: balance must be non-negative
+def get_user(user_id: int) -> dict | None:
+    return users.get(user_id)
 
-def get_user():
-    """Retrieve a user by user_id."""
-    return users.get(key)
+def list_users() -> list[dict]:
+    return list(users.values())
 
-def user_exists():
-    """Check if a user exists."""
-    return key in users
+def create_user(user: dict) -> dict:
+    user_id = user['user_id']
+    users[user_id] = user
+    return user
 
-def update_user():
-    """Update user fields (e.g., balance)."""
-    if key not in users:
-        return None
-    users[key].update(updates)
-    return users[key]
+def update_user(user_id: int, updates: dict) -> dict:
+    user = users[user_id]
+    user.update(updates)
+    return user
 
+def delete_user(user_id: int) -> None:
+    del users[user_id]
 
-# === Resource: products (dict) ===
-# Stores product information keyed by product_id.
+def user_exists(user_id: int) -> bool:
+    return user_id in users
 
-# Invariant: product_id is unique and non-negative
-# Invariant: stock must be non-negative
+# === Resource: products ===
 
-def get_product():
-    """Retrieve a product by product_id."""
-    return products.get(key)
+def get_product(product_id: int) -> dict | None:
+    return products.get(product_id)
 
-def list_products():
-    """List all products, optionally filter low stock (stock < 10)."""
+def list_products() -> list[dict]:
     return list(products.values())
 
-def update_product():
-    """Update product fields (e.g., stock)."""
-    if key not in products:
-        return None
-    products[key].update(updates)
-    return products[key]
+def create_product(product: dict) -> dict:
+    product_id = product['product_id']
+    products[product_id] = product
+    return product
 
+def update_product(product_id: int, updates: dict) -> dict:
+    product = products[product_id]
+    product.update(updates)
+    return product
 
-# === Resource: orders (dict) ===
-# Stores order records keyed by order_id.
+def delete_product(product_id: int) -> None:
+    del products[product_id]
 
-# Invariant: order_id is unique and non-negative
-# Invariant: status must be one of: pending, paid, shipped, completed, cancelled
+def product_exists(product_id: int) -> bool:
+    return product_id in products
 
-def get_order():
-    """Retrieve an order by order_id."""
-    return orders.get(key)
+# === Resource: orders ===
 
-def list_orders():
-    """List orders with optional filters by user_id and status."""
-    return list(orders.values())
+def get_order(order_id: int) -> dict | None:
+    return orders.get(order_id)
 
-def create_order():
-    """Create a new order and return its order_id."""
-    new_key = orders.get('_next_id', 1) if isinstance(orders, dict) and '_next_id' in orders else len(orders) + 1
-    if isinstance(new_key, int) and '_next_id' not in orders:
-        new_key = max(orders.keys()) + 1 if orders else 1
-    orders[new_key] = item
-    return orders[new_key]
+def list_orders(filters: dict = None) -> list[dict]:
+    if filters is None:
+        return list(orders.values())
+    result = []
+    for order in orders.values():
+        match = True
+        for key, value in filters.items():
+            if key not in order or order[key] != value:
+                match = False
+                break
+        if match:
+            result.append(order)
+    return result
 
-def update_order():
-    """Update order fields (e.g., status)."""
-    if key not in orders:
-        return None
-    orders[key].update(updates)
-    return orders[key]
+def create_order(order: dict) -> dict:
+    order_id = order['order_id']
+    orders[order_id] = order
+    return order
 
-def order_exists():
-    """Check if an order exists."""
-    return key in orders
+def update_order(order_id: int, updates: dict) -> dict:
+    order = orders[order_id]
+    order.update(updates)
+    return order
+
+def delete_order(order_id: int) -> None:
+    del orders[order_id]
+
+def order_exists(order_id: int) -> bool:
+    return order_id in orders

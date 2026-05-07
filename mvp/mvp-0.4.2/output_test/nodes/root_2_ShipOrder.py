@@ -1,7 +1,9 @@
-def ShipOrder(order_id: int) -> Tuple[bool, str, dict]:
+def ShipOrder(order_data: dict) -> dict:
+    order_id = order_data.get('order_id')
+    if order_id is None:
+        return {'success': False, 'error': 'Missing order_id'}
     order = GetOrder(order_id)
-    valid, message = ValidateOrderStatus(order)
-    if not valid:
-        return False, message, {}
-    UpdateOrderStatus(order_id)
-    return True, '', {}
+    if not CheckOrderPaid(order):
+        return {'success': False, 'error': 'Order not found or not paid'}
+    result = UpdateOrderStatus(order_id)
+    return {'success': True, 'data': result}
