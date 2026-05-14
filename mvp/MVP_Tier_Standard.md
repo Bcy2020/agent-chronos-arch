@@ -8,7 +8,7 @@ These MVP versions are designed to prove the feasibility of tree decomposition. 
 
 ## 2. MVP-1.x Versions
 
-These MVP versions will introduce a code pipeline, making the generated code executable. A dedicated benchmark for executable code will be established to evaluate this and subsequent MVP versions. However, these MVP versions are limited to generating runnable code — they have not yet introduced error feedback, reverse validation, or other mechanisms described in the architecture documents. As a result, the generated code is still far from真正的 software.
+These MVP versions will introduce a code pipeline, making the generated code executable. A dedicated benchmark for executable code will be established to evaluate this and subsequent MVP versions. However, these MVP versions are limited to generating runnable code — they have not yet introduced error feedback, reverse validation, or other mechanisms described in the architecture documents. As a result, the generated code is still far from real software.
 
 **Later versions will be planned once MVP-1.x is relatively mature.**
 
