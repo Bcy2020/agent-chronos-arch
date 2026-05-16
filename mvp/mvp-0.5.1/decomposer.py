@@ -23,9 +23,19 @@ CRITICAL RULES - ENFORCED:
 1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.
 2. Each child must have explicit: name, purpose, inputs, outputs, and boundary
 3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs
-4. CRITICAL: Do NOT create coordinator, router, or aggregator child nodes. The parent function IS the coordinator — it directly calls all its children. Each child must be a direct responsibility that the parent invokes. If you think coordination logic is needed, that coordination belongs in the parent function body, NOT in a separate child.
+4. CRITICAL — PARENT IS THE SOLE CALLER OF ITS CHILDREN. Do NOT create coordinator, router, or aggregator child nodes. The parent function IS the coordinator — it directly calls all its children. Each child must be a direct responsibility that the parent invokes. Children are independent and MUST NOT call each other (no cross-sibling calls). All data passing between children is orchestrated by the parent — the parent calls one child, gets its output, then passes it as input to the next child. If you think coordination logic is needed, that coordination belongs in the parent function body, NOT in a separate child.
 5. Do NOT add extra external inputs or outputs beyond what the parent has
 6. Children should be at the same abstraction level and minimally overlapping
+
+GLOBAL VARIABLES CONSERVATION RULE (ENFORCED BY VALIDATOR):
+7. Parent's global_vars MUST be fully distributed to children. Follow this checklist:
+   a. Look at EACH variable in the parent's global_vars list
+   b. For each variable, identify which child(ren) operate on it
+   c. Ensure at least one child declares that variable+op combination in its own "global_vars"
+   d. Double-check: no parent global_var is left unassigned to any child
+   - Example: parent has {variable="products", op="read_write"} → at least one child MUST declare products (read or read_write)
+   - A pure parsing/validation child with no data store access should have empty global_vars
+   - A data access child must declare the exact variable+op from the parent's list
 
 SIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:
 - Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly
@@ -63,12 +73,12 @@ DATAFLOW CLOSURE RULES:
 1. Every child input must have an explicit source.
 2. A child input source must be one of:
    - a parent input,
-   - an output of an earlier sibling child,
+   - an output of an earlier sibling child (the parent orchestrates this passing),
    - a local constant/config value explicitly described,
    - data obtained inside that same leaf through requested_capabilities.
 3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.
 4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.
-5. Parent is the coordinator. Parent must not directly access global state or data interfaces.
+5. Parent is the sole coordinator. Only the parent orchestrates child calls. Parent must not directly access global state or data interfaces.
 
 OUTPUT FORMAT - You MUST return valid JSON with this exact structure:
 {
@@ -117,12 +127,7 @@ OUTPUT FORMAT - You MUST return valid JSON with this exact structure:
   ]
 }
 
-CRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:
-The parent's "global_vars" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).
-You MUST distribute these global_vars among children based on their responsibilities:
-- A child that performs read/write on a variable declares the corresponding "global_vars"
-- Each child's global_vars MUST be a subset of the parent's global_vars
-- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable"""
+	"""
     
     def _build_user_prompt(self, node: Node, previous_errors: Any = None, interface_plan_summary: str = "") -> str:
         prompt_parts = [
@@ -178,8 +183,9 @@ You MUST distribute these global_vars among children based on their responsibili
             for gv in node.global_vars:
                 prompt_parts.append(f"  - {gv.op} on {gv.variable}: {gv.description}")
             prompt_parts.append(f"")
-            prompt_parts.append(f"  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<")
-            prompt_parts.append(f"  >>> The parent IS the coordinator; children perform actual operations. <<<")
+            prompt_parts.append(f"  >>> CONSERVATION CHECK: For EACH global_var listed above, ensure at least one child declares it in its 'global_vars'. Every parent global_var must be covered by at least one child. <<<")
+            prompt_parts.append(f"  >>> Children that do NOT access any data store (e.g., pure parsing/validation) should have empty global_vars. <<<")
+            prompt_parts.append(f"  >>> The parent IS the sole caller of its children; children are independent and MUST NOT call each other. <<<")
 
         if node.preconditions:
             prompt_parts.append(f"Preconditions: {node.preconditions}")

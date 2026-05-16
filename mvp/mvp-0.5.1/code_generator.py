@@ -94,47 +94,31 @@ Return ONLY valid JSON with this structure:
 }"""
 
     def _build_system_prompt_for_parent_verify(self) -> str:
-        return """You are a decomposition verifier. Your role is to verify that a parent function's generated code correctly composes its child functions. If the code violates any composition rules, the decomposition must be rejected.
+        return """You are a decomposition verifier. Verify the generated parent code against ALL rules below. Include a verdict for EVERY check in the JSON output.
 
-VERIFICATION CHECKS — examine the code carefully:
+RULES:
+1. CHILD COVERAGE — Every child function must appear as a DIRECT CALL in the code (look for "ChildName("). A child called indirectly through another child is a VIOLATION.
+2. RETURN VALUE ORIGIN — Every value in every return statement must trace to a child output or a parent input. Bare literals (None, True, "", 0, [], {}) that should come from a child are VIOLATIONS.
+3. DIRECT ACCESS — The code must NOT directly read or write any global variable or data source. All data operations must go through child calls.
 
-1. RETURN VALUE ORIGIN — Trace every value in every return statement. Each business value must originate from a child function's output or a parent function's input. Acceptable origins include:
-   - A variable assigned from a child call: rows = RunQuery(...)
-   - A field extracted from a child result: user_id = transaction["user_id"]
-   - A parent input parameter: amount, service, etc.
-   - A computation from parent inputs: len(content), quantity * 2
+After evaluating ALL three rules, return:
+- status="cannot_compose" if ANY rule found a violation
+- status="ok" if ALL rules passed
 
-   A return value that is a literal (None, True, False, a quoted string, a number, an empty list [], an empty dict {}) is a VIOLATION if it represents data that should come from a child.
-
-2. CHILD COVERAGE — Every child function must be called at least once in the code. No unused children.
-
-3. DIRECT ACCESS — The code must NOT directly read or write any global variable or data source. All data operations must go through child function calls. 
-
-If ANY check fails, return status="cannot_compose" with detailed feedback.
-If ALL checks pass, return status="ok" with empty feedback.
-
-Return ONLY valid JSON with this structure:
+Return ONLY valid JSON:
 {
   "status": "ok | cannot_compose",
+  "checks": {
+    "child_coverage": {"passed": false, "details": "List each child: PASS/VIOLATION"},
+    "return_value_origin": {"passed": true, "details": "Trace each return value"},
+    "direct_access": {"passed": true, "details": "Check each global var / data source"}
+  },
   "decomposition_feedback": {
     "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | other",
     "offending_child": "ChildName or empty",
-    "missing_inputs": [
-      {
-        "child": "ChildName",
-        "param": "param_name",
-        "why_needed": "why this input is needed",
-        "expected_source": "parent input / previous child output / new child output"
-      }
-    ],
-    "direct_resource_accesses": [
-      {
-        "resource": "resource_name",
-        "operation": "read",
-        "why_needed": "why this resource access is needed"
-      }
-    ],
-    "suggested_fix": "Concrete suggestion for re-decomposition",
+    "missing_inputs": [{"child": "ChildName", "param": "param_name", "why_needed": "", "expected_source": ""}],
+    "direct_resource_accesses": [{"resource": "", "operation": "", "why_needed": ""}],
+    "suggested_fix": "Fix covering ALL violations found",
     "requires_redecomposition": true
   }
 }"""

@@ -153,7 +153,7 @@ class TreeBuilder:
         node.attempt_history.append(record)
 
     # ======================================================================
-    # Phase 1: BFS Expansion (decompose only, no codegen)
+    # Phase 1: BFS Expansion with Immediate Top-Down Codegen
     # ======================================================================
 
     def _phase1_expand_node(self, node: Node) -> bool:
@@ -221,41 +221,58 @@ class TreeBuilder:
 
     def _phase1_expand(self, root: Node) -> None:
         """
-        Phase 1: BFS level-by-level expansion.
-        Decomposes all pending nodes sequentially, from root to deepest level.
+        Phase 1: BFS level-by-level expansion with immediate top-down codegen.
+        Each node is decomposed (if parent) then immediately codegen'd for
+        composition verification, before proceeding to the next level.
+        This ensures root composition is validated before any child decomposition.
         """
-        self._log("--- Phase 1: BFS Expansion ---", 0)
+        self._log("--- Phase 1: BFS Expansion with Top-Down Codegen ---", 0)
 
-        queue = [root]
+        current_level = [root]
 
-        while queue:
-            node = queue.pop(0)
+        while current_level:
+            next_level = []
 
-            if node.status != "pending":
-                # Already processed; enqueue children for next level
+            for node in current_level:
+                if node.status in ("codegen_done", "failed", "human_needed"):
+                    continue
+
+                # Leaf: codegen directly (marked codegen_ready by parent's expansion)
+                if node.status == "codegen_ready" or node.stop_decompose or node.depth >= self.config.max_depth:
+                    node.status = "codegen_ready"
+                    self._log(f"  Codegen leaf: {node.name} (depth {node.depth})", node.depth)
+                    success = self._phase2_codegen_leaf(node)
+                    node.status = "codegen_done" if success else "failed"
+                    continue
+
+                # Parent: decompose
+                if node.status == "pending":
+                    self._log(f"  Expanding: {node.name} (depth {node.depth})", node.depth)
+                    success = self._phase1_expand_node(node)
+                    if not success:
+                        node.status = "failed"
+                        self._log(f"  Expansion FAILED: {node.name}", node.depth)
+                        continue
+                    node.status = "expanded"
+
+                # Parent: immediately codegen (composition verification)
                 if node.status == "expanded" and node.children:
+                    self._log(f"  Codegen parent: {node.name} (depth {node.depth})", node.depth)
+                    success = self._phase2_codegen_parent(node)
+                    if success:
+                        node.status = "codegen_done"
+                        self._log(f"  Codegen OK: {node.name}", node.depth)
+                    else:
+                        node.status = "failed"
+                        self._log(f"  Codegen FAILED: {node.name}", node.depth)
+                        continue  # Don't enqueue children — wasted if redecompose needed
+
+                # Enqueue children for next level (BFS: level N+1)
+                if node.status == "codegen_done" and node.children:
                     for child in node.children:
-                        if child.status == "pending":
-                            queue.append(child)
-                continue
+                        next_level.append(child)
 
-            if node.stop_decompose or node.depth >= self.config.max_depth:
-                node.status = "codegen_ready"
-                self._log(f"  Leaf (skip decomposition): {node.name}", node.depth)
-                continue
-
-            self._log(f"  Expanding: {node.name} (depth {node.depth})", node.depth)
-            success = self._phase1_expand_node(node)
-
-            if success:
-                node.status = "expanded"
-                # Enqueue children for next level
-                for child in node.children:
-                    if child.status == "pending":
-                        queue.append(child)
-            else:
-                node.status = "failed"
-                self._log(f"  Expansion FAILED: {node.name}", node.depth)
+            current_level = next_level
 
         self._log("--- Phase 1 Complete ---", 0)
 
@@ -592,8 +609,10 @@ class TreeBuilder:
     def build_tree(self, root_node: Node) -> Node:
         """
         Build the complete decomposition tree.
-        Coordinates Phase 1 (BFS expansion), Phase 2 (bottom-up closure),
-        and cross-phase issue resolution for INSUFFICIENT_CAPABILITIES.
+        BFS level-by-level expansion with immediate top-down codegen.
+        Composition verification happens right after each parent's decomposition,
+        so root failures are detected before any child work is done.
+        Cross-phase issue resolution for INSUFFICIENT_CAPABILITIES.
         """
         self._log("=" * 50)
         self._log(f"Building decomposition tree for: {root_node.name}")
@@ -604,13 +623,11 @@ class TreeBuilder:
         max_redecompose = self.config.max_decompose_retries
 
         while True:
-            # Phase 1: BFS expansion (decompose all pending nodes)
+            # Phase 1: BFS expansion with immediate top-down codegen.
+            # Composition verification happens right after each parent's decomposition.
             self._phase1_expand(root_node)
 
-            # Phase 2: Bottom-up closure (codegen all ready nodes)
-            self._phase2_close(root_node)
-
-            # Post-Phase 2: check for failures that need redecomposition
+            # Post-Phase 1: check for failures that need redecomposition
             issues = self._resolve_issues_after_phase2(root_node)
 
             if not issues:
