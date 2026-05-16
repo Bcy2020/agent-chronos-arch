@@ -21,9 +21,20 @@ class CodeGenerator:
         self._resource_schemas: Dict[str, Dict[str, Any]] = {}
     
     def _build_system_prompt_for_parent(self) -> str:
-        return """You are a Python code generator. Your task is to implement a function by composing its child functions.
+        return """You are a decomposition verifier. Your role is to verify that a parent function CAN be correctly implemented by composing its child functions — and if so, to generate the implementation code. Code generation IS the verification method: if composition succeeds, the decomposition is valid; if it fails, the decomposition must be rejected.
 
-CRITICAL RULES:
+WORKFLOW — THREE STAGES:
+
+STAGE 1 — REVIEW (before writing any code):
+Intuitively check whether the children's interfaces collectively satisfy ALL of the parent's requirements:
+- Does every child input parameter have a clear source? (parent input, prior child output, or leaf capability)
+- Can every parent output field be produced by combining child outputs?
+- Is every needed data access covered by at least one child?
+- Do the child signatures fit together without type mismatches?
+If any check fails, the decomposition is invalid — return cannot_compose.
+
+STAGE 2 — IMPLEMENT (only if STAGE 1 passes):
+Write the parent function by composing child calls. Rules:
 1. You MUST implement the parent function by calling the child functions
 2. Child functions are NOT implemented yet - you only have their interfaces
 3. Use the child function signatures exactly as provided
@@ -31,10 +42,8 @@ CRITICAL RULES:
 5. You may use: conditionals, loops, local variables, helper logic
 6. DO NOT directly read or write global state - delegate ALL data operations to child functions
 7. Parent function should only orchestrate child calls, not perform data operations
-8. If the parent CANNOT be implemented ONLY by calling child functions, do NOT bypass the architecture.
-   Do NOT directly access global state. Do NOT invent hidden data sources.
-   Do NOT silently compute data that should come from a child.
-   Instead, return status="cannot_compose" with decomposition_feedback.
+8. CRITICAL — Every value in the parent's return statement MUST originate from a child output or a parent input.
+   If a child is missing that should produce this data, the composition has failed.
 
 SIGNATURE ENFORCEMENT - YOUR FUNCTION SIGNATURE IS LOCKED:
 - Your function's parameter names, types, and return type are specified and non-negotiable
@@ -56,8 +65,8 @@ The code you generate will be validated:
 
 Return ONLY valid JSON with this structure:
 {
-  "status": "ok | cannot_compose",
   "code": "def parent_function(...):\\n    ...",
+  "status": "ok | cannot_compose",
   "imports": ["import os", "from typing import ..."],
   "child_calls": ["child1", "child2"],
   "implementation_notes": "Brief explanation of the logic",
@@ -83,7 +92,53 @@ Return ONLY valid JSON with this structure:
     "requires_redecomposition": true
   }
 }"""
-    
+
+    def _build_system_prompt_for_parent_verify(self) -> str:
+        return """You are a decomposition verifier. Your role is to verify that a parent function's generated code correctly composes its child functions. If the code violates any composition rules, the decomposition must be rejected.
+
+VERIFICATION CHECKS — examine the code carefully:
+
+1. RETURN VALUE ORIGIN — Trace every value in every return statement. Each business value must originate from a child function's output or a parent function's input. Acceptable origins include:
+   - A variable assigned from a child call: rows = RunQuery(...)
+   - A field extracted from a child result: user_id = transaction["user_id"]
+   - A parent input parameter: amount, service, etc.
+   - A computation from parent inputs: len(content), quantity * 2
+
+   A return value that is a literal (None, True, False, a quoted string, a number, an empty list [], an empty dict {}) is a VIOLATION if it represents data that should come from a child.
+
+2. CHILD COVERAGE — Every child function must be called at least once in the code. No unused children.
+
+3. DIRECT ACCESS — The code must NOT directly read or write any global variable or data source. All data operations must go through child function calls. 
+
+If ANY check fails, return status="cannot_compose" with detailed feedback.
+If ALL checks pass, return status="ok" with empty feedback.
+
+Return ONLY valid JSON with this structure:
+{
+  "status": "ok | cannot_compose",
+  "decomposition_feedback": {
+    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | other",
+    "offending_child": "ChildName or empty",
+    "missing_inputs": [
+      {
+        "child": "ChildName",
+        "param": "param_name",
+        "why_needed": "why this input is needed",
+        "expected_source": "parent input / previous child output / new child output"
+      }
+    ],
+    "direct_resource_accesses": [
+      {
+        "resource": "resource_name",
+        "operation": "read",
+        "why_needed": "why this resource access is needed"
+      }
+    ],
+    "suggested_fix": "Concrete suggestion for re-decomposition",
+    "requires_redecomposition": true
+  }
+}"""
+
     def _build_system_prompt_for_leaf(self) -> str:
         return """You are a Python code generator. Your task is to implement a complete function.
 
@@ -281,7 +336,70 @@ Return ONLY valid JSON with this structure:
         lines.append(f"")
 
         return "\n".join(lines)
-    
+
+    def _build_user_prompt_for_parent_verify(
+        self,
+        node: Node,
+        code: str
+    ) -> str:
+        lines = [
+            f"Verify the generated parent function code below.",
+            f"",
+            f"=" * 60,
+            f"PARENT FUNCTION",
+            f"=" * 60,
+            f"Name: {node.name}",
+            f"Purpose: {node.purpose}",
+            f"",
+            f"Parent Inputs:",
+        ]
+        for inp in node.inputs:
+            lines.append(f"  - {inp.name}: {inp.type} - {inp.description}")
+        lines.append(f"Parent Outputs:")
+        for out in node.outputs:
+            lines.append(f"  - {out.name}: {out.type} - {out.description}")
+
+        if node.data_sources:
+            lines.append(f"")
+            lines.append(f"Data Sources:")
+            for ds in node.data_sources:
+                lines.append(f"  - {ds.name} ({ds.category}, {ds.access})")
+
+        if node.global_vars:
+            lines.append(f"")
+            lines.append(f"Global Variables:")
+            for gv in node.global_vars:
+                lines.append(f"  - {gv.op} on {gv.variable}: {gv.description}")
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"CHILDREN - INTERFACES")
+        lines.append(f"=" * 60)
+        for child in (node.children or []):
+            contract = node.children_contracts.get(child.name)
+            if contract:
+                lines.append(f"")
+                lines.append(f"  [{child.name}]")
+                lines.append(f"    Purpose: {contract.purpose}")
+                lines.append(f"    Behavior: {contract.behavior}")
+                if contract.signature:
+                    lines.append(f"    Signature: {contract.signature}")
+                if contract.data_operations:
+                    lines.append(f"    Data Operations:")
+                    for op in contract.data_operations:
+                        lines.append(f"      - {op.source_name}: {op.operation_type} ({op.description})")
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"GENERATED CODE TO VERIFY")
+        lines.append(f"=" * 60)
+        lines.append(f"```python")
+        lines.append(code.strip())
+        lines.append(f"```")
+        lines.append(f"")
+        lines.append(f"Apply the verification checklist. Return your verdict as valid JSON.")
+        return "\n".join(lines)
+
     def _build_user_prompt_for_leaf(
         self, 
         node: Node, 
@@ -537,28 +655,32 @@ Return ONLY valid JSON with this structure:
             return {"code": "", "error": str(e)}
     
     def generate_for_parent(
-        self, 
-        node: Node, 
+        self,
+        node: Node,
         previous_errors: List[str] = None,
         previous_code: str = None
     ) -> Tuple[str, List[str]]:
         """
         Generate code for a parent node by composing child interfaces.
+        Two-step process:
+          Step 1: REVIEW + IMPLEMENT — generate code via child composition
+          Step 2: VERIFY — send generated code for self-review, chance to reject
         Returns (code, errors).
         """
         if not node.children:
             return "", ["Cannot generate parent code: no children defined"]
-        
+
+        # Step 1: REVIEW + IMPLEMENT
         messages = [
             {"role": "system", "content": self._build_system_prompt_for_parent()},
             {"role": "user", "content": self._build_user_prompt_for_parent(node, previous_errors, previous_code)}
         ]
-        
+
         try:
             response = self.api_client.chat(messages, max_tokens=2048)
         except Exception as e:
             return "", [f"API call failed: {e}"]
-        
+
         parsed = self._parse_response(response)
         status = parsed.get("status", "ok")
         node.composition_feedback = None
@@ -571,8 +693,31 @@ Return ONLY valid JSON with this structure:
 
         if "error" in parsed or not parsed.get("code"):
             return "", [f"Failed to parse code: {parsed.get('error', 'No code generated')}"]
-        
-        return parsed.get("code", ""), []
+
+        code = parsed.get("code", "")
+
+        # Step 2: VERIFY the generated code
+        verify_messages = [
+            {"role": "system", "content": self._build_system_prompt_for_parent_verify()},
+            {"role": "user", "content": self._build_user_prompt_for_parent_verify(node, code)}
+        ]
+
+        try:
+            verify_response = self.api_client.chat(verify_messages, max_tokens=1024)
+        except Exception as e:
+            print(f"Verification step failed, accepting step 1 code: {e}")
+            return code, []
+
+        verify_parsed = self._parse_response(verify_response)
+        verify_status = verify_parsed.get("status", "ok")
+
+        if verify_status == "cannot_compose":
+            feedback_data = verify_parsed.get("decomposition_feedback", {})
+            feedback_data["status"] = "cannot_compose"
+            node.composition_feedback = CompositionFeedback.from_dict(feedback_data)
+            return "", [f"CANNOT_COMPOSE: {feedback_data.get('reason', 'Verification rejected code')}"]
+
+        return code, []
     
     def generate_for_leaf(
         self, 
