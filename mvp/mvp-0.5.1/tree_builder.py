@@ -153,7 +153,7 @@ class TreeBuilder:
         node.attempt_history.append(record)
 
     # ======================================================================
-    # Phase 1: BFS Expansion with Immediate Top-Down Codegen
+    # Phase 1: BFS Expansion with Inline Redecomposition
     # ======================================================================
 
     def _phase1_expand_node(self, node: Node) -> bool:
@@ -222,9 +222,9 @@ class TreeBuilder:
     def _phase1_expand(self, root: Node) -> None:
         """
         Phase 1: BFS level-by-level expansion with immediate top-down codegen.
-        Each node is decomposed (if parent) then immediately codegen'd for
-        composition verification, before proceeding to the next level.
-        This ensures root composition is validated before any child decomposition.
+        Each node is decomposed, then immediately codegen'd for composition verification.
+        If codegen fails with CANNOT_COMPOSE, the node is redecomposed inline
+        (no outer round loop needed).
         """
         self._log("--- Phase 1: BFS Expansion with Top-Down Codegen ---", 0)
 
@@ -245,27 +245,56 @@ class TreeBuilder:
                     node.status = "codegen_done" if success else "failed"
                     continue
 
-                # Parent: decompose
+                # Parent: decompose + codegen with inline retry
                 if node.status == "pending":
-                    self._log(f"  Expanding: {node.name} (depth {node.depth})", node.depth)
-                    success = self._phase1_expand_node(node)
-                    if not success:
-                        node.status = "failed"
-                        self._log(f"  Expansion FAILED: {node.name}", node.depth)
-                        continue
-                    node.status = "expanded"
+                    for attempt in range(self.config.max_decompose_retries):
+                        if attempt == 0:
+                            self._log(f"  Expanding: {node.name} (depth {node.depth})", node.depth)
+                            success = self._phase1_expand_node(node)
+                        else:
+                            # Redecompose: clear subtree, preserve feedback, re-decompose
+                            self._log(f"  Redecomposing: {node.name} (attempt {attempt+1}/{self.config.max_decompose_retries})", node.depth)
+                            self._clear_subtree_for_redecompose(node)
+                            node.status = "pending"
+                            success = self._phase1_expand_node(node)
 
-                # Parent: immediately codegen (composition verification)
-                if node.status == "expanded" and node.children:
-                    self._log(f"  Codegen parent: {node.name} (depth {node.depth})", node.depth)
-                    success = self._phase2_codegen_parent(node)
-                    if success:
-                        node.status = "codegen_done"
-                        self._log(f"  Codegen OK: {node.name}", node.depth)
+                        if not success:
+                            node.status = "failed"
+                            self._log(f"  Expansion FAILED: {node.name}", node.depth)
+                            break
+
+                        node.status = "expanded"
+
+                        # Codegen (composition verification)
+                        self._log(f"  Codegen parent: {node.name} (depth {node.depth})", node.depth)
+                        success = self._phase2_codegen_parent(node)
+
+                        if success:
+                            node.status = "codegen_done"
+                            self._log(f"  Codegen OK: {node.name}", node.depth)
+                            break
+
+                        # Codegen failed → check if redecompose can help
+                        if node.validation and node.validation.repair_action == "redecompose":
+                            self._save_snapshot(
+                                node, "redecompose", attempt,
+                                "redecompose_cannot_compose",
+                                node.validation.errors or []
+                            )
+                            # composition_feedback is preserved by _clear_subtree_for_redecompose,
+                            # so the next attempt's _phase1_expand_node will use it as context.
+                            if attempt < self.config.max_decompose_retries - 1:
+                                self._log(f"  Codegen FAILED, redecomposing...", node.depth)
+                                continue
+                        else:
+                            # Non-redecompose failure (syntax, max retries exhausted)
+                            self._log(f"  Codegen FAILED (non-redecomposable): {node.name}", node.depth)
+                            node.status = "failed"
+                            break
                     else:
-                        node.status = "failed"
-                        self._log(f"  Codegen FAILED: {node.name}", node.depth)
-                        continue  # Don't enqueue children — wasted if redecompose needed
+                        # for-else: loop exhausted without break → max retries reached
+                        if node.status != "codegen_done":
+                            node.status = "failed"
 
                 # Enqueue children for next level (BFS: level N+1)
                 if node.status == "codegen_done" and node.children:
@@ -413,13 +442,6 @@ class TreeBuilder:
         node.needs_human_intervention = True
         return False
 
-    def _phase2_codegen_node(self, node: Node) -> bool:
-        """Dispatch codegen to leaf or parent handler."""
-        if node.stop_decompose or node.depth >= self.config.max_depth:
-            return self._phase2_codegen_leaf(node)
-        else:
-            return self._phase2_codegen_parent(node)
-
     def _collect_nodes_by_depth(self, root: Node, reverse: bool = False) -> List[Tuple[int, List[Node]]]:
         """
         Collect all nodes grouped by depth.
@@ -441,43 +463,6 @@ class TreeBuilder:
             return [(d, depth_map[d]) for d in range(max_depth[0], -1, -1) if d in depth_map]
         else:
             return [(d, depth_map[d]) for d in range(max_depth[0] + 1) if d in depth_map]
-
-    def _phase2_close(self, root: Node) -> None:
-        """
-        Phase 2: Bottom-up code generation and validation.
-        Processes nodes from deepest depth to root.
-        """
-        self._log("--- Phase 2: Bottom-Up Codegen ---", 0)
-
-        nodes_by_depth = self._collect_nodes_by_depth(root, reverse=True)
-
-        for depth, nodes in nodes_by_depth:
-            self._log(f"  Depth {depth}: {len(nodes)} nodes", 0)
-
-            for node in nodes:
-                if node.status == "codegen_done":
-                    continue
-                if node.status in ("failed", "human_needed"):
-                    continue
-                if node.status not in ("codegen_ready", "expanded"):
-                    self._log(f"  Skipping {node.name} (status={node.status})", node.depth)
-                    continue
-
-                self._log(f"  Closing: {node.name} (depth {node.depth})", node.depth)
-                success = self._phase2_codegen_node(node)
-
-                if success:
-                    node.status = "codegen_done"
-                    self._log(f"  Codegen OK: {node.name}", node.depth)
-                else:
-                    node.status = "failed"
-                    self._log(f"  Codegen FAILED: {node.name}", node.depth)
-
-        self._log("--- Phase 2 Complete ---", 0)
-
-    # ======================================================================
-    # Cross-Phase Issue Resolution
-    # ======================================================================
 
     def _find_node(self, root: Node, node_id: str) -> Optional[Node]:
         """Find a node by ID using DFS traversal."""
@@ -511,8 +496,6 @@ class TreeBuilder:
         """
         Walk bottom-up and mark parents as human_needed if any child is human_needed
         and the parent was not already marked for redecomposition.
-        This propagates unresolvable failures (e.g., INSUFFICIENT_CAPABILITIES
-        where no ancestor has the missing resource) upward to the root.
         """
         nodes_by_depth = self._collect_nodes_by_depth(root, reverse=True)
         for _depth, nodes in nodes_by_depth:
@@ -522,50 +505,13 @@ class TreeBuilder:
                 for child in node.children:
                     if child.needs_human_intervention or child.status == "human_needed":
                         self._log(
-                            f"Propagating failure: {node.name} ← child '{child.name}' "
+                            f"Propagating failure: {node.name} <- child '{child.name}' "
                             f"needs human intervention",
                             node.depth
                         )
                         node.needs_human_intervention = True
                         node.status = "human_needed"
                         break
-
-    def _resolve_issues_after_phase2(self, root: Node) -> List[Tuple[str, str, Optional[CompositionFeedback]]]:
-        """
-        Walk bottom-up, check each failed node, determine which parents need redecomposition.
-        Returns list of (parent_node_id, reason, composition_feedback).
-
-        Resolution logic:
-        1. For each node, check children:
-           a. INSUFFICIENT_CAPABILITIES + parent has resource → parent redecomposes
-           b. INSUFFICIENT_CAPABILITIES + parent lacks resource → propagate (post-phase)
-        2. For each node, check own status:
-           a. CANNOT_COMPOSE or structural validation error → node redecomposes
-           b. Other failure → propagate (post-phase)
-        """
-        nodes_by_depth = self._collect_nodes_by_depth(root, reverse=True)
-        issues: List[Tuple[str, str, Optional[CompositionFeedback]]] = []
-
-        for depth, nodes in nodes_by_depth:
-            for node in nodes:
-                if node.status not in ("failed", "human_needed"):
-                    # Check children even if node itself is ok
-                    self._check_child_issues(node, issues)
-                    continue
-
-                # Check own CANNOT_COMPOSE
-                if node.validation and node.validation.repair_action == "redecompose":
-                    has_cannot_compose = any(
-                        e.error_type == "CANNOT_COMPOSE"
-                        for e in (node.validation.structured_errors or [])
-                    )
-                    if has_cannot_compose or self.validator.should_redecompose(node, node.validation):
-                        issues.append((node.node_id, "redecompose_validation", node.composition_feedback))
-                        continue
-
-                self._check_child_issues(node, issues)
-
-        return issues
 
     def _check_child_issues(self, node: Node, issues: List[Tuple[str, str, Optional[CompositionFeedback]]]) -> None:
         """Check children of node for INSUFFICIENT_CAPABILITIES that this node can resolve."""
@@ -603,57 +549,54 @@ class TreeBuilder:
                 return  # One child issue triggers parent redecomposition
 
     # ======================================================================
-    # Outer Loop
+    # Post-BFS: Remaining Issue Resolution
+    # ======================================================================
+
+    def _resolve_insufficient_capabilities(self, root: Node) -> List[Tuple[str, str, Optional[CompositionFeedback]]]:
+        """
+        Walk bottom-up, check for leaves with INSUFFICIENT_CAPABILITIES
+        whose parent has the missing resource → parent redecomposes.
+        This is a single-pass fixup after BFS, not a round loop.
+        """
+        nodes_by_depth = self._collect_nodes_by_depth(root, reverse=True)
+        issues: List[Tuple[str, str, Optional[CompositionFeedback]]] = []
+
+        for _depth, nodes in nodes_by_depth:
+            for node in nodes:
+                self._check_child_issues(node, issues)
+
+        return issues
+
+    # ======================================================================
+    # Outer Loop (Single Pass)
     # ======================================================================
 
     def build_tree(self, root_node: Node) -> Node:
         """
         Build the complete decomposition tree.
         BFS level-by-level expansion with immediate top-down codegen.
-        Composition verification happens right after each parent's decomposition,
-        so root failures are detected before any child work is done.
-        Cross-phase issue resolution for INSUFFICIENT_CAPABILITIES.
+        Node-level redecomposition is handled inline during BFS (no round loop).
+        Post-BFS: single-pass fixup for INSUFFICIENT_CAPABILITIES.
         """
         self._log("=" * 50)
         self._log(f"Building decomposition tree for: {root_node.name}")
         self._log("=" * 50)
 
         root_node.status = "pending"
-        redecompose_count = 0
-        max_redecompose = self.config.max_decompose_retries
 
-        while True:
-            # Phase 1: BFS expansion with immediate top-down codegen.
-            # Composition verification happens right after each parent's decomposition.
-            self._phase1_expand(root_node)
+        # BFS expansion with inline redecomposition (no outer round loop).
+        # Parent CANNOT_COMPOSE → cleared + redecomposed immediately in _phase1_expand.
+        self._phase1_expand(root_node)
 
-            # Post-Phase 1: check for failures that need redecomposition
-            issues = self._resolve_issues_after_phase2(root_node)
-
-            if not issues:
-                # Check for unresolvable failures (no ancestor has the missing resource).
-                # These propagate upward to mark the tree, but don't re-enter Phase 1.
-                self._propagate_failures(root_node)
-                self._log("=" * 50)
-                self._log("Tree building complete")
-                self._log("=" * 50)
-                return root_node
-
-            if redecompose_count >= max_redecompose:
-                self._log(f"Max redecompose retries ({max_redecompose}) reached", 0)
-                for node_id, reason, _feedback in issues:
-                    node = self._find_node(root_node, node_id)
-                    if node:
-                        node.needs_human_intervention = True
-                        node.status = "human_needed"
-                return root_node
-
-            # Resolve issues: clear subtrees, preserve feedback, re-enter Phase 1
+        # Post-BFS: handle INSUFFICIENT_CAPABILITIES that need parent redecomposition.
+        # This is a single-pass fixup, not a round loop.
+        issues = self._resolve_insufficient_capabilities(root_node)
+        if issues:
             for node_id, reason, feedback in issues:
                 node = self._find_node(root_node, node_id)
                 if node:
                     self._save_snapshot(
-                        node, "redecompose", redecompose_count,
+                        node, "redecompose", 0,
                         f"redecompose_{reason}",
                         [f"Redecomposing due to: {reason}"]
                     )
@@ -661,13 +604,15 @@ class TreeBuilder:
                     if feedback:
                         node.composition_feedback = feedback
                     node.status = "pending"
+            # Re-run BFS for the cleared subtrees (single pass, no round loop)
+            self._phase1_expand(root_node)
 
-            redecompose_count += 1
-            self._log(
-                f"Redecomposition round {redecompose_count}/{max_redecompose}: "
-                f"resetting {len(issues)} node(s)",
-                0
-            )
+        # Propagate unresolvable failures upward
+        self._propagate_failures(root_node)
+        self._log("=" * 50)
+        self._log("Tree building complete")
+        self._log("=" * 50)
+        return root_node
 
     def save_tree(self, root_node: Node, filename: str = "decomposition_tree.json"):
         """Save the decomposition tree to a JSON file."""

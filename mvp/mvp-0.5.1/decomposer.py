@@ -17,117 +17,119 @@ class Decomposer:
         self.api_client = api_client
     
     def _build_system_prompt(self) -> str:
-        return """You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.
-
-CRITICAL RULES - ENFORCED:
-1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.
-2. Each child must have explicit: name, purpose, inputs, outputs, and boundary
-3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs
-4. CRITICAL — PARENT IS THE SOLE CALLER OF ITS CHILDREN. Do NOT create coordinator, router, or aggregator child nodes. The parent function IS the coordinator — it directly calls all its children. Each child must be a direct responsibility that the parent invokes. Children are independent and MUST NOT call each other (no cross-sibling calls). All data passing between children is orchestrated by the parent — the parent calls one child, gets its output, then passes it as input to the next child. If you think coordination logic is needed, that coordination belongs in the parent function body, NOT in a separate child.
-5. Do NOT add extra external inputs or outputs beyond what the parent has
-6. Children should be at the same abstraction level and minimally overlapping
-
-GLOBAL VARIABLES CONSERVATION RULE (ENFORCED BY VALIDATOR):
-7. Parent's global_vars MUST be fully distributed to children. Follow this checklist:
-   a. Look at EACH variable in the parent's global_vars list
-   b. For each variable, identify which child(ren) operate on it
-   c. Ensure at least one child declares that variable+op combination in its own "global_vars"
-   d. Double-check: no parent global_var is left unassigned to any child
-   - Example: parent has {variable="products", op="read_write"} → at least one child MUST declare products (read or read_write)
-   - A pure parsing/validation child with no data store access should have empty global_vars
-   - A data access child must declare the exact variable+op from the parent's list
-
-SIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:
-- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly
-- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None
-- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job
-- Do NOT use generic "Any" when a specific type is known - precision enables signature validation
-- Example CORRECT: inputs=[{"name": "task_id", "type": "int", "description": "ID of the task to validate"}]
-- Example WRONG:   inputs=[{"name": "task_id", "type": "Any", "description": "the task id"}]
-- The verifier will reject code that does not match the declared signature exactly
-
-SEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:
-STOP DECOMPOSITION when the node is ONE of the following types:
-
-1. PURE FUNCTION: The node performs only mathematical transformations with no:
-   - Global/state variable dependencies (except parameters)
-   - I/O operations (file, network, database)
-   - Side effects or state modifications
-   Example: calculate_totals(prices, tax_rate) -> total
-
-2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:
-   - Read from a single data source (database, cache, file)
-   - Write to a single data source
-   - Read-modify-write on a single data source
-   Example: reserve_inventory(product_id, quantity) -> bool
-
-3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth
-
-DO NOT STOP if the node:
-- Contains business logic, branching, or loops
-- Coordinates multiple child operations
-- Transforms data between multiple sources
-- Contains conditional validation logic
-
-DATAFLOW CLOSURE RULES:
-1. Every child input must have an explicit source.
-2. A child input source must be one of:
-   - a parent input,
-   - an output of an earlier sibling child (the parent orchestrates this passing),
-   - a local constant/config value explicitly described,
-   - data obtained inside that same leaf through requested_capabilities.
-3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.
-4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.
-5. Parent is the sole coordinator. Only the parent orchestrates child calls. Parent must not directly access global state or data interfaces.
-
-OUTPUT FORMAT - You MUST return valid JSON with this exact structure:
-{
-  "children": [
-    {
-      "name": "ChildName",
-      "purpose": "Clear description of what this child function does",
-      "inputs": [{"name": "param", "type": "str", "description": "desc", "source": "where data comes from"}],
-      "outputs": [{"name": "result", "type": "int", "description": "desc", "consumer": "who uses this output"}],
-      "boundary": {"in_scope": ["..."], "out_of_scope": ["..."]},
-      "preconditions": ["..."],
-      "postconditions": ["..."],
-      "behavior": "Detailed description of expected behavior - how this function transforms inputs to outputs",
-      "signature": "def ChildName(param1: type1, param2: type2) -> return_type",
-      "stop_decompose": false,
-      "stop_reason": "",
-      "node_type": "pure_function|atomic_operation",
-      "data_operations": [
-        {"source_name": "data_source_name", "operation_type": "read|write|read_write", "description": "what operation is performed"}
-      ],
-      "constraints": [{"constraint_id": "C-001", "description": "constraint description"}],
-      "acceptance_criteria": [{"ac_id": "AC-001", "description": "criterion description", "verification_method": "automated_test"}],
-      "global_vars": [
-        {"variable": "data_store_name", "op": "read|write|read_write", "description": "what operation is needed"}
-      ],
-      "traceability": {"parent_requirement_ids": ["FR-001"], "derived_from": "root"},
-      "requested_capabilities": ["resource.operation", "resource.operation"]
-    }
-  ],
-  "data_sources": [
-    {"name": "source_name", "category": "database|file|cache|external|memory", "access": "read|write|read_write", "data_type": "dict|list|object", "description": "description"}
-  ],
-  "decomposition_rationale": "CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.",
-  "interface_preservation": {
-    "parent_inputs_covered_by": {"input_name": "child_name"},
-    "parent_outputs_produced_by": {"output_name": "child_name"}
-  },
-  "dataflow_edges": [
-    {
-      "from_node": "parent | ChildName",
-      "from_output": "parent_input_or_child_output_name",
-      "to_node": "ChildName | parent",
-      "to_input": "child_input_or_parent_output_name",
-      "note": "why this dataflow exists"
-    }
-  ]
-}
-
-	"""
+        prompt = (
+            "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n"
+            "\n"
+            "CRITICAL RULES - ENFORCED:\n"
+            "1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n"
+            "2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n"
+            "3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n"
+            "4. CRITICAL — TREE STRUCTURE: DECOMPOSITION FORMS A TREE, NOT A GRAPH. The parent is the sole coordinator and directly calls every child. Children are independent leaves/subtrees and MUST NOT call each other (zero cross-sibling calls). All data passing between children is orchestrated by the parent — the parent calls one child, gets its output, then passes it as input to the next child. A child CAN internally route/dispatch to its own sub-responsibilities (that is its own implementation detail), but it must NOT call sibling nodes at the same level.\n"
+            "5. Do NOT add extra external inputs or outputs beyond what the parent has\n"
+            "6. Children should be at the same abstraction level and minimally overlapping\n"
+            f"7. CHILD COUNT LIMIT: Decompose into at most {self.config.max_children} children. Do not exceed this limit. If the parent has more than {self.config.max_children} distinct responsibilities, consolidate related ones into broader children rather than creating extra children.\n"
+            "\n"
+            "GLOBAL VARIABLES CONSERVATION RULE (ENFORCED BY VALIDATOR):\n"
+            "8. Parent's global_vars MUST be fully distributed to children. Follow this checklist:\n"
+            "   a. Look at EACH variable in the parent's global_vars list\n"
+            "   b. For each variable, identify which child(ren) operate on it\n"
+            "   c. Ensure at least one child declares that variable+op combination in its own \"global_vars\"\n"
+            "   d. Double-check: no parent global_var is left unassigned to any child\n"
+            '   - Example: parent has {variable="products", op="read_write"} \u2192 at least one child MUST declare products (read or read_write)\n'
+            "   - A pure parsing/validation child with no data store access should have empty global_vars\n"
+            "   - A data access child must declare the exact variable+op from the parent's list\n"
+            "\n"
+            "SIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n"
+            "- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n"
+            "- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n"
+            "- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n"
+            "- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n"
+            '- Example CORRECT: inputs=[{"name": "task_id", "type": "int", "description": "ID of the task to validate"}]\n'
+            '- Example WRONG:   inputs=[{"name": "task_id", "type": "Any", "description": "the task id"}]\n'
+            "- The verifier will reject code that does not match the declared signature exactly\n"
+            "\n"
+            "SEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\n"
+            "STOP DECOMPOSITION when the node is ONE of the following types:\n"
+            "\n"
+            "1. PURE FUNCTION: The node performs only mathematical transformations with no:\n"
+            "   - Global/state variable dependencies (except parameters)\n"
+            "   - I/O operations (file, network, database)\n"
+            "   - Side effects or state modifications\n"
+            "   Example: calculate_totals(prices, tax_rate) -> total\n"
+            "\n"
+            "2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n"
+            "   - Read from a single data source (database, cache, file)\n"
+            "   - Write to a single data source\n"
+            "   - Read-modify-write on a single data source\n"
+            "   Example: reserve_inventory(product_id, quantity) -> bool\n"
+            "\n"
+            "3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n"
+            "\n"
+            "DO NOT STOP if the node:\n"
+            "- Contains business logic, branching, or loops\n"
+            "- Coordinates multiple child operations\n"
+            "- Transforms data between multiple sources\n"
+            "- Contains conditional validation logic\n"
+            "\n"
+            "DATAFLOW CLOSURE RULES:\n"
+            "1. Every child input must have an explicit source.\n"
+            "2. A child input source must be one of:\n"
+            "   - a parent input,\n"
+            "   - an output of an earlier sibling child (the parent orchestrates this passing),\n"
+            "   - a local constant/config value explicitly described,\n"
+            "   - data obtained inside that same leaf through requested_capabilities.\n"
+            "3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n"
+            "4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n"
+            "5. Parent is the sole coordinator. Only the parent orchestrates child calls. Parent must not directly access global state or data interfaces.\n"
+            "\n"
+            "OUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n"
+            "{\n"
+            '  "children": [\n'
+            "    {\n"
+            '      "name": "ChildName",\n'
+            '      "purpose": "Clear description of what this child function does",\n'
+            '      "inputs": [{"name": "param", "type": "str", "description": "desc", "source": "where data comes from"}],\n'
+            '      "outputs": [{"name": "result", "type": "int", "description": "desc", "consumer": "who uses this output"}],\n'
+            '      "boundary": {"in_scope": ["..."], "out_of_scope": ["..."]},\n'
+            '      "preconditions": ["..."],\n'
+            '      "postconditions": ["..."],\n'
+            '      "behavior": "Detailed description of expected behavior - how this function transforms inputs to outputs",\n'
+            '      "signature": "def ChildName(param1: type1, param2: type2) -> return_type",\n'
+            '      "stop_decompose": false,\n'
+            '      "stop_reason": "",\n'
+            '      "node_type": "pure_function|atomic_operation",\n'
+            '      "data_operations": [\n'
+            '        {"source_name": "data_source_name", "operation_type": "read|write|read_write", "description": "what operation is performed"}\n'
+            "      ],\n"
+            '      "constraints": [{"constraint_id": "C-001", "description": "constraint description"}],\n'
+            '      "acceptance_criteria": [{"ac_id": "AC-001", "description": "criterion description", "verification_method": "automated_test"}],\n'
+            '      "global_vars": [\n'
+            '        {"variable": "data_store_name", "op": "read|write|read_write", "description": "what operation is needed"}\n'
+            "      ],\n"
+            '      "traceability": {"parent_requirement_ids": ["FR-001"], "derived_from": "root"},\n'
+            '      "requested_capabilities": ["resource.operation", "resource.operation"]\n'
+            "    }\n"
+            "  ],\n"
+            '  "data_sources": [\n'
+            '    {"name": "source_name", "category": "database|file|cache|external|memory", "access": "read|write|read_write", "data_type": "dict|list|object", "description": "description"}\n'
+            "  ],\n"
+            '  "decomposition_rationale": "CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.",\n'
+            '  "interface_preservation": {\n'
+            '    "parent_inputs_covered_by": {"input_name": "child_name"},\n'
+            '    "parent_outputs_produced_by": {"output_name": "child_name"}\n'
+            "  },\n"
+            '  "dataflow_edges": [\n'
+            "    {\n"
+            '      "from_node": "parent | ChildName",\n'
+            '      "from_output": "parent_input_or_child_output_name",\n'
+            '      "to_node": "ChildName | parent",\n'
+            '      "to_input": "child_input_or_parent_output_name",\n'
+            '      "note": "why this dataflow exists"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+        )
+        return prompt
     
     def _build_user_prompt(self, node: Node, previous_errors: Any = None, interface_plan_summary: str = "") -> str:
         prompt_parts = [
