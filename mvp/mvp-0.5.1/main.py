@@ -289,6 +289,7 @@ Examples:
         max_retries=args.max_retries,
         max_decompose_retries=args.max_decompose_retries,
         timeout=args.timeout,
+        verbose=args.verbose,
         output_dir=args.output,
         nodes_dir=os.path.join(args.output, "nodes")
     )

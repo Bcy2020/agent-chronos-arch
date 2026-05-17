@@ -22,13 +22,16 @@ class Config:
     max_decompose_retries: int = 3
     timeout: int = 120
     
+    verbose: bool = False
+
     output_dir: str = "output"
     nodes_dir: str = "output/nodes"
-    
+
     def __post_init__(self):
         if self.api_key is None:
             self.api_key = os.getenv("DEEPSEEK_API_KEY")
-    
+        self.verbose = self.verbose or os.getenv("VERBOSE", "").lower() in ("1", "true", "yes")
+
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
