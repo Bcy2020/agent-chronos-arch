@@ -23,7 +23,7 @@ CRITICAL RULES - ENFORCED:
 1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.
 2. Each child must have explicit: name, purpose, inputs, outputs, and boundary
 3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs
-4. CRITICAL — PARENT IS THE SOLE CALLER OF ITS CHILDREN. Do NOT create coordinator, router, or aggregator child nodes. The parent function IS the coordinator — it directly calls all its children. Each child must be a direct responsibility that the parent invokes. Children are independent and MUST NOT call each other (no cross-sibling calls). All data passing between children is orchestrated by the parent — the parent calls one child, gets its output, then passes it as input to the next child. If you think coordination logic is needed, that coordination belongs in the parent function body, NOT in a separate child.
+4. DECOMPOSITION IS A TREE, NOT A GRAPH. The hierarchy must form a strict tree structure — each child has exactly one parent. A child node can only call functions that are its own descendants (children, grandchildren, etc.). A child must NEVER call its parent, its siblings, or any node that is not a descendant of itself. If you create a routing/coordination child, that child can only delegate to its own children — not to sibling nodes at the same level.
 5. Do NOT add extra external inputs or outputs beyond what the parent has
 6. Children should be at the same abstraction level and minimally overlapping
 
@@ -78,7 +78,7 @@ DATAFLOW CLOSURE RULES:
    - data obtained inside that same leaf through requested_capabilities.
 3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.
 4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.
-5. Parent is the sole coordinator. Only the parent orchestrates child calls. Parent must not directly access global state or data interfaces.
+5. Each parent orchestrates calls to its own direct children. A parent must not directly access global state or data interfaces.
 
 OUTPUT FORMAT - You MUST return valid JSON with this exact structure:
 {
