@@ -373,17 +373,27 @@ class Decomposer:
             return node, [f"API call failed: {e}"]
         
         parsed = self._parse_response(response)
-        
+
+        if self.config.verbose:
+            print("\n" + "=" * 60)
+            print("DECOMPOSER RAW LLM RESPONSE")
+            print("=" * 60)
+            print(f"Node: {node.name}")
+            print(f"Rationale: {parsed.get('decomposition_rationale', 'N/A')[:500]}")
+            cdata = parsed.get("children", [])
+            print(f"Children ({len(cdata)}):")
+            for cd in cdata:
+                name = cd.get("name", "?")
+                ntype = cd.get("node_type", "?")
+                purpose = cd.get("purpose", "")[:80]
+                stop = cd.get("stop_decompose", False)
+                print(f"  - {name} [{ntype}] stop={stop} | {purpose}")
+            print("=" * 60 + "\n")
+
         if "error" in parsed:
             return node, [f"Failed to parse LLM response: {parsed['error']}"]
         
         children_data = parsed.get("children", [])
-
-        # CRITICAL: Reject any coordinator child nodes
-        coordinator_children = [c for c in children_data if c.get("node_type") == "coordination"]
-        if coordinator_children:
-            coord_names = [c.get("name", "unknown") for c in coordinator_children]
-            return node, [f"Coordinator child nodes are not allowed (found: {coord_names}). The parent IS the coordinator and must directly call all children."]
 
         if not children_data:
             node.stop_decompose = True

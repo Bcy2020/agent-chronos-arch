@@ -699,6 +699,13 @@ When status is "insufficient_capabilities", do NOT attempt to generate any code.
         except Exception as e:
             return "", [f"API call failed: {e}"]
 
+        if self.config.verbose:
+            print("\n" + "=" * 60)
+            print("CODEGEN STAGE 1 — REVIEW + IMPLEMENT RAW RESPONSE")
+            print("=" * 60)
+            print(response[:2000])
+            print("=" * 60 + "\n")
+
         parsed = self._parse_response(response)
         status = parsed.get("status", "ok")
         node.composition_feedback = None
@@ -725,6 +732,13 @@ When status is "insufficient_capabilities", do NOT attempt to generate any code.
         except Exception as e:
             print(f"Verification step failed, accepting step 1 code: {e}")
             return code, []
+
+        if self.config.verbose:
+            print("\n" + "=" * 60)
+            print("CODEGEN STAGE 2 — VERIFY RAW RESPONSE")
+            print("=" * 60)
+            print(verify_response[:2000])
+            print("=" * 60 + "\n")
 
         verify_parsed = self._parse_response(verify_response)
         verify_status = verify_parsed.get("status", "ok")
@@ -763,6 +777,11 @@ When status is "insufficient_capabilities", do NOT attempt to generate any code.
             response = self.api_client.chat(messages, max_tokens=2048)
         except Exception as e:
             return "", [f"API call failed: {e}"]
+
+        if self.config.verbose:
+            print(f"\nLEAF CODEGEN RAW RESPONSE [{node.name}]:")
+            print(response[:1500])
+            print()
 
         parsed = self._parse_response(response)
         status = parsed.get("status", "ok")

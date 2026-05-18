@@ -77,7 +77,7 @@ class TreeBuilder:
         last_attempt = node.attempt_history[-1] if node.attempt_history else None
         validation = node.validation
 
-        return {
+        ctx = {
             "previous_errors": validation.errors if validation else [],
             "previous_children": last_attempt.children_snapshot if last_attempt else [c.name for c in node.children],
             "previous_contracts": last_attempt.contracts_snapshot if last_attempt else {k: v.to_dict() for k, v in node.children_contracts.items()},
@@ -91,6 +91,21 @@ class TreeBuilder:
                 "composition_feedback": node.composition_feedback.to_dict() if node.composition_feedback else None,
             }
         }
+
+        if self.config.verbose:
+            print("\n" + "=" * 60)
+            print("REDECOMPOSE CONTEXT — FEEDING BACK TO LLM")
+            print("=" * 60)
+            print(f"Node: {node.name}")
+            print(f"Previous children: {ctx['previous_children']}")
+            print(f"Error types: {ctx['validator_report']['error_types']}")
+            print(f"Errors: {ctx['previous_errors']}")
+            if ctx['validator_report']['composition_feedback']:
+                import json as _json
+                print(f"Composition feedback: {_json.dumps(ctx['validator_report']['composition_feedback'], indent=2, ensure_ascii=False)}")
+            print("=" * 60 + "\n")
+
+        return ctx
 
     def _log(self, message: str, indent: int = 0):
         prefix = "  " * indent
@@ -189,6 +204,13 @@ class TreeBuilder:
                     continue
 
             self._log(f"Decomposed into {len(node.children)} children", node.depth)
+
+            if self.config.verbose:
+                print(f"\n  CHILDREN AFTER DECOMPOSITION [{node.name}]:")
+                for c in node.children:
+                    ctype = "leaf" if c.stop_decompose else "parent"
+                    print(f"    [{ctype}] {c.name}: {c.purpose[:100]}")
+                print()
 
             conservation_errors = self.validator.check_conservation(node)
             if conservation_errors:
@@ -385,6 +407,16 @@ class TreeBuilder:
 
             code, code_errors = self.code_generator.generate_with_retry(node)
 
+            if self.config.verbose and code:
+                print("\n" + "-" * 50)
+                print(f"GENERATED CODE [{node.name}]")
+                print("-" * 50)
+                for line in code.strip().split("\n")[:30]:
+                    print(f"  {line}")
+                if len(code.strip().split("\n")) > 30:
+                    print(f"  ... ({len(code.strip().split('\n'))} total lines)")
+                print("-" * 50 + "\n")
+
             if code_errors:
                 if any(e.startswith("CANNOT_COMPOSE") for e in code_errors):
                     node.validation = ValidationResult(
@@ -422,6 +454,19 @@ class TreeBuilder:
                 return True
 
             self._log(f"Validation failed: {validation.errors}", node.depth)
+
+            if self.config.verbose:
+                child_names = {c.name for c in node.children}
+                from validator import Validator as _V
+                _tmp_v = _V(self.config)
+                called = _tmp_v._extract_function_calls(code)
+                used = child_names & called
+                unused = child_names - called
+                print(f"\n  VERBOSE: Child call analysis for [{node.name}]:")
+                print(f"    Called functions in code: {sorted(called)}")
+                print(f"    Children used: {sorted(used)}")
+                print(f"    Children NOT used: {sorted(unused)}")
+                print(f"  (end)\n")
 
             if validation.repair_action == "redecompose" or self.validator.should_redecompose(node, validation):
                 self._log("Re-decomposition required", node.depth)
