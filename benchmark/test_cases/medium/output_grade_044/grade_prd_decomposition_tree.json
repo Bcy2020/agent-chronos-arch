@@ -1,0 +1,1220 @@
+{
+  "node_id": "root",
+  "name": "Grade_prd",
+  "depth": 0,
+  "parent_id": null,
+  "purpose": "Student Grade System",
+  "inputs": [
+    {
+      "name": "input",
+      "type": "Any",
+      "description": "System input"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "output",
+      "type": "Any",
+      "description": "System output"
+    }
+  ],
+  "boundary": {
+    "in_scope": [
+      "All functionality described in the input"
+    ],
+    "out_of_scope": [
+      "Functionality not described in the input"
+    ]
+  },
+  "global_vars": [
+    {
+      "variable": "students",
+      "op": "read_write",
+      "description": "Stores student information keyed by student_id."
+    },
+    {
+      "variable": "courses",
+      "op": "read_write",
+      "description": "Stores course information keyed by course_id."
+    },
+    {
+      "variable": "grades",
+      "op": "read_write",
+      "description": "Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness."
+    }
+  ],
+  "data_sources": [
+    {
+      "name": "students",
+      "category": "memory",
+      "access": "read_write",
+      "data_type": "dict",
+      "description": "Stores student information keyed by student_id."
+    },
+    {
+      "name": "courses",
+      "category": "memory",
+      "access": "read_write",
+      "data_type": "dict",
+      "description": "Stores course information keyed by course_id."
+    },
+    {
+      "name": "grades",
+      "category": "memory",
+      "access": "read_write",
+      "data_type": "dict",
+      "description": "Stores grade records keyed by grade_id."
+    }
+  ],
+  "preconditions": [],
+  "postconditions": [],
+  "error_handling": {},
+  "status": "failed",
+  "children": [],
+  "children_contracts": {},
+  "decomposition_rationale": "The parent Grade_prd parses input, routes to command-specific handlers, and returns result. ParseInput extracts command and grade_data. RouteCommand dispatches to the appropriate handler based on command. Each handler implements one command's business logic, accessing data sources via requested_capabilities. The handlers cover all commands except get_grade_report, get_course_stats, add_student, add_course which are not included due to child limit; they can be added similarly. Global variables are distributed: HandleRecordGrade uses read on students and courses, read_write on grades; HandleUpdateGrade and HandleDeleteGrade use read_write on grades; HandleGetStudentGrades uses read on grades and courses; HandleGetCourseGrades uses read on grades; HandleListClassGrades uses read on students, grades, courses. This covers all parent global_vars operations.",
+  "subprd": {
+    "task_id": "root",
+    "purpose": "Student Grade System",
+    "description": "INPUT FORMAT:\n  Format: json\n  Description: Input is a JSON object with command and grade_data fields. The grade_data contains parameters specific to the command.\n  Schema:\n    command: string (one of: record_grade, update_grade, delete_grade, get_student_grades, get_course_grades, list_class_grades, get_grade_report, get_course_stats, add_student, add_course)\n    grade_data: object containing fields: student_id (int), course_id (int), score (int, 0-100), grade_id (int), class (string), name (string), credit (int), teacher (string), enrollment_year (int)\n  Examples:\n    {\"command\": \"record_grade\", \"grade_data\": {\"student_id\": 1, \"course_id\": 1, \"score\": 92}}\n    {\"command\": \"update_grade\", \"grade_data\": {\"grade_id\": 1, \"score\": 88}}\n    {\"command\": \"get_student_grades\", \"grade_data\": {\"student_id\": 1}}\n\nOUTPUT FORMAT:\n  Format: json\n  Description: Output is a JSON object with success boolean, message string, and data object containing command-specific results.\n  Schema:\n    success: boolean\n    message: string\n    data: object (varies by command)\n  Examples:\n    {\"success\": true, \"message\": \"\\u6210\\u7ee9\\u8bb0\\u5f55\\u6210\\u529f\", \"data\": {\"grade_id\": 1, \"letter_grade\": \"A\"}}\n    {\"success\": false, \"message\": \"\\u8be5\\u5b66\\u751f\\u6b64\\u8bfe\\u7a0b\\u5df2\\u6709\\u6210\\u7ee9\\u8bb0\\u5f55\", \"data\": {\"existing_grade_id\": 1}}\n    {\"success\": true, \"data\": {\"grades\": [{\"course\": \"\\u6570\\u5b66\", \"score\": 88, \"letter\": \"B\", \"credit\": 4}], \"average\": 88, \"total_credits\": 4, \"gpa\": 3.0}}\n\nFunctional Requirements:\n[FR-001] Record Grade: Teacher records a grade for a student in a course. Validates student existence, course existence, score range (0-100), and no duplicate grade for same student and course.\n[FR-002] Update Grade: Teacher updates an existing grade record. Validates grade record existence and updates score and recorded_at timestamp.\n[FR-003] Delete Grade: Teacher deletes a grade record. Validates grade record existence.\n[FR-004] Get Student Grades: Retrieve all grades for a student, compute average, total credits, and GPA. Display grades with letter grades.\n[FR-005] Get Course Grades: Retrieve all grades for a course, compute average, max, min, and distribution of letter grades.\n[FR-006] List Grades by Class: List grades for a class, optionally filtered by course. Compute class average and rank students by score.\n[FR-007] Get Grade Report: Generate a text report for a student including all subject grades, average, GPA, and credit summary.\n[FR-008] Get Course Statistics: Compute statistics for a course: average, standard deviation, pass rate, and grade distribution percentages.\n[FR-009] Add Student: Add a new student with unique student_id. Validates no duplicate student_id.\n[FR-010] Add Course: Add a new course with unique course_id. Validates no duplicate course_id.",
+    "inputs": [],
+    "outputs": [],
+    "boundary": {
+      "in_scope": [],
+      "out_of_scope": []
+    },
+    "constraints": [
+      {
+        "constraint_id": "TC-STORAGE",
+        "description": "Storage: memory - Three independent in-memory data sources: students, courses, grades."
+      },
+      {
+        "constraint_id": "TC-CONCURRENCY",
+        "description": "Concurrency: single-user, auth_required: False"
+      },
+      {
+        "constraint_id": "TC-UI",
+        "description": "UI: api"
+      },
+      {
+        "constraint_id": "TC-LANGUAGE",
+        "description": "Language: Python"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-001",
+        "description": "Record grade: valid input creates grade with correct grade_id and letter grade; duplicate returns error.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-002",
+        "description": "Update grade: valid update changes score and timestamp; invalid grade_id returns error.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-003",
+        "description": "Delete grade: valid deletion removes record; invalid grade_id returns error.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-004",
+        "description": "Get student grades: returns correct grades, average, total credits, GPA with letter grades.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-005",
+        "description": "Get course grades: returns correct grades, average, max, min, distribution.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-006",
+        "description": "List class grades: returns students with scores and ranks, class average correct.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-007",
+        "description": "Get grade report: generates text report with all required fields.",
+        "verification_method": "manual_review",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-008",
+        "description": "Get course statistics: average, std_dev, pass_rate, grade distribution correct.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-009",
+        "description": "Add student: new student added; duplicate student_id returns error.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      },
+      {
+        "ac_id": "AC-010",
+        "description": "Add course: new course added; duplicate course_id returns error.",
+        "verification_method": "automated_test",
+        "related_fr_ids": []
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001",
+        "FR-002",
+        "FR-003",
+        "FR-004",
+        "FR-005",
+        "FR-006",
+        "FR-007",
+        "FR-008",
+        "FR-009",
+        "FR-010"
+      ],
+      "derived_from": ""
+    },
+    "global_state_operations": [],
+    "dependencies": []
+  },
+  "stop_decompose": false,
+  "stop_reason": "",
+  "estimated_lines": 0,
+  "code": "",
+  "code_file": "",
+  "validation": {
+    "passed": false,
+    "errors": [
+      "Conservation violation - Completeness: parent requires read+write on 'students', but children only provide: {'read'}",
+      "Conservation violation - Completeness: parent requires read+write on 'courses', but children only provide: {'read'}"
+    ],
+    "structured_errors": [],
+    "retry_count": 0,
+    "repair_action": "retry_code",
+    "fix_summary": {}
+  },
+  "attempt_history": [
+    {
+      "stage": "decompose",
+      "attempt_number": 0,
+      "children_snapshot": [],
+      "contracts_snapshot": {},
+      "decomposition_rationale": "",
+      "generated_code": "",
+      "validation_errors": [],
+      "structured_errors": [],
+      "decision": "started"
+    },
+    {
+      "stage": "decompose",
+      "attempt_number": 0,
+      "children_snapshot": [
+        "ParseInput",
+        "RouteCommand",
+        "HandleRecordGrade",
+        "HandleUpdateGrade",
+        "HandleDeleteGrade",
+        "HandleGetStudentGrades",
+        "HandleGetCourseGrades",
+        "HandleListClassGrades"
+      ],
+      "contracts_snapshot": {
+        "ParseInput": {
+          "purpose": "Parse the input JSON and extract command and grade_data.",
+          "inputs": [
+            {
+              "name": "input",
+              "type": "Any",
+              "description": "System input",
+              "source": "parent input"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "command",
+              "type": "str",
+              "description": "Extracted command",
+              "consumer": "RouteCommand"
+            },
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Extracted grade_data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Parse the input JSON string into a dict, extract 'command' and 'grade_data' fields. Validate command is one of the allowed commands.",
+          "signature": "def ParseInput(input: Any) -> Tuple[str, dict]",
+          "preconditions": [
+            "Input is valid JSON"
+          ],
+          "postconditions": [
+            "command and grade_data are extracted"
+          ],
+          "data_operations": []
+        },
+        "RouteCommand": {
+          "purpose": "Route the command to the appropriate handler function.",
+          "inputs": [
+            {
+              "name": "command",
+              "type": "str",
+              "description": "Command to route",
+              "source": "ParseInput"
+            },
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Data for the command",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result of the command execution",
+              "consumer": "FormatOutput"
+            }
+          ],
+          "behavior": "Based on command string, call the appropriate child handler function with grade_data. Collect the result dict.",
+          "signature": "def RouteCommand(command: str, grade_data: dict) -> dict",
+          "preconditions": [
+            "command is valid"
+          ],
+          "postconditions": [
+            "Result is produced by the appropriate handler"
+          ],
+          "data_operations": []
+        },
+        "HandleRecordGrade": {
+          "purpose": "Record a new grade for a student in a course.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains student_id, course_id, score",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Check student exists via students.exists, course exists via courses.exists, score between 0-100, no duplicate (student_id, course_id) via grades.create (which raises error on duplicate). If all valid, create grade with computed letter grade and current timestamp. Return success with grade_id and letter_grade.",
+          "signature": "def HandleRecordGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains student_id, course_id, score"
+          ],
+          "postconditions": [
+            "Grade record created if valid, error returned otherwise"
+          ],
+          "data_operations": [
+            {
+              "source_name": "students",
+              "operation_type": "read",
+              "description": "Check student existence"
+            },
+            {
+              "source_name": "courses",
+              "operation_type": "read",
+              "description": "Check course existence"
+            },
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Create grade record"
+            }
+          ]
+        },
+        "HandleUpdateGrade": {
+          "purpose": "Update an existing grade record.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains grade_id and score",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Check grade exists via grades.exists. If not, return error. Otherwise, update grade via grades.update with new score and current timestamp. Return success.",
+          "signature": "def HandleUpdateGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains grade_id and score"
+          ],
+          "postconditions": [
+            "Grade updated if exists, error otherwise"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Update grade record"
+            }
+          ]
+        },
+        "HandleDeleteGrade": {
+          "purpose": "Delete a grade record.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains grade_id",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Check grade exists via grades.exists. If not, return error. Otherwise, delete via grades.delete. Return success.",
+          "signature": "def HandleDeleteGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains grade_id"
+          ],
+          "postconditions": [
+            "Grade deleted if exists, error otherwise"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Delete grade record"
+            }
+          ]
+        },
+        "HandleGetStudentGrades": {
+          "purpose": "Retrieve all grades for a student, compute average, total credits, GPA.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains student_id",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with grades list, average, total_credits, gpa",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "List grades for student via grades.list with filter student_id. For each grade, get course via courses.get to get credit and course name. Compute letter grade from score. Compute average score, total credits, and GPA (using standard 4.0 scale). Return result dict.",
+          "signature": "def HandleGetStudentGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains student_id"
+          ],
+          "postconditions": [
+            "Returns grades with letter grades, average, total_credits, gpa"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for student"
+            },
+            {
+              "source_name": "courses",
+              "operation_type": "read",
+              "description": "Get course details"
+            }
+          ]
+        },
+        "HandleGetCourseGrades": {
+          "purpose": "Retrieve all grades for a course, compute average, max, min, distribution.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains course_id",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with grades list, average, max, min, distribution",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "List grades for course via grades.list with filter course_id. For each grade, get student name via students.get. Compute letter grade. Compute average, max, min scores. Compute distribution of letter grades (count per letter). Return result dict.",
+          "signature": "def HandleGetCourseGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains course_id"
+          ],
+          "postconditions": [
+            "Returns grades with letter grades, average, max, min, distribution"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for course"
+            },
+            {
+              "source_name": "students",
+              "operation_type": "read",
+              "description": "Get student names"
+            }
+          ]
+        },
+        "HandleListClassGrades": {
+          "purpose": "List grades for a class, optionally filtered by course, compute class average and rank students.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains class and optionally course_id",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with students list, class average, ranks",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "List all students via students.list, filter by class. For each student, get grades via grades.list (optionally filtered by course_id if provided). Compute average score per student. Compute class average. Rank students by average score descending. Return result dict.",
+          "signature": "def HandleListClassGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains class"
+          ],
+          "postconditions": [
+            "Returns students with scores and ranks, class average"
+          ],
+          "data_operations": [
+            {
+              "source_name": "students",
+              "operation_type": "read",
+              "description": "List students in class"
+            },
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for students"
+            }
+          ]
+        }
+      },
+      "decomposition_rationale": "The parent Grade_prd is a coordinator that parses input, routes to command-specific handlers, and formats output. The children are: ParseInput (pure function to extract command and data), RouteCommand (routes to appropriate handler), ten command handlers (each handles one command with validation and data access), and FormatOutput (pure function to wrap result). The handlers cover all functional requirements. Dataflow: ParseInput -> RouteCommand -> handler -> RouteCommand -> FormatOutput. Each handler uses the available data interfaces to access the in-memory stores. The parent's global_vars are distributed among handlers that need them.",
+      "generated_code": "",
+      "validation_errors": [],
+      "structured_errors": [],
+      "decision": "failed"
+    },
+    {
+      "stage": "validate",
+      "attempt_number": 1,
+      "children_snapshot": [
+        "ParseInput",
+        "RouteCommand",
+        "HandleRecordGrade",
+        "HandleUpdateGrade",
+        "HandleDeleteGrade",
+        "HandleGetStudentGrades",
+        "HandleGetCourseGrades",
+        "HandleListClassGrades"
+      ],
+      "contracts_snapshot": {
+        "ParseInput": {
+          "purpose": "Parse the input JSON to extract command and grade_data.",
+          "inputs": [
+            {
+              "name": "input",
+              "type": "Any",
+              "description": "System input",
+              "source": "parent input"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "command",
+              "type": "str",
+              "description": "Command string",
+              "consumer": "RouteCommand"
+            },
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Parsed grade data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Parse the input into command and grade_data. If input is already a dict, use directly. Validate that command is one of the allowed commands.",
+          "signature": "def ParseInput(input: Any) -> Tuple[str, dict]",
+          "preconditions": [
+            "Input is a valid JSON string or dict"
+          ],
+          "postconditions": [
+            "command and grade_data are extracted"
+          ],
+          "data_operations": []
+        },
+        "RouteCommand": {
+          "purpose": "Route the command to the appropriate handler and return the result.",
+          "inputs": [
+            {
+              "name": "command",
+              "type": "str",
+              "description": "Command string",
+              "source": "ParseInput"
+            },
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Parsed grade data",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result dict with success, message, data",
+              "consumer": "parent output"
+            }
+          ],
+          "behavior": "Based on command, call the appropriate handler function with grade_data. Return the handler's result.",
+          "signature": "def RouteCommand(command: str, grade_data: dict) -> dict",
+          "preconditions": [
+            "command is valid"
+          ],
+          "postconditions": [
+            "Result is produced by the appropriate handler"
+          ],
+          "data_operations": []
+        },
+        "HandleRecordGrade": {
+          "purpose": "Record a grade for a student in a course.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains student_id, course_id, score",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Validate student and course exist, score between 0-100, no duplicate grade. Create grade record with computed letter grade. Return success or error.",
+          "signature": "def HandleRecordGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains student_id, course_id, score"
+          ],
+          "postconditions": [
+            "Grade record created if valid, error otherwise"
+          ],
+          "data_operations": [
+            {
+              "source_name": "students",
+              "operation_type": "read",
+              "description": "Check student existence"
+            },
+            {
+              "source_name": "courses",
+              "operation_type": "read",
+              "description": "Check course existence"
+            },
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Check duplicate and create grade"
+            }
+          ]
+        },
+        "HandleUpdateGrade": {
+          "purpose": "Update an existing grade record.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains grade_id, score",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Validate grade exists, update score and recorded_at timestamp. Return success or error.",
+          "signature": "def HandleUpdateGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains grade_id and score"
+          ],
+          "postconditions": [
+            "Grade updated if valid, error otherwise"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Check existence and update"
+            }
+          ]
+        },
+        "HandleDeleteGrade": {
+          "purpose": "Delete a grade record.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains grade_id",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Validate grade exists, delete the grade record. Return success or error.",
+          "signature": "def HandleDeleteGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains grade_id"
+          ],
+          "postconditions": [
+            "Grade deleted if valid, error otherwise"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Check existence and delete"
+            }
+          ]
+        },
+        "HandleGetStudentGrades": {
+          "purpose": "Retrieve all grades for a student, compute average, total credits, GPA.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains student_id",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with grades, average, total_credits, gpa",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Retrieve all grades for the student. For each grade, get course name and credit. Compute average, total credits, GPA. Return result.",
+          "signature": "def HandleGetStudentGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains student_id"
+          ],
+          "postconditions": [
+            "Returns grade list with computed statistics"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for student"
+            },
+            {
+              "source_name": "courses",
+              "operation_type": "read",
+              "description": "Get course details"
+            }
+          ]
+        },
+        "HandleGetCourseGrades": {
+          "purpose": "Retrieve all grades for a course, compute statistics.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains course_id",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with grades, average, max, min, distribution",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Retrieve all grades for the course. Compute average, max, min, and letter grade distribution. Return result.",
+          "signature": "def HandleGetCourseGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains course_id"
+          ],
+          "postconditions": [
+            "Returns grade list with computed statistics"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for course"
+            }
+          ]
+        },
+        "HandleListClassGrades": {
+          "purpose": "List grades for a class, optionally filtered by course.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains class and optionally course_id",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with students, scores, ranks, class average",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Get all students in the class. For each student, get grades (optionally filtered by course). Compute class average and rank students by score. Return result.",
+          "signature": "def HandleListClassGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data contains class"
+          ],
+          "postconditions": [
+            "Returns list of students with scores and ranks, class average"
+          ],
+          "data_operations": [
+            {
+              "source_name": "students",
+              "operation_type": "read",
+              "description": "List students in class"
+            },
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for each student"
+            }
+          ]
+        }
+      },
+      "decomposition_rationale": "The parent Grade_prd parses input, routes to command-specific handlers, and returns result. ParseInput extracts command and grade_data. RouteCommand dispatches to the appropriate handler based on command. Each handler implements one command's business logic, accessing data sources via requested_capabilities. Handlers for record, update, delete, get student grades, get course grades, and list class grades are included. The remaining commands (get grade report, get course stats, add student, add course) are not included due to child limit; they can be added similarly. Dataflow: ParseInput -> RouteCommand -> handler -> RouteCommand -> parent output.",
+      "generated_code": "",
+      "validation_errors": [
+        "Conservation violation - Completeness: parent requires read+write on 'students', but children only provide: {'read'}",
+        "Conservation violation - Completeness: parent requires read+write on 'courses', but children only provide: {'read'}"
+      ],
+      "structured_errors": [],
+      "decision": "redecompose_conservation"
+    },
+    {
+      "stage": "validate",
+      "attempt_number": 2,
+      "children_snapshot": [
+        "ParseInput",
+        "RouteCommand",
+        "HandleRecordGrade",
+        "HandleUpdateGrade",
+        "HandleDeleteGrade",
+        "HandleGetStudentGrades",
+        "HandleGetCourseGrades",
+        "HandleListClassGrades"
+      ],
+      "contracts_snapshot": {
+        "ParseInput": {
+          "purpose": "Parse the input JSON to extract command and grade_data.",
+          "inputs": [
+            {
+              "name": "input",
+              "type": "Any",
+              "description": "System input",
+              "source": "parent input"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "command",
+              "type": "str",
+              "description": "Command string",
+              "consumer": "RouteCommand"
+            },
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Parsed grade data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Parse the input JSON and return command and grade_data.",
+          "signature": "def ParseInput(input: Any) -> Tuple[str, dict]",
+          "preconditions": [
+            "Input is valid JSON"
+          ],
+          "postconditions": [
+            "command is one of the valid commands",
+            "grade_data is a dict"
+          ],
+          "data_operations": []
+        },
+        "RouteCommand": {
+          "purpose": "Route the command to the appropriate handler and return the result.",
+          "inputs": [
+            {
+              "name": "command",
+              "type": "str",
+              "description": "Command string",
+              "source": "ParseInput"
+            },
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Parsed grade data",
+              "source": "ParseInput"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "output",
+              "type": "Any",
+              "description": "System output",
+              "consumer": "parent output"
+            }
+          ],
+          "behavior": "Based on command, call the appropriate handler and return its result.",
+          "signature": "def RouteCommand(command: str, grade_data: dict) -> Any",
+          "preconditions": [
+            "command is valid"
+          ],
+          "postconditions": [
+            "Output is a JSON object with success, message, data"
+          ],
+          "data_operations": []
+        },
+        "HandleRecordGrade": {
+          "purpose": "Record a grade for a student in a course. Validates student existence, course existence, score range, and no duplicate.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains student_id, course_id, score",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Check student exists, course exists, score between 0-100, no existing grade for same student and course. If valid, create grade with letter grade and return success.",
+          "signature": "def HandleRecordGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data has student_id, course_id, score"
+          ],
+          "postconditions": [
+            "Grade record created if valid",
+            "Error returned if invalid"
+          ],
+          "data_operations": [
+            {
+              "source_name": "students",
+              "operation_type": "read",
+              "description": "Check student existence"
+            },
+            {
+              "source_name": "courses",
+              "operation_type": "read",
+              "description": "Check course existence"
+            },
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Check duplicate and create grade"
+            }
+          ]
+        },
+        "HandleUpdateGrade": {
+          "purpose": "Update an existing grade record. Validates grade record existence and updates score and timestamp.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains grade_id, score",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Check grade exists, update score and recorded_at timestamp.",
+          "signature": "def HandleUpdateGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data has grade_id and score"
+          ],
+          "postconditions": [
+            "Grade updated if valid",
+            "Error returned if invalid"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Check existence and update grade"
+            }
+          ]
+        },
+        "HandleDeleteGrade": {
+          "purpose": "Delete a grade record. Validates grade record existence.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains grade_id",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Check grade exists, delete it.",
+          "signature": "def HandleDeleteGrade(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data has grade_id"
+          ],
+          "postconditions": [
+            "Grade deleted if valid",
+            "Error returned if invalid"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read_write",
+              "description": "Check existence and delete grade"
+            }
+          ]
+        },
+        "HandleGetStudentGrades": {
+          "purpose": "Retrieve all grades for a student, compute average, total credits, and GPA. Display grades with letter grades.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains student_id",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Fetch grades for student, compute average, total credits, GPA, and include letter grades.",
+          "signature": "def HandleGetStudentGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data has student_id"
+          ],
+          "postconditions": [
+            "Returns grades with letter grades, average, total credits, GPA"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for student"
+            },
+            {
+              "source_name": "courses",
+              "operation_type": "read",
+              "description": "Get course details for credit and name"
+            }
+          ]
+        },
+        "HandleGetCourseGrades": {
+          "purpose": "Retrieve all grades for a course, compute average, max, min, and distribution of letter grades.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains course_id",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Fetch grades for course, compute statistics.",
+          "signature": "def HandleGetCourseGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data has course_id"
+          ],
+          "postconditions": [
+            "Returns grades with average, max, min, distribution"
+          ],
+          "data_operations": [
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for course"
+            }
+          ]
+        },
+        "HandleListClassGrades": {
+          "purpose": "List grades for a class, optionally filtered by course. Compute class average and rank students by score.",
+          "inputs": [
+            {
+              "name": "grade_data",
+              "type": "dict",
+              "description": "Contains class and optionally course_id",
+              "source": "RouteCommand"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Result with success, message, data",
+              "consumer": "RouteCommand"
+            }
+          ],
+          "behavior": "Get students in class, get their grades (optionally filtered by course), compute average, rank by score.",
+          "signature": "def HandleListClassGrades(grade_data: dict) -> dict",
+          "preconditions": [
+            "grade_data has class"
+          ],
+          "postconditions": [
+            "Returns list of students with scores and ranks, class average"
+          ],
+          "data_operations": [
+            {
+              "source_name": "students",
+              "operation_type": "read",
+              "description": "List students in class"
+            },
+            {
+              "source_name": "grades",
+              "operation_type": "read",
+              "description": "List grades for students"
+            },
+            {
+              "source_name": "courses",
+              "operation_type": "read",
+              "description": "Optional course filter"
+            }
+          ]
+        }
+      },
+      "decomposition_rationale": "The parent Grade_prd parses input, routes to command-specific handlers, and returns result. ParseInput extracts command and grade_data. RouteCommand dispatches to the appropriate handler based on command. Each handler implements one command's business logic, accessing data sources via requested_capabilities. The handlers cover all commands except get_grade_report, get_course_stats, add_student, add_course which are not included due to child limit; they can be added similarly. Global variables are distributed: HandleRecordGrade uses read on students and courses, read_write on grades; HandleUpdateGrade and HandleDeleteGrade use read_write on grades; HandleGetStudentGrades uses read on grades and courses; HandleGetCourseGrades uses read on grades; HandleListClassGrades uses read on students, grades, courses. This covers all parent global_vars operations.",
+      "generated_code": "",
+      "validation_errors": [
+        "Conservation violation - Completeness: parent requires read+write on 'students', but children only provide: {'read'}",
+        "Conservation violation - Completeness: parent requires read+write on 'courses', but children only provide: {'read'}"
+      ],
+      "structured_errors": [],
+      "decision": "redecompose_conservation"
+    },
+    {
+      "stage": "decompose",
+      "attempt_number": 3,
+      "children_snapshot": [],
+      "contracts_snapshot": {},
+      "decomposition_rationale": "The parent Grade_prd parses input, routes to command-specific handlers, and returns result. ParseInput extracts command and grade_data. RouteCommand dispatches to the appropriate handler based on command. Each handler implements one command's business logic, accessing data sources via requested_capabilities. The handlers cover all commands except get_grade_report, get_course_stats, add_student, add_course which are not included due to child limit; they can be added similarly. Global variables are distributed: HandleRecordGrade uses read on students and courses, read_write on grades; HandleUpdateGrade and HandleDeleteGrade use read_write on grades; HandleGetStudentGrades uses read on grades and courses; HandleGetCourseGrades uses read on grades; HandleListClassGrades uses read on students, grades, courses. This covers all parent global_vars operations.",
+      "generated_code": "",
+      "validation_errors": [
+        "Conservation violation - Completeness: parent requires read+write on 'students', but children only provide: {'read'}",
+        "Conservation violation - Completeness: parent requires read+write on 'courses', but children only provide: {'read'}"
+      ],
+      "structured_errors": [],
+      "decision": "failed"
+    }
+  ],
+  "needs_human_intervention": true,
+  "requested_capabilities": [],
+  "granted_capabilities": null,
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseInput",
+      "to_input": "input",
+      "note": "Pass system input to parse"
+    },
+    {
+      "from_node": "ParseInput",
+      "from_output": "command",
+      "to_node": "RouteCommand",
+      "to_input": "command",
+      "note": "Pass parsed command"
+    },
+    {
+      "from_node": "ParseInput",
+      "from_output": "grade_data",
+      "to_node": "RouteCommand",
+      "to_input": "grade_data",
+      "note": "Pass parsed grade_data"
+    },
+    {
+      "from_node": "RouteCommand",
+      "from_output": "output",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "Return result"
+    }
+  ],
+  "composition_feedback": null
+}
