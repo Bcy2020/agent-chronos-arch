@@ -24,31 +24,33 @@ Agent Chronos 2.0 是一个**树中心的多 Agent 软件构造架构**。它将
 | **MVP-0.4.1** | Interface Layer (Phase 1+2) | 叶节点误用 `op_root_*` 操作 ID 作 Python 变量，引入 ResourceSpec/InterfaceSpec/InterfacePlan |
 | **MVP-0.4.2** | Interface Layer (Phase 3+4) | Interface 代码生成 + Capability Allocation，叶节点通过 `granted_capabilities` 替代全局变量 |
 | **MVP-0.4.3** | Architecture Feedback Loop | CodeGenerator 主动拒绝 (`CANNOT_COMPOSE`) + Validator 被动检测 + TreeBuilder 路由反馈到重分解 + Decomposer 生成 `dataflow_edges` |
-| **~~MVP-0.4.4~~** | ~~Leaf Rejection + Parent Redecomposition~~ | ~~废弃~~ — 在 DFS 上加的重分解补丁，使递归结构复杂化 |
-| **~~MVP-0.5.x~~** | ~~BFS 两阶段架构~~ | ~~废弃~~ — codegen 后置违反"组合即验证"，Phase 2 设计是根本性架构错误 |
-| **rewrite-0.6.0** | 回归 0.4.3 + 重写 | 汲取 0.4.4/0.5.x 教训，基于 DFS+即时 codegen 重新构建失败恢复机制 |
+| **MVP-0.4.4** | Leaf Rejection + Parent Redecomposition | 在 DFS 上加的重分解补丁，使递归结构复杂化 |
+| **MVP-0.5.0** | BFS + Phase 2 codegen 后置 | BFS 遍历方向正确，但 codegen 后置违反"组合即验证" |
+| **MVP-0.5.1** | BFS + 即时 codegen 尝试 | 修正了 codegen 时机，但 escalation 逻辑有缺陷，代码细节问题被误判为重分解 |
+| **fix-dispatcher** | 概念纠偏 + verbose 日志 | 发现 escalation 逻辑缺陷，但 BFS 代码骨架的问题不是补丁能修的 |
+| **rewrite-0.6.0** | BFS + 即时 codegen，正确实现 | 保留 BFS 遍历，修复 escalation 逻辑，区分结构性问题与代码细节问题 |
 
 ## 当前状态（2026-05-20）
 
 **最新分支**：`rewrite-0.6.0`（基于 main，已删除 mvp-0.4.4 和 mvp-0.5.1）
 **活跃目录**：
-- `mvp/mvp-0.4.3/` — 架构基石，DFS + 即时 codegen，无多余抽象
-- `rewrite-0.6.0` 将在此之上重写
+- `mvp/mvp-0.4.3/` — 保留作为参考，但其 DFS 遍历将被替代
+- `rewrite-0.6.0` 将基于 BFS + 即时 codegen 重写
 
-**核心教训**：0.5.x 的 BFS Phase 2（codegen 后置）是最大的架构错误。"组合即验证"要求 decompose 和 codegen 紧耦合，不能分离。0.4.3 的 DFS 结构正确，缺的是正确的失败恢复机制——而不是把一个正确结构的人拆成两半再加补丁。
+**核心教训**：BFS 遍历方向正确（逐层展开优于深度优先），**但 codegen 绝不能后置**。0.5.0 的 Phase 2 错误地把 decompose 和 codegen 拆成两个阶段，违反了"组合即验证"。0.5.1 试图修正（将 codegen 移入 BFS 循环），但 escalation 逻辑有缺陷——代码细节问题被错误地升级为结构重分解，且 BFS 骨架上的补丁越堆越多。正确路径：BFS 遍历 + 每个节点分解后**立即** codegen + 清晰区分结构性问题与代码细节问题。
 
-### 本会话（2026-05-20）：决断 — 抛弃 0.5.x，回退 0.4.3，准备重写
+### 本会话（2026-05-20）：决断 — 清理 0.4.4/0.5.x，基于 BFS+即时 codegen 重写
 
 **回顾走过的弯路**：
 - 0.4.4 在 DFS 上加 `while True` 重分解循环，补丁式修复，使递归复杂化
-- 0.5.0 把 codegen 后置到 Phase 2，犯了根本性架构错误
-- 0.5.1 试图把 codegen 移回 BFS 循环，但 BFS 的整体结构已经错了
-- fix-dispatcher 发现了 escalation 逻辑缺陷，但如果树结构本身不对，补再多逻辑也无用
+- 0.5.0 方向正确（BFS 逐层展开），但 Phase 2 codegen 后置违背"组合即验证"
+- 0.5.1 试图把 codegen 拉回 BFS 循环（正确方向），但 escalation 逻辑有缺陷，且 BFS 骨架上的补丁越堆越多
+- fix-dispatcher 发现了 escalation 逻辑缺陷——代码细节问题被误判为结构重分解
 
 **当前决策**：
-- 删除 mvp-0.4.4/ 和 mvp-0.5.1/ 目录
-- 基于 0.4.3 的 DFS + 即时 codegen 架构重写
-- 保存 0.4.3 之前的所有历史版本作为参考
+- 删除 mvp-0.4.4/ 和 mvp-0.5.1/ 目录（清理代码，git 历史仍在）
+- 基于 BFS + 即时 codegen 重写 0.6.0
+- 保留 0.4.3 及之前的历史版本作为参考
 
 ### 已验证的能力（来自 0.4.3 及之前）
 - LLM 驱动的递归树分解，语义驱动的停止条件
@@ -70,9 +72,9 @@ Agent Chronos 2.0 是一个**树中心的多 Agent 软件构造架构**。它将
 ### 尚未完成（rewrite-0.6.0）
 
 #### 核心设计目标
-- **正确的失败恢复**：DFS 框架下区分"结构性问题→重分解"和"代码细节问题→codegen 重试"，不再共享 retry 计数器
-- **叶节点能力拒绝**：应基于 0.4.3 的架构自然扩展，而非加补丁
-- **父子节点跨层传播**：子节点失败 → 正确的向上传播路径，而非 `while True` 包裹递归
+- **正确的失败恢复**：BFS 框架下区分"结构性问题→重分解"和"代码细节问题→codegen 重试"，不再共享 retry 计数器
+- **叶节点能力拒绝**：基于 BFS + 即时 codegen 架构自然扩展
+- **父子节点跨层传播**：子节点失败 → 正确的向上传播路径
 
 #### MVP-1.0
 - **代码执行管道**：生成的代码可连接执行
