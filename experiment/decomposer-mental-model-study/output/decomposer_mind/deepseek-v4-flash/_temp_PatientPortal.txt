@@ -1,0 +1,26 @@
+我之所以将 `PatientPortal` 拆分成这 9 个子节点，主要基于以下原则：
+
+1. **单一职责**：每个子节点只做一件明确的业务或校验事，不掺杂其他逻辑。这样便于单独测试、理解和复用。  
+2. **操作隔离**：患者 portal 的每个主要行为（注册、预约、查询、更新、校验）对应一个独立子节点，使得父节点可以像“调度器”一样按 action 依次调用它们。  
+3. **显式数据流**：子节点不直接读写全局状态，而是通过父节点传入必要的参数（如患者数据、医生 ID、时间段等），输出结果也返回给父节点。这样父节点可以自然地在调用链中添加错误处理或日志。  
+4. **边界清晰**：每个子节点只负责自己领域内的规则，不做多余的事。例如校验和时间检查分离，注册和预约分离，保险校验单独函数便于未来替换外部服务。
+
+下面逐一说明每个子节点的职责边界：
+
+| 子节点名称 | 职责与边界 |
+|---|---|
+| **`validate_patient_data`** | 对输入的 `patient_data` 字典进行字段完整性（如姓名、出生日期、联系方式等必填项）和基本格式检查（如 email 格式、年龄合理性）。它**不涉及**时间、数据库或医生信息。返回 True/False 或错误详情。 |
+| **`validate_appointment_timing`** | 仅检查预约时间是否在过去（即早于当前时间）。不关心患者是否存在、医生是谁，只判断时间值本身是否合法。返回布尔值。 |
+| **`check_patient_exists`** | 根据传入的 patient_id 在 `patients` 字典中查找是否存在对应记录。不检查数据内容，只回答“存在性”。返回 True/False。 |
+| **`check_doctor_availability`** | 根据医生 ID 和预约时间，在 `appointments` 字典中检查该医生在该时间是否已有预约冲突。不涉及患者信息。返回 True（空闲）或 False（冲突）。 |
+| **`register_patient_record`** | 接收已验证的患者数据，生成新的唯一 ID（比如自增或 UUID），将记录存入 `patients` 字典，并返回包含 ID 的完整记录。它**不负责**校验，仅执行创建和持久化操作。 |
+| **`book_appointment_record`** | 接收已验证的患者 ID、医生 ID、时间等信息，生成预约 ID，将新预约写入 `appointments` 字典，返回预约记录。边界：假定调用前所有校验（患者存在、医生空闲、时间合法）已经通过。 |
+| **`retrieve_patient_records`** | 给定 patient_id，从 `patients` 字典和可能关联的医疗记录表中提取所有该患者的记录，按时间戳升序排序后返回列表。不修改任何数据。 |
+| **`update_patient_profile`** | 接收 patient_id 和要更新的字段字典。先检查患者存在（可通过父节点提前调用 `check_patient_exists`），然后更新 `patients` 字典中对应的值，最后返回更新后的完整患者记录。边界：只更新患者基本信息，不涉及预约或保险。 |
+| **`validate_insurance`** | 模拟与外部保险系统通信，验证保险信息（如保险编号、保险公司、有效期）。返回验证成功或失败的结果。边界：不修改内部数据，仅返回布尔值或错误信息，外部调用结果由父节点决定后续流程。 |
+
+**补充说明**：父节点（`PatientPortal` 主函数）会根据 `action` 字段编排这些子节点。例如：
+- `action == "register"` 时顺序调用：`validate_patient_data` → `register_patient_record` → 返回结果。
+- `action == "book_appointment"` 时：`validate_appointment_timing` → `check_patient_exists` → `check_doctor_availability` → `book_appointment_record`，并在任一校验失败时提前返回错误。
+
+这样的分解确保了每个子节点都独立可测，父节点的控制逻辑清晰，且未来增加新动作（如取消预约）只需新增子节点并调整父节点的 switch-case。

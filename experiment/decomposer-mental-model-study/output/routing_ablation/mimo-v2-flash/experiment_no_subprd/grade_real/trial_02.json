@@ -1,0 +1,771 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Student_Grade_System\nNode Purpose: Student Grade System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - students (memory, read_write): Stores student information keyed by student_id.\n    Data Type: dict\n  - courses (memory, read_write): Stores course information keyed by course_id.\n    Data Type: dict\n  - grades (memory, read_write): Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on students: Stores student information keyed by student_id.\n  - read_write on courses: Stores course information keyed by course_id.\n  - read_write on grades: Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - students.get: def get_student(student_id: int) -> dict | None:\n    Description: Retrieve a student by student_id\n  - students.list: def list_students(filter_class: str | None = None) -> list[dict]:\n    Description: List all students, optionally filtered by class\n  - students.create: def create_student(student: dict) -> dict:\n    Description: Create a new student record\n  - students.exists: def student_exists(student_id: int) -> bool:\n    Description: Check if a student with given student_id exists\n  - courses.get: def get_course(course_id: int) -> dict | None:\n    Description: Retrieve a course by course_id\n  - courses.list: def list_courses(filter_teacher: str | None = None) -> list[dict]:\n    Description: List all courses, optionally filtered by teacher\n  - courses.create: def create_course(course: dict) -> dict:\n    Description: Create a new course record\n  - courses.exists: def course_exists(course_id: int) -> bool:\n    Description: Check if a course with given course_id exists\n  - grades.get: def get_grade(grade_id: int) -> dict | None:\n    Description: Retrieve a grade by grade_id\n  - grades.list: def list_grades(student_id: int | None = None, course_id: int | None = None) -> list[dict]:\n    Description: List grades, optionally filtered by student_id and/or course_id\n  - grades.create: def create_grade(grade: dict) -> dict:\n    Description: Create a new grade record\n  - grades.update: def update_grade(grade_id: int, updates: dict) -> dict:\n    Description: Update an existing grade's score and/or recorded_at\n  - grades.delete: def delete_grade(grade_id: int) -> None:\n    Description: Delete a grade by grade_id\n  - grades.exists: def grade_exists(grade_id: int) -> bool:\n    Description: Check if a grade with given grade_id exists\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "Handle_Student_Operations",
+        "purpose": "Orchestrates all student-related operations by invoking specific student child functions based on the input command.",
+        "inputs": [
+          {
+            "name": "input",
+            "type": "Any",
+            "description": "System input containing student operation command and data",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "student_result",
+            "type": "dict",
+            "description": "Result of the student operation",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Student creation",
+            "Student retrieval",
+            "Student listing",
+            "Student existence check"
+          ],
+          "out_of_scope": [
+            "Course operations",
+            "Grade operations"
+          ]
+        },
+        "preconditions": [
+          "Input is a valid dictionary with 'operation' key"
+        ],
+        "postconditions": [
+          "Student operation is completed and result is returned"
+        ],
+        "behavior": "Parses the input to determine the student operation (create, get, list, exists) and delegates to the appropriate child function. Returns the result of the operation.",
+        "signature": "def Handle_Student_Operations(input: Any) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Input must contain 'operation' key for student operations"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Student operations are correctly routed to child functions",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read_write",
+            "description": "Access student data for operations"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "Create_Student",
+        "purpose": "Creates a new student record in the system",
+        "inputs": [
+          {
+            "name": "student_data",
+            "type": "dict",
+            "description": "Student information to create",
+            "source": "Handle_Student_Operations"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "created_student",
+            "type": "dict",
+            "description": "The newly created student record",
+            "consumer": "Handle_Student_Operations"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating student records"
+          ],
+          "out_of_scope": [
+            "Updating existing students",
+            "Deleting students"
+          ]
+        },
+        "preconditions": [
+          "Student data is valid and complete"
+        ],
+        "postconditions": [
+          "New student record is stored in students data store"
+        ],
+        "behavior": "Validates student data and creates a new student record using the students.create interface.",
+        "signature": "def Create_Student(student_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: creates a student record in a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "write",
+            "description": "Create a new student record"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Student ID must be unique"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-002",
+            "description": "Student is created successfully with unique ID",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Handle_Student_Operations"
+        },
+        "requested_capabilities": [
+          "students.create"
+        ]
+      },
+      {
+        "name": "Get_Student",
+        "purpose": "Retrieves a student record by student ID",
+        "inputs": [
+          {
+            "name": "student_id",
+            "type": "int",
+            "description": "ID of the student to retrieve",
+            "source": "Handle_Student_Operations"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "student_record",
+            "type": "dict | None",
+            "description": "The student record if found, otherwise None",
+            "consumer": "Handle_Student_Operations"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Retrieving student records by ID"
+          ],
+          "out_of_scope": [
+            "Listing all students",
+            "Creating students"
+          ]
+        },
+        "preconditions": [
+          "Student ID is provided"
+        ],
+        "postconditions": [
+          "Student record is retrieved if it exists"
+        ],
+        "behavior": "Retrieves a student record from the students data store using the students.get interface.",
+        "signature": "def Get_Student(student_id: int) -> dict | None",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads from a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read",
+            "description": "Read student record by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "Student ID must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Student record is retrieved correctly if it exists",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Handle_Student_Operations"
+        },
+        "requested_capabilities": [
+          "students.get"
+        ]
+      },
+      {
+        "name": "List_Students",
+        "purpose": "Lists all students, optionally filtered by class",
+        "inputs": [
+          {
+            "name": "filter_class",
+            "type": "str | None",
+            "description": "Optional class filter",
+            "source": "Handle_Student_Operations"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "students_list",
+            "type": "list[dict]",
+            "description": "List of student records",
+            "consumer": "Handle_Student_Operations"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Listing students with optional filter"
+          ],
+          "out_of_scope": [
+            "Individual student retrieval",
+            "Student creation"
+          ]
+        },
+        "preconditions": [
+          "Filter class is optional"
+        ],
+        "postconditions": [
+          "List of students is returned"
+        ],
+        "behavior": "Lists students from the students data store using the students.list interface, optionally filtered by class.",
+        "signature": "def List_Students(filter_class: str | None = None) -> list[dict]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads from a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read",
+            "description": "List all students or filtered by class"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-004",
+            "description": "List of students is returned correctly",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Handle_Student_Operations"
+        },
+        "requested_capabilities": [
+          "students.list"
+        ]
+      },
+      {
+        "name": "Student_Exists",
+        "purpose": "Checks if a student exists by student ID",
+        "inputs": [
+          {
+            "name": "student_id",
+            "type": "int",
+            "description": "ID of the student to check",
+            "source": "Handle_Student_Operations"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "exists",
+            "type": "bool",
+            "description": "True if student exists, False otherwise",
+            "consumer": "Handle_Student_Operations"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Checking student existence"
+          ],
+          "out_of_scope": [
+            "Retrieving student details",
+            "Creating students"
+          ]
+        },
+        "preconditions": [
+          "Student ID is provided"
+        ],
+        "postconditions": [
+          "Existence status is returned"
+        ],
+        "behavior": "Checks if a student exists in the students data store using the students.exists interface.",
+        "signature": "def Student_Exists(student_id: int) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads from a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read",
+            "description": "Check if student exists"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "Student ID must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Existence check returns correct boolean value",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Handle_Student_Operations"
+        },
+        "requested_capabilities": [
+          "students.exists"
+        ]
+      },
+      {
+        "name": "Handle_Course_Operations",
+        "purpose": "Orchestrates all course-related operations by invoking specific course child functions based on the input command.",
+        "inputs": [
+          {
+            "name": "input",
+            "type": "Any",
+            "description": "System input containing course operation command and data",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "course_result",
+            "type": "dict",
+            "description": "Result of the course operation",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Course creation",
+            "Course retrieval",
+            "Course listing",
+            "Course existence check"
+          ],
+          "out_of_scope": [
+            "Student operations",
+            "Grade operations"
+          ]
+        },
+        "preconditions": [
+          "Input is a valid dictionary with 'operation' key"
+        ],
+        "postconditions": [
+          "Course operation is completed and result is returned"
+        ],
+        "behavior": "Parses the input to determine the course operation (create, get, list, exists) and delegates to the appropriate child function. Returns the result of the operation.",
+        "signature": "def Handle_Course_Operations(input: Any) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "Input must contain 'operation' key for course operations"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-006",
+            "description": "Course operations are correctly routed to child functions",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read_write",
+            "description": "Access course data for operations"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "Create_Course",
+        "purpose": "Creates a new course record in the system",
+        "inputs": [
+          {
+            "name": "course_data",
+            "type": "dict",
+            "description": "Course information to create",
+            "source": "Handle_Course_Operations"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "created_course",
+            "type": "dict",
+            "description": "The newly created course record",
+            "consumer": "Handle_Course_Operations"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating course records"
+          ],
+          "out_of_scope": [
+            "Updating existing courses",
+            "Deleting courses"
+          ]
+        },
+        "preconditions": [
+          "Course data is valid and complete"
+        ],
+        "postconditions": [
+          "New course record is stored in courses data store"
+        ],
+        "behavior": "Validates course data and creates a new course record using the courses.create interface.",
+        "signature": "def Create_Course(course_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: creates a course record in a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "courses",
+            "operation_type": "write",
+            "description": "Create a new course record"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-006",
+            "description": "Course ID must be unique"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-007",
+            "description": "Course is created successfully with unique ID",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Handle_Course_Operations"
+        },
+        "requested_capabilities": [
+          "courses.create"
+        ]
+      },
+      {
+        "name": "Get_Course",
+        "purpose": "Retrieves a course record by course ID",
+        "inputs": [
+          {
+            "name": "course_id",
+            "type": "int",
+            "description": "ID of the course to retrieve",
+            "source": "Handle_Course_Operations"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "course_record",
+            "type": "dict | None",
+            "description": "The course record if found, otherwise None",
+            "consumer": "Handle_Course_Operations"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Retrieving course records by ID"
+          ],
+          "out_of_scope": [
+            "Listing all courses",
+            "Creating courses"
+          ]
+        },
+        "preconditions": [
+          "Course ID is provided"
+        ],
+        "postconditions": [
+          "Course record is retrieved if it exists"
+        ],
+        "behavior": "Retrieves a course record from the courses data store using the courses.get interface.",
+        "signature": "def Get_Course(course_id: int) -> dict | None",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads from a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "courses",
+            "operation_type": "read",
+            "description": "Read course record by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-007",
+            "description": "Course ID must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-008",
+            "description": "Course record is retrieved correctly if it exists",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Handle_Course_Operations"
+        },
+        "requested_capabilities": [
+          "courses.get"
+        ]
+      },
+      {
+        "name": "List_Courses",
+        "purpose": "Lists all courses, optionally filtered by teacher",
+        "inputs": [
+          {
+            "name": "filter_teacher",
+            "type": "str | None",
+            "description": "Optional teacher filter",
+            "source": "Handle_Course_Operations"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "courses_list",
+            "type": "list[dict]",
+            "description": "List of course records",
+            "consumer": "Handle_Course_Operations"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Listing courses with optional filter"
+          ],
+          "out_of_scope": [
+            "Individual course retrieval",
+            "Course creation"
+          ]
+        },
+        "preconditions": [
+          "Filter teacher is optional"
+        ],
+        "postconditions": [
+          "List of courses is returned"
+        ],
+        "behavior": "Lists courses from the courses data store using the courses.list interface, optionally filtered by teacher.",
+        "signature": "def List_Courses(filter_teacher: str | None = None) -> list[dict]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads from a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "courses",
+            "operation_type": "read",
+            "description": "List all courses or filtered by teacher"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-009",
+            "description": "List of courses is returned correctly",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Handle_Course_Operations"
+        },
+        "requested_capabilities": [
+          "courses.list"
+        ]
+      },
+      {
+        "name": "Course_Exists",
+        "purpose": "Checks if a course exists by course ID",
+        "inputs": [
+          {
+            "name": "course_id",
+            "type": "int",
+            "description": "ID of the course to check",
+            "source": "Handle_Course_Operations"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "exists",
+            "type": "bool",
+            "description": "True if course exists, False otherwise",
+            "consumer": "Handle_Course_Operations"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Checking course existence"
+          ],
+          "out_of_scope": [
+            "Retrieving course details",
+            "Creating courses"
+          ]
+        },
+        "preconditions": [
+          "Course ID is provided"
+        ],
+        "postconditions": [
+          "Existence status is returned"
+        ],
+        "behavior": "Checks if a course exists in the courses data store using the courses.exists interface.",
+        "signature": "def Course_Exists(course_id: int) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads from a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "courses",
+            "operation_type": "read",
+            "description": "Check if course exists"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-008",
+            "description": "Course ID must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-010",
+            "description": "Existence check returns correct boolean value",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Handle_Course_Operations"
+        },
+        "requested_capabilities": [
+          "courses.exists"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "students",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores student information keyed by student_id"
+      },
+      {
+        "name": "courses",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores course information keyed by course_id"
+      },
+      {
+        "name": "grades",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores grade records keyed by grade_id"
+      }
+    ],
+    "decomposition_rationale": "The Student_Grade_System parent function is decomposed into three main orchestrator children: Handle_Student_Operations, Handle_Course_Operations, and Handle_Grade_Operations (though the latter is not shown in the children list due to the 10-child limit, it would be the third orchestrator). However, given the 10-child limit, we have focused on student and course operations. The parent's input is routed to the appropriate orchestrator based on the operation type. Each orchestrator then delegates to specific atomic child functions that perform the actual data operations. The student orchestrator handles creation, retrieval, listing, and existence checks for students. The course orchestrator handles similar operations for courses. The data flow is: parent input -> orchestrator -> atomic child -> result back to orchestrator -> parent output. This ensures all parent responsibilities are covered while maintaining a clean separation of concerns.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "Handle_Student_Operations, Handle_Course_Operations"
+      },
+      "parent_outputs_produced_by": {
+        "output": "Handle_Student_Operations, Handle_Course_Operations"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Handle_Student_Operations",
+        "to_input": "input",
+        "note": "Parent input is routed to student operations handler"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Handle_Course_Operations",
+        "to_input": "input",
+        "note": "Parent input is routed to course operations handler"
+      },
+      {
+        "from_node": "Handle_Student_Operations",
+        "from_output": "student_result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Student operation result is returned to parent"
+      },
+      {
+        "from_node": "Handle_Course_Operations",
+        "from_output": "course_result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Course operation result is returned to parent"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

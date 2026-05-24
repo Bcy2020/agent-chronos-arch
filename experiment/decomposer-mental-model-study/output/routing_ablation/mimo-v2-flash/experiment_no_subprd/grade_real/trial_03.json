@@ -1,0 +1,574 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Student_Grade_System\nNode Purpose: Student Grade System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - students (memory, read_write): Stores student information keyed by student_id.\n    Data Type: dict\n  - courses (memory, read_write): Stores course information keyed by course_id.\n    Data Type: dict\n  - grades (memory, read_write): Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on students: Stores student information keyed by student_id.\n  - read_write on courses: Stores course information keyed by course_id.\n  - read_write on grades: Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - students.get: def get_student(student_id: int) -> dict | None:\n    Description: Retrieve a student by student_id\n  - students.list: def list_students(filter_class: str | None = None) -> list[dict]:\n    Description: List all students, optionally filtered by class\n  - students.create: def create_student(student: dict) -> dict:\n    Description: Create a new student record\n  - students.exists: def student_exists(student_id: int) -> bool:\n    Description: Check if a student with given student_id exists\n  - courses.get: def get_course(course_id: int) -> dict | None:\n    Description: Retrieve a course by course_id\n  - courses.list: def list_courses(filter_teacher: str | None = None) -> list[dict]:\n    Description: List all courses, optionally filtered by teacher\n  - courses.create: def create_course(course: dict) -> dict:\n    Description: Create a new course record\n  - courses.exists: def course_exists(course_id: int) -> bool:\n    Description: Check if a course with given course_id exists\n  - grades.get: def get_grade(grade_id: int) -> dict | None:\n    Description: Retrieve a grade by grade_id\n  - grades.list: def list_grades(student_id: int | None = None, course_id: int | None = None) -> list[dict]:\n    Description: List grades, optionally filtered by student_id and/or course_id\n  - grades.create: def create_grade(grade: dict) -> dict:\n    Description: Create a new grade record\n  - grades.update: def update_grade(grade_id: int, updates: dict) -> dict:\n    Description: Update an existing grade's score and/or recorded_at\n  - grades.delete: def delete_grade(grade_id: int) -> None:\n    Description: Delete a grade by grade_id\n  - grades.exists: def grade_exists(grade_id: int) -> bool:\n    Description: Check if a grade with given grade_id exists\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "Validate_Student_Course_Exists",
+        "purpose": "Validate that the student and course exist before processing grade operations",
+        "inputs": [
+          {
+            "name": "student_id",
+            "type": "int",
+            "description": "ID of the student",
+            "source": "parent_input"
+          },
+          {
+            "name": "course_id",
+            "type": "int",
+            "description": "ID of the course",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "validation_result",
+            "type": "bool",
+            "description": "True if both student and course exist",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Checking existence of student and course records"
+          ],
+          "out_of_scope": [
+            "Creating or modifying student/course records",
+            "Grade operations"
+          ]
+        },
+        "preconditions": [
+          "Student and course IDs are provided"
+        ],
+        "postconditions": [
+          "Validation result is returned"
+        ],
+        "behavior": "Checks if a student with the given student_id exists and if a course with the given course_id exists using the data interfaces. Returns True only if both exist.",
+        "signature": "def Validate_Student_Course_Exists(student_id: int, course_id: int) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - checks existence of two separate data sources",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read",
+            "description": "Check if student exists"
+          },
+          {
+            "source_name": "courses",
+            "operation_type": "read",
+            "description": "Check if course exists"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Both student and course must exist for validation to pass"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Returns True when both student and course exist",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-002",
+            "description": "Returns False when either student or course does not exist",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Read student existence"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Read course existence"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Student_Grade_System"
+        },
+        "requested_capabilities": [
+          "students.exists",
+          "courses.exists"
+        ]
+      },
+      {
+        "name": "Create_Grade_Record",
+        "purpose": "Create a new grade record for a student in a course",
+        "inputs": [
+          {
+            "name": "student_id",
+            "type": "int",
+            "description": "ID of the student",
+            "source": "parent_input"
+          },
+          {
+            "name": "course_id",
+            "type": "int",
+            "description": "ID of the course",
+            "source": "parent_input"
+          },
+          {
+            "name": "score",
+            "type": "float",
+            "description": "Score for the grade",
+            "source": "parent_input"
+          },
+          {
+            "name": "recorded_at",
+            "type": "str",
+            "description": "Timestamp when grade was recorded",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "grade_record",
+            "type": "dict",
+            "description": "The created grade record",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating a new grade record"
+          ],
+          "out_of_scope": [
+            "Validating student/course existence",
+            "Updating or deleting grades"
+          ]
+        },
+        "preconditions": [
+          "Student and course exist (validated by previous child)",
+          "Grade does not already exist for this student-course pair"
+        ],
+        "postconditions": [
+          "New grade record is created and returned"
+        ],
+        "behavior": "Creates a new grade record using the grades.create interface. The grade record includes student_id, course_id, score, and recorded_at.",
+        "signature": "def Create_Grade_Record(student_id: int, course_id: int, score: float, recorded_at: str) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - creates a grade record in a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "write",
+            "description": "Create new grade record"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Grade record must include student_id, course_id, score, and recorded_at"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Grade record is successfully created with all required fields",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-004",
+            "description": "Returns the created grade record as a dict",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "write",
+            "description": "Write new grade record"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-002"
+          ],
+          "derived_from": "Student_Grade_System"
+        },
+        "requested_capabilities": [
+          "grades.create"
+        ]
+      },
+      {
+        "name": "Update_Grade_Record",
+        "purpose": "Update an existing grade record's score and/or recorded_at",
+        "inputs": [
+          {
+            "name": "grade_id",
+            "type": "int",
+            "description": "ID of the grade to update",
+            "source": "parent_input"
+          },
+          {
+            "name": "updates",
+            "type": "dict",
+            "description": "Dictionary of fields to update (score and/or recorded_at)",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "updated_grade",
+            "type": "dict",
+            "description": "The updated grade record",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Updating an existing grade record"
+          ],
+          "out_of_scope": [
+            "Creating new grades",
+            "Deleting grades",
+            "Validating student/course existence"
+          ]
+        },
+        "preconditions": [
+          "Grade record exists"
+        ],
+        "postconditions": [
+          "Grade record is updated with new values"
+        ],
+        "behavior": "Updates an existing grade record using the grades.update interface with the provided grade_id and updates dictionary.",
+        "signature": "def Update_Grade_Record(grade_id: int, updates: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - updates a grade record in a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "read_write",
+            "description": "Update existing grade record"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "Grade record must exist before update"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Grade record is successfully updated",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-006",
+            "description": "Returns the updated grade record as a dict",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Update existing grade record"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-003"
+          ],
+          "derived_from": "Student_Grade_System"
+        },
+        "requested_capabilities": [
+          "grades.update"
+        ]
+      },
+      {
+        "name": "Delete_Grade_Record",
+        "purpose": "Delete an existing grade record by grade_id",
+        "inputs": [
+          {
+            "name": "grade_id",
+            "type": "int",
+            "description": "ID of the grade to delete",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "deletion_success",
+            "type": "bool",
+            "description": "True if deletion was successful",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Deleting an existing grade record"
+          ],
+          "out_of_scope": [
+            "Creating or updating grades",
+            "Validating student/course existence"
+          ]
+        },
+        "preconditions": [
+          "Grade record exists"
+        ],
+        "postconditions": [
+          "Grade record is deleted"
+        ],
+        "behavior": "Deletes a grade record using the grades.delete interface with the provided grade_id. Returns True if successful.",
+        "signature": "def Delete_Grade_Record(grade_id: int) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - deletes a grade record in a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "write",
+            "description": "Delete grade record"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "Grade record must exist before deletion"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-007",
+            "description": "Grade record is successfully deleted",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-008",
+            "description": "Returns True upon successful deletion",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "write",
+            "description": "Delete grade record"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004"
+          ],
+          "derived_from": "Student_Grade_System"
+        },
+        "requested_capabilities": [
+          "grades.delete"
+        ]
+      },
+      {
+        "name": "List_Grades_For_Student_Course",
+        "purpose": "List all grades for a specific student and/or course",
+        "inputs": [
+          {
+            "name": "student_id",
+            "type": "int",
+            "description": "ID of the student (optional)",
+            "source": "parent_input"
+          },
+          {
+            "name": "course_id",
+            "type": "int",
+            "description": "ID of the course (optional)",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "grades_list",
+            "type": "list[dict]",
+            "description": "List of grade records",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Listing grades filtered by student_id and/or course_id"
+          ],
+          "out_of_scope": [
+            "Creating, updating, or deleting grades"
+          ]
+        },
+        "preconditions": [
+          "None required"
+        ],
+        "postconditions": [
+          "List of grades is returned"
+        ],
+        "behavior": "Lists grades using the grades.list interface, optionally filtering by student_id and/or course_id.",
+        "signature": "def List_Grades_For_Student_Course(student_id: int | None, course_id: int | None) -> list[dict]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - reads from a single data source with filtering",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "read",
+            "description": "Read grade records with optional filters"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "Filters are optional; if not provided, list all grades"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-009",
+            "description": "Returns list of grades matching the filters",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-010",
+            "description": "Returns empty list if no grades match",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "Read grade records"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-005"
+          ],
+          "derived_from": "Student_Grade_System"
+        },
+        "requested_capabilities": [
+          "grades.list"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "students",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores student information keyed by student_id"
+      },
+      {
+        "name": "courses",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores course information keyed by course_id"
+      },
+      {
+        "name": "grades",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores grade records keyed by grade_id with uniqueness constraint"
+      }
+    ],
+    "decomposition_rationale": "The Student_Grade_System is decomposed into five atomic child functions that collectively handle all grade-related operations. The flow is: 1) Validate_Student_Course_Exists checks if student and course exist before any grade operation. 2) Create_Grade_Record creates new grades after validation. 3) Update_Grade_Record updates existing grades. 4) Delete_Grade_Record deletes grades. 5) List_Grades_For_Student_Course lists grades with optional filters. Each child is atomic (performs one operation on one data source) and they don't call each other - the parent orchestrates them. The parent's input (Any) is mapped to specific parameters for each child, and outputs are aggregated back to Any. All data operations go through the children, and global_vars are distributed: students/courses read operations to validation child, grades operations to respective children.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "All children receive specific parameters derived from parent input"
+      },
+      "parent_outputs_produced_by": {
+        "output": "All children produce outputs that are aggregated by parent"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Validate_Student_Course_Exists",
+        "to_input": "student_id, course_id",
+        "note": "Parent extracts student_id and course_id from input for validation"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Create_Grade_Record",
+        "to_input": "student_id, course_id, score, recorded_at",
+        "note": "Parent extracts grade creation parameters from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Update_Grade_Record",
+        "to_input": "grade_id, updates",
+        "note": "Parent extracts grade update parameters from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Delete_Grade_Record",
+        "to_input": "grade_id",
+        "note": "Parent extracts grade deletion parameter from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "List_Grades_For_Student_Course",
+        "to_input": "student_id, course_id",
+        "note": "Parent extracts listing parameters from input"
+      },
+      {
+        "from_node": "Validate_Student_Course_Exists",
+        "from_output": "validation_result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Validation result is part of system output"
+      },
+      {
+        "from_node": "Create_Grade_Record",
+        "from_output": "grade_record",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Created grade record is part of system output"
+      },
+      {
+        "from_node": "Update_Grade_Record",
+        "from_output": "updated_grade",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Updated grade record is part of system output"
+      },
+      {
+        "from_node": "Delete_Grade_Record",
+        "from_output": "deletion_success",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Deletion success status is part of system output"
+      },
+      {
+        "from_node": "List_Grades_For_Student_Course",
+        "from_output": "grades_list",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "List of grades is part of system output"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

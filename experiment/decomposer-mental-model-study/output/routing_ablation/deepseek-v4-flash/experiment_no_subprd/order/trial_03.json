@@ -1,0 +1,488 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): 存储用户信息，以user_id为键\n    Data Type: dict\n  - products (memory, read_write): 存储商品信息，以product_id为键\n    Data Type: dict\n  - orders (memory, read_write): 存储订单记录，以order_id为键\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: 存储用户信息，以user_id为键\n  - read_write on products: 存储商品信息，以product_id为键\n  - read_write on orders: 存储订单记录，以order_id为键\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "ParseInput",
+        "purpose": "解析通用输入，提取命令和参数",
+        "inputs": [
+          {
+            "name": "raw_input",
+            "type": "Any",
+            "description": "系统原始输入",
+            "source": "parent input 'input'"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "识别出的命令字符串",
+            "consumer": "UserManager, ProductManager, OrderManager 的 command 输入"
+          },
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "提取的参数字典",
+            "consumer": "UserManager, ProductManager, OrderManager 的 params 输入"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "解析输入为命令和参数"
+          ],
+          "out_of_scope": [
+            "业务逻辑处理，数据访问"
+          ]
+        },
+        "preconditions": [
+          "输入为非空且能被解析为包含 'command' 键的字典"
+        ],
+        "postconditions": [
+          "返回 command 字符串和参数字典"
+        ],
+        "behavior": "接收原始输入，假设其为字典，从中提取 'command' 字段作为命令，其余字段作为参数。如果输入格式无效，返回错误信息。",
+        "signature": "def parse_input(raw_input: Any) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "纯函数，仅做解析，无状态和I/O",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "输入必须包含 'command' 字段"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "输入服从规范时正确解析",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "UserManager",
+        "purpose": "处理用户相关操作（添加、获取、更新用户信息）",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "用户操作子命令（如 add_user, get_user, update_user）",
+            "source": "ParseInput 的 command 输出"
+          },
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "操作所需参数（如 user_id, name, balance）",
+            "source": "ParseInput 的 params 输出"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "操作结果，如用户字典、成功消息或错误",
+            "consumer": "parent output 'output'"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "用户信息的增、删、改、查"
+          ],
+          "out_of_scope": [
+            "订单或商品操作"
+          ]
+        },
+        "preconditions": [
+          "command 为有效用户命令"
+        ],
+        "postconditions": [
+          "对 users 数据源进行了相应的读写操作"
+        ],
+        "behavior": "根据 command 分发到内部逻辑（添加、获取、更新），并使用 requested_capabilities 操作 users 数据源，返回结果",
+        "signature": "def user_manager(command: str, params: dict) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "包含业务逻辑和条件分支，需进一步分解为添加/获取/更新等原子操作",
+        "node_type": "coordination",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "根据命令读取或更新用户信息"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "添加用户时 user_id 必须唯一"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-002",
+            "description": "用户操作成功执行",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "存储用户信息，以user_id为键"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.get",
+          "users.update",
+          "users.exists"
+        ]
+      },
+      {
+        "name": "ProductManager",
+        "purpose": "处理商品相关操作（添加、获取、更新、列出商品）",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "商品操作子命令（如 add_product, get_product, update_product, list_products）",
+            "source": "ParseInput 的 command 输出"
+          },
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "操作所需参数（如 product_id, name, price, stock）",
+            "source": "ParseInput 的 params 输出"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "操作结果，如商品字典、商品列表、成功消息或错误",
+            "consumer": "parent output 'output'"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "商品信息的增、删、改、查、列表"
+          ],
+          "out_of_scope": [
+            "用户或订单操作"
+          ]
+        },
+        "preconditions": [
+          "command 为有效商品命令"
+        ],
+        "postconditions": [
+          "对 products 数据源进行了相应的读写操作"
+        ],
+        "behavior": "根据 command 分发到内部逻辑（添加、获取、更新、列出），并使用 requested_capabilities 操作 products 数据源，返回结果",
+        "signature": "def product_manager(command: str, params: dict) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "包含业务逻辑和条件分支，需进一步分解为添加/获取/更新/列出等原子操作",
+        "node_type": "coordination",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "根据命令读取或更新商品信息"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "添加商品时 product_id 必须唯一"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "商品操作成功执行",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "存储商品信息，以product_id为键"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.get",
+          "products.update",
+          "products.list"
+        ]
+      },
+      {
+        "name": "OrderManager",
+        "purpose": "处理订单相关操作（创建、获取、更新状态、取消、列出订单），可能涉及用户和商品数据",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "订单操作子命令（如 create_order, get_order, cancel_order, list_orders）",
+            "source": "ParseInput 的 command 输出"
+          },
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "操作所需参数（如 user_id, product_id, quantity, order_id）",
+            "source": "ParseInput 的 params 输出"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "操作结果，如订单字典、订单列表、成功消息或错误",
+            "consumer": "parent output 'output'"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "订单的增、改、查、列表、取消，以及关联的用户余额和商品库存更新"
+          ],
+          "out_of_scope": [
+            "独立的用户管理或商品管理"
+          ]
+        },
+        "preconditions": [
+          "command 为有效订单命令"
+        ],
+        "postconditions": [
+          "对 orders 数据源进行了读写，可能对 users 和 products 进行了更新"
+        ],
+        "behavior": "根据 command 分发到内部逻辑（创建、获取、更新状态、取消、列出），使用 requested_capabilities 操作 orders、users、products 数据源，保证事务一致性（业务上），返回结果",
+        "signature": "def order_manager(command: str, params: dict) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "包含复杂业务逻辑（如创建订单涉及多步数据操作），需进一步分解为子操作",
+        "node_type": "coordination",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "根据命令读取或更新订单信息"
+          },
+          {
+            "source_name": "users",
+            "operation_type": "read",
+            "description": "验证用户存在及获取余额信息"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "验证商品存在及更新库存"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "创建订单时用户必须存在且余额足够，商品必须存在且库存充足"
+          },
+          {
+            "constraint_id": "C-005",
+            "description": "取消订单时订单必须处于可取消状态"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-004",
+            "description": "订单操作成功执行且数据一致",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-005",
+            "description": "并发操作下数据完整性保持",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "存储订单记录，以order_id为键"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "存储商品信息，需更新库存"
+          },
+          {
+            "variable": "users",
+            "op": "read",
+            "description": "存储用户信息，读取余额（子节点可能写入）"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.create",
+          "orders.update",
+          "orders.exists",
+          "orders.list",
+          "products.get",
+          "products.update",
+          "users.get",
+          "users.update"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "存储用户信息，以user_id为键"
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "存储商品信息，以product_id为键"
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "存储订单记录，以order_id为键"
+      }
+    ],
+    "decomposition_rationale": "Order_Management_System 首先通过 ParseInput 子组件解析通用输入，提取命令和参数。然后基于命令类型（用户、商品、订单）由父节点选择调用对应的 Manager 子组件（UserManager、ProductManager、OrderManager）。每个 Manager 负责该领域的所有操作（增删改查），使用 requested_capabilities 中的接口操作对应的数据源。父节点将 Manager 的返回结果直接作为系统输出。这种分解实现了关注点分离：解析与控制分离，每个 Manager 独立负责一个数据域，便于后续进一步分解为原子操作。数据流：父输入 → ParseInput → (command, params) → 相应 Manager → 父输出。全局变量分布：ParseInput 无，UserManager 独占 users，ProductManager 独占 products，OrderManager 操作 orders 并读取/写入 users 和 products（创建/取消订单时需要）。",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "ParseInput"
+      },
+      "parent_outputs_produced_by": {
+        "output": "任一 Manager 的 result 输出"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "ParseInput",
+        "to_input": "raw_input",
+        "note": "将系统输入传递给解析器"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "command",
+        "to_node": "UserManager",
+        "to_input": "command",
+        "note": "当命令类别为用户时使用"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "params",
+        "to_node": "UserManager",
+        "to_input": "params",
+        "note": "当命令类别为用户时使用"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "command",
+        "to_node": "ProductManager",
+        "to_input": "command",
+        "note": "当命令类别为商品时使用"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "params",
+        "to_node": "ProductManager",
+        "to_input": "params",
+        "note": "当命令类别为商品时使用"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "command",
+        "to_node": "OrderManager",
+        "to_input": "command",
+        "note": "当命令类别为订单时使用"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "params",
+        "to_node": "OrderManager",
+        "to_input": "params",
+        "note": "当命令类别为订单时使用"
+      },
+      {
+        "from_node": "UserManager",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "用户操作结果返回至系统输出"
+      },
+      {
+        "from_node": "ProductManager",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "商品操作结果返回至系统输出"
+      },
+      {
+        "from_node": "OrderManager",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "订单操作结果返回至系统输出"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "ParseInput",
+        "to": "UserManager",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "ProductManager",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "OrderManager",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

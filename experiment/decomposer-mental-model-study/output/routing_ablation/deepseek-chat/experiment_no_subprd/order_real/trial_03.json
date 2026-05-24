@@ -1,0 +1,887 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): Stores user information keyed by user_id.\n    Data Type: dict\n  - products (memory, read_write): Stores product information keyed by product_id.\n    Data Type: dict\n  - orders (memory, read_write): Stores order records keyed by order_id.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: Stores user information keyed by user_id.\n  - read_write on products: Stores product information keyed by product_id.\n  - read_write on orders: Stores order records keyed by order_id.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "ParseAndValidateInput",
+        "purpose": "Parse the raw system input into a structured command and validate its basic structure",
+        "inputs": [
+          {
+            "name": "input",
+            "type": "Any",
+            "description": "Raw system input",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "command",
+            "type": "dict",
+            "description": "Parsed command with action and parameters",
+            "consumer": "RouteCommand"
+          },
+          {
+            "name": "error",
+            "type": "Optional[str]",
+            "description": "Validation error message if input is invalid",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Parsing JSON or structured input",
+            "Validating required fields exist",
+            "Identifying the action type"
+          ],
+          "out_of_scope": [
+            "Business logic validation",
+            "Data access",
+            "Executing the command"
+          ]
+        },
+        "preconditions": [
+          "Input is provided"
+        ],
+        "postconditions": [
+          "If valid, command dict is returned with action and params; if invalid, error string is returned"
+        ],
+        "behavior": "Parse the input (assumed to be a dict or JSON string) and extract 'action' and 'params' fields. Validate that action is a non-empty string and params is a dict. Return command dict on success, error string on failure.",
+        "signature": "def ParseAndValidateInput(input: Any) -> Tuple[Optional[dict], Optional[str]]",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Input must be parseable as dict with 'action' and 'params' keys"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Valid input returns command dict",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "RouteCommand",
+        "purpose": "Route the parsed command to the appropriate handler based on action type",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "dict",
+            "description": "Parsed command with action and parameters",
+            "source": "ParseAndValidateInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "Result from the executed command handler",
+            "consumer": "parent output"
+          },
+          {
+            "name": "error",
+            "type": "Optional[str]",
+            "description": "Error if action is unknown or routing fails",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Determining which handler to call based on action",
+            "Calling the correct child handler",
+            "Returning the result"
+          ],
+          "out_of_scope": [
+            "Parsing input",
+            "Data access logic",
+            "Business validation within handlers"
+          ]
+        },
+        "preconditions": [
+          "command is a valid dict with 'action' and 'params'"
+        ],
+        "postconditions": [
+          "Result or error is returned based on action routing"
+        ],
+        "behavior": "Examine command['action'] and call the appropriate child handler (e.g., 'create_order' -> CreateOrder, 'get_user' -> GetUser). Pass command['params'] to the handler. Return the handler's result or an error for unknown actions.",
+        "signature": "def RouteCommand(command: dict) -> Tuple[Any, Optional[str]]",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Action must be one of the supported actions"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-002",
+            "description": "Known action routes to correct handler",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "CreateOrder",
+        "purpose": "Handle the creation of a new order with validation of user and product data",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters including user_id, product_id, quantity",
+            "source": "RouteCommand passes command['params']"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order_result",
+            "type": "dict",
+            "description": "Created order details or error",
+            "consumer": "RouteCommand returns to parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating user exists",
+            "Validating product exists and has sufficient stock",
+            "Creating order record",
+            "Updating product stock",
+            "Updating user balance"
+          ],
+          "out_of_scope": [
+            "Parsing input",
+            "Routing",
+            "Other order operations"
+          ]
+        },
+        "preconditions": [
+          "params contains user_id, product_id, quantity"
+        ],
+        "postconditions": [
+          "Order is created in orders store",
+          "Product stock is decremented",
+          "User balance is updated"
+        ],
+        "behavior": "Validate user exists via users.exists. Validate product exists and has stock via products.get. Calculate total cost. Check user balance via users.get. If all valid, create order via orders.create, decrement product stock via products.update, update user balance via users.update. Return order details or error.",
+        "signature": "def CreateOrder(params: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Check user existence, read balance, update balance"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Check product existence and stock, update stock"
+          },
+          {
+            "source_name": "orders",
+            "operation_type": "write",
+            "description": "Create new order record"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "User must exist and have sufficient balance"
+          },
+          {
+            "constraint_id": "C-004",
+            "description": "Product must exist and have sufficient stock"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Order created successfully with valid data",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read user info and update balance"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read product info and update stock"
+          },
+          {
+            "variable": "orders",
+            "op": "write",
+            "description": "Create new order"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.exists",
+          "users.get",
+          "users.update",
+          "products.get",
+          "products.update",
+          "orders.create"
+        ]
+      },
+      {
+        "name": "GetUser",
+        "purpose": "Retrieve user information by user_id",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing user_id",
+            "source": "RouteCommand passes command['params']"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "user_data",
+            "type": "dict",
+            "description": "User information or error",
+            "consumer": "RouteCommand returns to parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Fetching user by ID",
+            "Returning user data or not-found error"
+          ],
+          "out_of_scope": [
+            "Modifying user data",
+            "Other user operations"
+          ]
+        },
+        "preconditions": [
+          "params contains user_id"
+        ],
+        "postconditions": [
+          "User data is returned if user exists, else error"
+        ],
+        "behavior": "Extract user_id from params. Call users.get to retrieve user data. If user exists, return user data dict; otherwise return error dict with 'not found' message.",
+        "signature": "def GetUser(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - single data source read",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read",
+            "description": "Read user data by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "user_id must be a valid integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-004",
+            "description": "Returns user data for existing user",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read",
+            "description": "Read user information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.get"
+        ]
+      },
+      {
+        "name": "GetProduct",
+        "purpose": "Retrieve product information by product_id",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing product_id",
+            "source": "RouteCommand passes command['params']"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "product_data",
+            "type": "dict",
+            "description": "Product information or error",
+            "consumer": "RouteCommand returns to parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Fetching product by ID",
+            "Returning product data or not-found error"
+          ],
+          "out_of_scope": [
+            "Modifying product data",
+            "Other product operations"
+          ]
+        },
+        "preconditions": [
+          "params contains product_id"
+        ],
+        "postconditions": [
+          "Product data is returned if product exists, else error"
+        ],
+        "behavior": "Extract product_id from params. Call products.get to retrieve product data. If product exists, return product data dict; otherwise return error dict with 'not found' message.",
+        "signature": "def GetProduct(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - single data source read",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "Read product data by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-006",
+            "description": "product_id must be a valid integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Returns product data for existing product",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "Read product information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.get"
+        ]
+      },
+      {
+        "name": "GetOrder",
+        "purpose": "Retrieve order information by order_id",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing order_id",
+            "source": "RouteCommand passes command['params']"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Order information or error",
+            "consumer": "RouteCommand returns to parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Fetching order by ID",
+            "Returning order data or not-found error"
+          ],
+          "out_of_scope": [
+            "Modifying order data",
+            "Other order operations"
+          ]
+        },
+        "preconditions": [
+          "params contains order_id"
+        ],
+        "postconditions": [
+          "Order data is returned if order exists, else error"
+        ],
+        "behavior": "Extract order_id from params. Call orders.get to retrieve order data. If order exists, return order data dict; otherwise return error dict with 'not found' message.",
+        "signature": "def GetOrder(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - single data source read",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "Read order data by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-007",
+            "description": "order_id must be a valid integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-006",
+            "description": "Returns order data for existing order",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "Read order information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get"
+        ]
+      },
+      {
+        "name": "ListOrders",
+        "purpose": "List orders with optional filtering by user_id and/or status",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters with optional user_id and status filters",
+            "source": "RouteCommand passes command['params']"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "orders_list",
+            "type": "list",
+            "description": "List of order records matching filters",
+            "consumer": "RouteCommand returns to parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Filtering orders by user_id",
+            "Filtering orders by status",
+            "Returning list of orders"
+          ],
+          "out_of_scope": [
+            "Modifying orders",
+            "Other order operations"
+          ]
+        },
+        "preconditions": [
+          "params is a dict (may be empty)"
+        ],
+        "postconditions": [
+          "List of orders is returned (may be empty)"
+        ],
+        "behavior": "Extract optional user_id and status from params. Call orders.list with those filters. Return the resulting list of order dicts.",
+        "signature": "def ListOrders(params: dict) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - single data source read with filtering",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "List orders with optional filters"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-008",
+            "description": "user_id and status are optional filters"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-007",
+            "description": "Returns filtered list of orders",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "Read order records with filtering"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      },
+      {
+        "name": "UpdateOrderStatus",
+        "purpose": "Update the status of an existing order",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing order_id and new status",
+            "source": "RouteCommand passes command['params']"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "update_result",
+            "type": "dict",
+            "description": "Success or error message",
+            "consumer": "RouteCommand returns to parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating order exists",
+            "Updating order status",
+            "Returning result"
+          ],
+          "out_of_scope": [
+            "Other order modifications",
+            "User or product updates"
+          ]
+        },
+        "preconditions": [
+          "params contains order_id and status"
+        ],
+        "postconditions": [
+          "Order status is updated if order exists"
+        ],
+        "behavior": "Check if order exists via orders.exists. If exists, call orders.update with the new status. Return success dict or error dict if order not found.",
+        "signature": "def UpdateOrderStatus(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - single data source read-modify-write",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Check order existence and update status"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-009",
+            "description": "order_id must exist in orders store"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-008",
+            "description": "Order status updated successfully",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read order existence and update status"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.exists",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "ListProducts",
+        "purpose": "List all products with optional low stock threshold filtering",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters with optional low_stock_threshold",
+            "source": "RouteCommand passes command['params']"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "products_list",
+            "type": "list",
+            "description": "List of product records",
+            "consumer": "RouteCommand returns to parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Listing all products",
+            "Filtering by low stock threshold",
+            "Returning product list"
+          ],
+          "out_of_scope": [
+            "Modifying products",
+            "Other product operations"
+          ]
+        },
+        "preconditions": [
+          "params is a dict (may be empty)"
+        ],
+        "postconditions": [
+          "List of products is returned (may be empty)"
+        ],
+        "behavior": "Extract optional low_stock_threshold from params. Call products.list with that threshold. Return the resulting list of product dicts.",
+        "signature": "def ListProducts(params: dict) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - single data source read with filtering",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "List products with optional low stock filter"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-010",
+            "description": "low_stock_threshold is optional"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-009",
+            "description": "Returns list of products",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "Read product records with filtering"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.list"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores user information keyed by user_id"
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores product information keyed by product_id"
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores order records keyed by order_id"
+      }
+    ],
+    "decomposition_rationale": "The Order Management System is decomposed into a pipeline: first, ParseAndValidateInput converts raw input into a structured command. Then RouteCommand acts as a dispatcher, examining the 'action' field and routing to the appropriate handler child (CreateOrder, GetUser, GetProduct, GetOrder, ListOrders, UpdateOrderStatus, ListProducts). Each handler is a leaf atomic operation that performs specific data operations on the available data stores (users, products, orders). The parent orchestrates by calling ParseAndValidateInput first, then passing the result to RouteCommand, which then calls the appropriate handler. This covers all parent responsibilities: input parsing, command routing, and execution of various order management operations (CRUD on users, products, orders).",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "ParseAndValidateInput"
+      },
+      "parent_outputs_produced_by": {
+        "output": "RouteCommand"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "ParseAndValidateInput",
+        "to_input": "input",
+        "note": "Raw input is parsed into command"
+      },
+      {
+        "from_node": "ParseAndValidateInput",
+        "from_output": "command",
+        "to_node": "RouteCommand",
+        "to_input": "command",
+        "note": "Parsed command is routed to handler"
+      },
+      {
+        "from_node": "RouteCommand",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result is returned as system output"
+      },
+      {
+        "from_node": "ParseAndValidateInput",
+        "from_output": "error",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Validation error is returned directly"
+      },
+      {
+        "from_node": "RouteCommand",
+        "from_output": "error",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Routing error is returned directly"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "ParseAndValidateInput",
+        "to": "RouteCommand",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "CreateOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "GetUser",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "GetProduct",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "GetOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "ListOrders",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "UpdateOrderStatus",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "ListProducts",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "ParseAndValidateInput",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "CreateOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "GetUser",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "GetProduct",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "GetOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "ListOrders",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "UpdateOrderStatus",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "ListProducts",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

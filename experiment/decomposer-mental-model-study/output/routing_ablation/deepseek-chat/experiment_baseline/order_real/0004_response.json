@@ -1,0 +1,5 @@
+{
+  "call_id": 4,
+  "elapsed": 4.19,
+  "response": "我需要澄清一个重要的设计点：**ParseInput 并不会调用其他子节点**。\n\n让我重新解释这个架构中的数据流：\n\n## 实际调用关系\n\n```\n输入 JSON \n    → ParseInput（解析、校验）\n    → 返回 { command, order_data }\n    → RouteCommand（接收解析结果）\n    → 根据 command 调用对应的 Handler\n    → Handler 执行业务逻辑\n    → 返回结果给 RouteCommand\n    → RouteCommand 返回最终输出\n```\n\n**ParseInput 的职责仅限于**：\n1. 接收原始 JSON 输入\n2. 解析 JSON 结构\n3. 提取 `command` 字段\n4. 提取 `order_data` 字段\n5. 验证 command 是否为合法值\n6. **输出**解析后的结构化数据\n\n它**不负责**调用任何业务处理器，也不做路由决策。\n\n## 为什么这样设计？\n\n如果 ParseInput 直接调用子节点，会导致：\n- **职责混淆**：解析逻辑和路由逻辑耦合在一起\n- **违反单一职责**：一个节点既要做格式校验，又要决定调用哪个业务逻辑\n- **难以扩展**：新增命令需要修改 ParseInput，而不是只修改路由表\n- **测试困难**：测试解析逻辑时需要 mock 所有业务处理器\n\n## 正确的数据流\n\n```\nParseInput (纯解析函数)\n    ↓ 输出 { command, order_data }\nRouteCommand (纯路由函数) \n    ↓ 根据 command 分发\nHandler (业务逻辑)\n    ↓ 返回结果\nRouteCommand (聚合结果)\n    ↓ 输出最终响应\n```\n\n这种分层设计让每个节点都是**独立的、可替换的、可测试的**组件。ParseInput 只是一个**数据转换器**，不参与业务决策。"
+}

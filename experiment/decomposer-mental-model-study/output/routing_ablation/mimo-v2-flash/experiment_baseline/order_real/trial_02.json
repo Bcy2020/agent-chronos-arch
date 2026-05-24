@@ -1,0 +1,812 @@
+{
+  "experiment": {
+    "name": "baseline",
+    "ablation": "baseline"
+  },
+  "ablation": "baseline",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\nSubPRD Context:\n  Task Description:\n    INPUT FORMAT:\n      Format: json\n      Description: Input is a JSON object with command and order_data fields. The function manage_order(command, order_data) is called with these parameters.\n      Schema:\n        command: string - one of create_order, pay_order, ship_order, complete_order, cancel_order, list_orders, get_user_orders, list_products\n        order_data: object - contains fields depending on command: user_id (int), order_id (int), items (list of {product_id, quantity}), status_filter (str), user_filter (int), low_stock (bool)\n      Examples:\n        {\"command\": \"create_order\", \"order_data\": {\"user_id\": 1, \"items\": [{\"product_id\": 2, \"quantity\": 2}]}}\n    \n    OUTPUT FORMAT:\n      Format: json\n      Description: Output is a JSON object with success, message, and data fields.\n      Schema:\n        success: boolean\n        message: string - human-readable result message\n        data: object - contains command-specific data\n      Examples:\n        {\"success\": true, \"message\": \"\\u8ba2\\u5355\\u521b\\u5efa\\u6210\\u529f\", \"data\": {\"order_id\": 1, \"total_price\": 199.8}}\n    \n    Functional Requirements:\n    [FR-001] Create Order: User creates an order with user ID and item list. Check user existence, product stock, calculate total price, deduct stock, create order record with status pending.\n    [FR-002] Pay Order: User pays for an order. Check order exists and status is pending, check user balance, deduct balance, update order status to paid.\n    [FR-003] Ship Order: Ship an order. Check order exists and status is paid, update status to shipped.\n    [FR-004] Complete Order: Complete an order. Check order exists and status is shipped, update status to completed.\n    [FR-005] Cancel Order: Cancel an order. Check order exists and status is pending or paid, restore product stock, refund balance if paid, update status to cancelled.\n    [FR-006] List Orders: List orders with optional filters by user and status. Display order details including items, total price, status, and creation time.\n    [FR-007] Get User Orders: Get all orders for a specific user. Calculate total spent and count of orders per status.\n    [FR-008] List Products: List products with info and current stock. Optionally filter low stock products.\n  Constraints:\n    - TC-STORAGE: Storage: memory - Three independent in-memory data sources: users, products, orders.\n    - TC-CONCURRENCY: Concurrency: single-user, auth_required: False\n    - TC-UI: UI: api\n    - TC-LANGUAGE: Language: Python\n  Acceptance Criteria:\n    - AC-001: Create order with valid user and sufficient stock succeeds, stock deducted, order created with status pending.\n    - AC-002: Create order with insufficient stock fails with error message.\n    - AC-003: Pay order with sufficient balance succeeds, balance deducted, status becomes paid.\n    - AC-004: Pay order with insufficient balance fails with error message.\n    - AC-005: Cancel pending order restores stock and no refund.\n    - AC-006: Cancel paid order restores stock and refunds balance.\n    - AC-007: Ship order only from paid status.\n    - AC-008: Complete order only from shipped status.\n  Traces to: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): Stores user information keyed by user_id.\n    Data Type: dict\n  - products (memory, read_write): Stores product information keyed by product_id.\n    Data Type: dict\n  - orders (memory, read_write): Stores order records keyed by order_id.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: Stores user information keyed by user_id.\n  - read_write on products: Stores product information keyed by product_id.\n  - read_write on orders: Stores order records keyed by order_id.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "Route_Order_Command",
+        "purpose": "Routes the incoming command to the appropriate order management handler based on the command string.",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "The command string indicating the operation to perform",
+            "source": "parent_input"
+          },
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "The order data payload for the command",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "handler_result",
+            "type": "dict",
+            "description": "The result from the dispatched handler",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Command validation and routing",
+            "Invoking the correct handler function"
+          ],
+          "out_of_scope": [
+            "Performing the actual business logic of any command"
+          ]
+        },
+        "preconditions": [
+          "Command is a valid string",
+          "Order data is a dictionary"
+        ],
+        "postconditions": [
+          "The correct handler has been invoked with the provided data"
+        ],
+        "behavior": "This function acts as a dispatcher. It validates the command string and calls the corresponding child handler function (e.g., handle_create_order, handle_pay_order) with the order_data. It returns the result from that handler.",
+        "signature": "def Route_Order_Command(command: str, order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Command must be one of the predefined set"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Correct handler is invoked for each valid command",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004",
+            "FR-005",
+            "FR-006",
+            "FR-007",
+            "FR-008"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "Handle_Create_Order",
+        "purpose": "Handles the create_order command by validating user and stock, calculating price, deducting stock, and creating a new order.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains user_id and items list",
+            "source": "Route_Order_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Success message and order details",
+            "consumer": "Route_Order_Command"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "User validation",
+            "Stock check and deduction",
+            "Price calculation",
+            "Order creation"
+          ],
+          "out_of_scope": [
+            "User balance operations",
+            "Order status transitions beyond pending"
+          ]
+        },
+        "preconditions": [
+          "Order data contains user_id and items"
+        ],
+        "postconditions": [
+          "Order is created with status pending",
+          "Product stock is deducted"
+        ],
+        "behavior": "Validates user existence, checks product stock for each item, calculates total price, deducts stock, creates a new order record with status 'pending', and returns success with order_id and total_price.",
+        "signature": "def Handle_Create_Order(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read",
+            "description": "Check user existence"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Check and deduct stock"
+          },
+          {
+            "source_name": "orders",
+            "operation_type": "write",
+            "description": "Create new order"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Stock must be sufficient for all items"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Create order with valid user and sufficient stock succeeds",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-002",
+            "description": "Create order with insufficient stock fails",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read",
+            "description": "Check user existence"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Check and deduct stock"
+          },
+          {
+            "variable": "orders",
+            "op": "write",
+            "description": "Create new order"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Route_Order_Command"
+        },
+        "requested_capabilities": [
+          "users.exists",
+          "users.get",
+          "products.get",
+          "products.update",
+          "orders.create"
+        ]
+      },
+      {
+        "name": "Handle_Pay_Order",
+        "purpose": "Handles the pay_order command by validating order status, checking user balance, deducting balance, and updating order status to paid.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains order_id and user_id",
+            "source": "Route_Order_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Success message and payment details",
+            "consumer": "Route_Order_Command"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order validation",
+            "Balance check and deduction",
+            "Status update to paid"
+          ],
+          "out_of_scope": [
+            "Shipping or completion operations"
+          ]
+        },
+        "preconditions": [
+          "Order exists and is in pending status",
+          "User has sufficient balance"
+        ],
+        "postconditions": [
+          "Order status is updated to paid",
+          "User balance is deducted"
+        ],
+        "behavior": "Validates order existence and status, retrieves user balance, checks if sufficient, deducts balance, updates order status to 'paid', and returns success.",
+        "signature": "def Handle_Pay_Order(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Check order status and update to paid"
+          },
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Check and deduct user balance"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "Order must be in pending status"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Pay order with sufficient balance succeeds",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-004",
+            "description": "Pay order with insufficient balance fails",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Check order status and update to paid"
+          },
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Check and deduct user balance"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-002"
+          ],
+          "derived_from": "Route_Order_Command"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.update",
+          "users.get",
+          "users.update"
+        ]
+      },
+      {
+        "name": "Handle_Ship_Order",
+        "purpose": "Handles the ship_order command by validating order status and updating status to shipped.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains order_id",
+            "source": "Route_Order_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Success message",
+            "consumer": "Route_Order_Command"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order validation",
+            "Status update to shipped"
+          ],
+          "out_of_scope": [
+            "Any balance or stock operations"
+          ]
+        },
+        "preconditions": [
+          "Order exists and is in paid status"
+        ],
+        "postconditions": [
+          "Order status is updated to shipped"
+        ],
+        "behavior": "Validates order existence and status, updates status to 'shipped', and returns success.",
+        "signature": "def Handle_Ship_Order(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Check order status and update to shipped"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "Order must be in paid status"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-007",
+            "description": "Ship order only from paid status",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Check order status and update to shipped"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-003"
+          ],
+          "derived_from": "Route_Order_Command"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "Handle_Complete_Order",
+        "purpose": "Handles the complete_order command by validating order status and updating status to completed.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains order_id",
+            "source": "Route_Order_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Success message",
+            "consumer": "Route_Order_Command"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order validation",
+            "Status update to completed"
+          ],
+          "out_of_scope": [
+            "Any balance or stock operations"
+          ]
+        },
+        "preconditions": [
+          "Order exists and is in shipped status"
+        ],
+        "postconditions": [
+          "Order status is updated to completed"
+        ],
+        "behavior": "Validates order existence and status, updates status to 'completed', and returns success.",
+        "signature": "def Handle_Complete_Order(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Check order status and update to completed"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "Order must be in shipped status"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-008",
+            "description": "Complete order only from shipped status",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Check order status and update to completed"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004"
+          ],
+          "derived_from": "Route_Order_Command"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "Handle_Cancel_Order",
+        "purpose": "Handles the cancel_order command by validating order status, restoring stock, refunding balance if paid, and updating status to cancelled.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains order_id",
+            "source": "Route_Order_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Success message",
+            "consumer": "Route_Order_Command"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order validation",
+            "Stock restoration",
+            "Balance refund if paid",
+            "Status update to cancelled"
+          ],
+          "out_of_scope": [
+            "Any other operations"
+          ]
+        },
+        "preconditions": [
+          "Order exists and is in pending or paid status"
+        ],
+        "postconditions": [
+          "Order status is updated to cancelled",
+          "Product stock is restored",
+          "Balance is refunded if order was paid"
+        ],
+        "behavior": "Validates order existence and status, retrieves order items, restores product stock, refunds user balance if order was paid, updates order status to 'cancelled', and returns success.",
+        "signature": "def Handle_Cancel_Order(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Check order status and update to cancelled"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Restore product stock"
+          },
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Refund balance if paid"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-006",
+            "description": "Order must be in pending or paid status"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Cancel pending order restores stock and no refund",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-006",
+            "description": "Cancel paid order restores stock and refunds balance",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Check order status and update to cancelled"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Restore product stock"
+          },
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Refund balance if paid"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-005"
+          ],
+          "derived_from": "Route_Order_Command"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.update",
+          "products.update",
+          "users.get",
+          "users.update"
+        ]
+      },
+      {
+        "name": "Handle_List_Orders",
+        "purpose": "Handles the list_orders command by retrieving orders with optional filters and formatting the response.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains optional user_filter and status_filter",
+            "source": "Route_Order_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "List of orders with details",
+            "consumer": "Route_Order_Command"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Retrieving orders with filters",
+            "Formatting order details"
+          ],
+          "out_of_scope": [
+            "Any modification of orders"
+          ]
+        },
+        "preconditions": [
+          "Filters are valid if provided"
+        ],
+        "postconditions": [
+          "Orders list is returned with details"
+        ],
+        "behavior": "Extracts user_id and status from order_data, calls orders.list with filters, formats each order with items, total price, status, and creation time, and returns the list.",
+        "signature": "def Handle_List_Orders(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "List orders with filters"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "List orders with filters"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-006"
+          ],
+          "derived_from": "Route_Order_Command"
+        },
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      },
+      {
+        "name": "Handle_Get_User_Orders",
+        "purpose": "Handles the get_user_orders command by retrieving all orders for a specific user and calculating statistics.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains user_id",
+            "source": "Route_Order_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "User orders and statistics",
+            "consumer": "Route_Order_Command"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Retrieving user orders",
+            "Calculating total spent and order counts per status"
+          ],
+          "out_of_scope": [
+            "Any modification of orders"
+          ]
+        },
+        "preconditions": [
+          "User ID is provided"
+        ],
+        "postconditions": [
+          "User orders and statistics are returned"
+        ],
+        "behavior": "Retrieves all orders for the given user_id, calculates total spent and count of orders per status, and returns the data.",
+        "signature": "def Handle_Get_User_Orders(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "List orders for user"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "List orders for user"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-007"
+          ],
+          "derived_from": "Route_Order_Command"
+        },
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      },
+      {
+        "name": "Handle_List_Products",
+        "purpose": "Handles the list_products command by retrieving products with optional low stock filter.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains optional low_stock flag",
+            "source": "Route_Order_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "List of products with info and stock",
+            "consumer": "Route_Order_Command"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Retrieving products",
+            "Filtering low stock products if requested"
+          ],
+          "out_of_scope": [
+            "Any modification of products"
+          ]
+        },
+        "preconditions": [
+          "Low stock filter is valid if provided"
+        ],
+        "postconditions": [
+          "Products list is returned"
+        ],
+        "behavior": "Extracts low_stock flag from order_data, calls products.list with appropriate threshold, and returns the list of products.",
+        "signature": "def Handle_List_Products(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "List products with optional filter"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "List products with optional filter"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-008"
+          ],
+          "derived_from": "Route_Order_Command"
+        },
+        "requested_capabilities": [
+          "products.list"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores user information keyed by user_id"
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores product information keyed by product_id"
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores order records keyed by order_id"
+      }
+    ],
+    "decomposition_rationale": "The parent function 'Order_Management_System' is decomposed into a coordinator child 'Route_Order_Command' and eight handler children, each responsible for one specific command. The coordinator validates the command and dispatches to the appropriate handler. Each handler performs its specific business logic (e.g., create, pay, ship) by interacting with the data sources (users, products, orders) through the requested capabilities. The children are at the same abstraction level (command handlers) and do not call each other. The parent's inputs (command, order_data) are routed to the coordinator, which passes them to handlers. The handlers produce results that are returned through the coordinator to the parent output. All data operations are performed by the handlers, and the parent orchestrates by calling the coordinator.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "Route_Order_Command"
+      },
+      "parent_outputs_produced_by": {
+        "output": "Route_Order_Command"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Route_Order_Command",
+        "to_input": "command",
+        "note": "Parent input 'command' is passed to coordinator"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Route_Order_Command",
+        "to_input": "order_data",
+        "note": "Parent input 'order_data' is passed to coordinator"
+      },
+      {
+        "from_node": "Route_Order_Command",
+        "from_output": "handler_result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Coordinator result is passed to parent output"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

@@ -1,0 +1,474 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Student_Grade_System\nNode Purpose: Student Grade System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - students (memory, read_write): Stores student information with fields: student_id, name, class, enrollment_year. Pre-populated with 10 test students.\n    Data Type: list\n  - courses (memory, read_write): Stores course information with fields: course_id, name, credit, teacher. Pre-populated with 4 test courses.\n    Data Type: list\n  - grades (memory, read_write): Stores grade records with fields: grade_id, student_id, course_id, score, recorded_at. Initially empty.\n    Data Type: list\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on students: Stores student information with fields: student_id, name, class, enrollment_year. Pre-populated with 10 test students.\n  - read_write on courses: Stores course information with fields: course_id, name, credit, teacher. Pre-populated with 4 test courses.\n  - read_write on grades: Stores grade records with fields: grade_id, student_id, course_id, score, recorded_at. Initially empty.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - students.get: def get_student(student_id: int) -> dict | None:\n    Description: Retrieve a student by student_id\n  - students.list: def list_students(filter_class: str | None = None) -> list[dict]:\n    Description: List all students, optionally filtered by class\n  - students.create: def create_student(student: dict) -> dict:\n    Description: Create a new student record\n  - students.exists: def student_exists(student_id: int) -> bool:\n    Description: Check if a student with given student_id exists\n  - courses.get: def get_course(course_id: int) -> dict | None:\n    Description: Retrieve a course by course_id\n  - courses.list: def list_courses(filter_teacher: str | None = None) -> list[dict]:\n    Description: List all courses, optionally filtered by teacher\n  - courses.create: def create_course(course: dict) -> dict:\n    Description: Create a new course record\n  - courses.exists: def course_exists(course_id: int) -> bool:\n    Description: Check if a course with given course_id exists\n  - grades.get: def get_grade(grade_id: int) -> dict | None:\n    Description: Retrieve a grade by grade_id\n  - grades.list: def list_grades(student_id: int | None = None, course_id: int | None = None) -> list[dict]:\n    Description: List grades, optionally filtered by student_id and/or course_id\n  - grades.create: def create_grade(grade: dict) -> dict:\n    Description: Create a new grade record\n  - grades.update: def update_grade(grade_id: int, updates: dict) -> dict:\n    Description: Update an existing grade's score and/or recorded_at\n  - grades.delete: def delete_grade(grade_id: int) -> None:\n    Description: Delete a grade by grade_id\n  - grades.exists: def grade_exists(grade_id: int) -> bool:\n    Description: Check if a grade with given grade_id exists\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "ParseInput",
+        "purpose": "Parse raw system input into a structured command object",
+        "inputs": [
+          {
+            "name": "raw_input",
+            "type": "Any",
+            "description": "Raw input from user/system",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "parsed_command",
+            "type": "dict",
+            "description": "Parsed command containing action and data",
+            "consumer": "parent for routing to managers and FormatOutput"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Interpretation of input as JSON/dict",
+            "Extracting action and data fields",
+            "Basic validation of command structure"
+          ],
+          "out_of_scope": [
+            "Application-specific validation",
+            "Executing operations"
+          ]
+        },
+        "preconditions": [
+          "Input is a valid JSON object or dict with 'action' and 'data' fields"
+        ],
+        "postconditions": [
+          "Output is a dict with keys 'action' and 'data'"
+        ],
+        "behavior": "Receives raw input, attempts to parse it as a dictionary. If successful, extracts 'action' (string) and 'data' (dict). Returns parsed command. If parsing fails, returns error in command format.",
+        "signature": "def ParseInput(raw_input: Any) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Performs only data transformation without side effects",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Input must be parseable as dict"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Given valid JSON returns dict with action and data",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "StudentManager",
+        "purpose": "Handle all student-related operations (create, get, list)",
+        "inputs": [
+          {
+            "name": "parsed_command",
+            "type": "dict",
+            "description": "Parsed command with action and data",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "operation_result",
+            "type": "dict",
+            "description": "Result of the student operation",
+            "consumer": "FormatOutput"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating a new student",
+            "Retrieving a student by ID",
+            "Listing all students (with optional filter)",
+            "Validating input data for each operation"
+          ],
+          "out_of_scope": [
+            "Course or grade operations",
+            "Complex reporting"
+          ]
+        },
+        "preconditions": [
+          "parsed_command['action'] indicates a student operation (e.g., 'create_student', 'get_student', 'list_students')",
+          "Data store 'students' is accessible"
+        ],
+        "postconditions": [
+          "Student data is consistent with operation performed",
+          "If create, new student record added; if get, returns student if exists; if list, returns list of students"
+        ],
+        "behavior": "Dispatches to internal subfunctions based on action: create_student, get_student, list_students. Uses student data store for persistence. Returns dict with success status and result or error.",
+        "signature": "def StudentManager(parsed_command: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read_write",
+            "description": "Perform student CRUD operations"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Student IDs must be unique"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-002",
+            "description": "Create student with valid data succeeds",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read_write",
+            "description": "Access student data store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "CourseManager",
+        "purpose": "Handle all course-related operations (create, get, list)",
+        "inputs": [
+          {
+            "name": "parsed_command",
+            "type": "dict",
+            "description": "Parsed command with action and data",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "operation_result",
+            "type": "dict",
+            "description": "Result of the course operation",
+            "consumer": "FormatOutput"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating a new course",
+            "Retrieving a course by ID",
+            "Listing all courses (with optional filter)",
+            "Validating input data"
+          ],
+          "out_of_scope": [
+            "Student or grade operations"
+          ]
+        },
+        "preconditions": [
+          "parsed_command['action'] indicates a course operation",
+          "Data store 'courses' is accessible"
+        ],
+        "postconditions": [
+          "Course data updated accordingly"
+        ],
+        "behavior": "Dispatches to subfunctions for create_course, get_course, list_courses using courses data store.",
+        "signature": "def CourseManager(parsed_command: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "",
+        "data_operations": [
+          {
+            "source_name": "courses",
+            "operation_type": "read_write",
+            "description": "Perform course CRUD operations"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "Course IDs must be unique"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Create course with valid data succeeds",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read_write",
+            "description": "Access course data store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "GradeManager",
+        "purpose": "Handle all grade-related operations (create, get, list, update, delete)",
+        "inputs": [
+          {
+            "name": "parsed_command",
+            "type": "dict",
+            "description": "Parsed command with action and data",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "operation_result",
+            "type": "dict",
+            "description": "Result of the grade operation",
+            "consumer": "FormatOutput"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating a grade",
+            "Retrieving a grade by ID",
+            "Listing grades by student/course/both",
+            "Updating grade score and timestamp",
+            "Deleting a grade",
+            "Validating input data including reference to existing student and course"
+          ],
+          "out_of_scope": [
+            "Student or course creation/deletion"
+          ]
+        },
+        "preconditions": [
+          "parsed_command['action'] indicates a grade operation",
+          "Data store 'grades' is accessible"
+        ],
+        "postconditions": [
+          "Grade data is consistent with operation"
+        ],
+        "behavior": "Dispatches to subfunctions: create_grade, get_grade, list_grades, update_grade, delete_grade using grades data store. May check student and course existence via external calls.",
+        "signature": "def GradeManager(parsed_command: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "read_write",
+            "description": "Perform grade CRUD operations"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "Grade scores must be between 0-100"
+          },
+          {
+            "constraint_id": "C-005",
+            "description": "Student and course must exist for grade creation"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-004",
+            "description": "Create grade with valid data succeeds",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Access grade data store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "FormatOutput",
+        "purpose": "Format the operation result into a consistent output structure",
+        "inputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result from an operation manager",
+            "source": "from one of StudentManager, CourseManager, or GradeManager output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "final_output",
+            "type": "Any",
+            "description": "Formatted system output",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Packaging result into response object",
+            "Adding status code or error message",
+            "Ensuring consistent JSON structure"
+          ],
+          "out_of_scope": [
+            "Business logic",
+            "Data validation"
+          ]
+        },
+        "preconditions": [
+          "result dict contains 'success' and either 'data' or 'error'"
+        ],
+        "postconditions": [
+          "Output is a dict with keys 'status' (string) and 'data' (any) or 'error' (string)"
+        ],
+        "behavior": "Takes result dict and returns a formatted dict with status and data/error fields.",
+        "signature": "def FormatOutput(result: dict) -> Any",
+        "stop_decompose": true,
+        "stop_reason": "Performs only data formatting without side effects",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [],
+        "acceptance_criteria": [],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "students",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores student information with fields: student_id, name, class, enrollment_year. Pre-populated with 10 test students."
+      },
+      {
+        "name": "courses",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores course information with fields: course_id, name, credit, teacher. Pre-populated with 4 test courses."
+      },
+      {
+        "name": "grades",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores grade records with fields: grade_id, student_id, course_id, score, recorded_at. Initially empty."
+      }
+    ],
+    "decomposition_rationale": "The Student_Grade_System is decomposed into five children that collectively implement the system. The flow starts with ParseInput, which parses the generic input into a structured command (action + data). Based on the action field, the parent conditionally routes the parsed command to one of three domain-specific managers: StudentManager, CourseManager, or GradeManager. Each manager handles all CRUD operations for its domain by internally dispatching to atomic subfunctions (which will be defined in further decomposition). After the manager produces a result, the parent passes that result to FormatOutput, which standardizes the response into a consistent output structure for the system. This decomposition preserves the parent's external interface (Any input, Any output) while distributing the system's responsibilities across coherent modules. The global variables are distributed: students to StudentManager, courses to CourseManager, grades to GradeManager. Dataflow edges show that each manager's input comes from ParseInput and output goes to FormatOutput, with the parent orchestrating the conditional routing.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "ParseInput"
+      },
+      "parent_outputs_produced_by": {
+        "output": "FormatOutput"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "ParseInput",
+        "to_input": "raw_input",
+        "note": "Raw input enters the system"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "parsed_command",
+        "to_node": "StudentManager",
+        "to_input": "parsed_command",
+        "note": "Parsed command routed to student manager if action is student-related"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "parsed_command",
+        "to_node": "CourseManager",
+        "to_input": "parsed_command",
+        "note": "Parsed command routed to course manager if action is course-related"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "parsed_command",
+        "to_node": "GradeManager",
+        "to_input": "parsed_command",
+        "note": "Parsed command routed to grade manager if action is grade-related"
+      },
+      {
+        "from_node": "StudentManager",
+        "from_output": "operation_result",
+        "to_node": "FormatOutput",
+        "to_input": "result",
+        "note": "Result from student operation formatted into output"
+      },
+      {
+        "from_node": "CourseManager",
+        "from_output": "operation_result",
+        "to_node": "FormatOutput",
+        "to_input": "result",
+        "note": "Result from course operation formatted into output"
+      },
+      {
+        "from_node": "GradeManager",
+        "from_output": "operation_result",
+        "to_node": "FormatOutput",
+        "to_input": "result",
+        "note": "Result from grade operation formatted into output"
+      },
+      {
+        "from_node": "FormatOutput",
+        "from_output": "final_output",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Formatted output returned to caller"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "ParseInput",
+        "to": "StudentManager",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "CourseManager",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "GradeManager",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "FormatOutput",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

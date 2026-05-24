@@ -1,0 +1,5 @@
+{
+  "call_id": 3,
+  "elapsed": 6.4,
+  "response": "在本次验证中，父函数 **`ExecuteBuild`** 的直接子节点本应包括 `LoadConfig`、`RunPipeline`、`CompileCode`、`ExecuteTests` 和 `PackageOutput`。然而，从代码逻辑描述来看，`ExecuteBuild` 只直接调用了 **`LoadConfig`** 和 **`RunPipeline`**，**从未直接调用**以下三个子节点：\n\n### 未被直接调用的子节点列表及原因\n\n| 子节点名称 | 未被直接调用的原因 |\n|-----------|-------------------|\n| **`CompileCode`** | 在 `ExecuteBuild` 的代码中，`CompileCode` 是由 `RunPipeline` 内部调用的，而不是由 `ExecuteBuild` 直接调用。`ExecuteBuild` 仅通过 `RunPipeline` 间接触发了编译步骤，但并未在自身代码中写出 `RunPipeline` 之外的直接调用语句。 |\n| **`ExecuteTests`** | 同样，`ExecuteTests` 被描述为在 `RunPipeline` 内部被调用，作为流水线的一个步骤。`ExecuteBuild` 没有对其直接发起调用。 |\n| **`PackageOutput`** | `PackageOutput` 也是 `RunPipeline` 内部调用的最后一个步骤，`ExecuteBuild` 本身没有直接显式调用它。 |\n\n### 根本原因分析\n\n这实际上是一个**层次设计错误**：`RunPipeline` 被赋予了协调子步骤（编译、测试、打包）的职责，但在分解结构中，这些子步骤却直接被列为 `ExecuteBuild` 的子节点，而不是 `RunPipeline` 的子节点。正确的做法应该是：\n\n- 要么将 `CompileCode`、`ExecuteTests`、`PackageOutput` 全部降级为 `RunPipeline` 的直接子节点（即 `RunPipeline` 成为中层节点）；\n- 要么让 `ExecuteBuild` 完全绕过 `RunPipeline`，按顺序直接调用所有四个叶子子节点（此时 `RunPipeline` 这个节点应该被移除或替换为空的调度器）。\n\n当前的不一致导致 `child_coverage` 检查失败，同时也触发了 `no_cross_calls` 检查失败（因为 `RunPipeline` 调用了它的兄弟节点）。"
+}

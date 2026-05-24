@@ -1,0 +1,62 @@
+{
+  "case_index": 8,
+  "name": "MigrateData",
+  "error_type": "wrong_abstraction",
+  "description": "OpenConnection and CloseConnection are infrastructure details (connection lifecycle), not business-level decomposition children. They should be internal implementation details of the data access layer, not peers of ValidateSchema and CopyRows in the decomposition tree.",
+  "expected_verdict": "cannot_compose",
+  "actual_verdict": "cannot_compose",
+  "verdict_match": true,
+  "elapsed": 74.7,
+  "llm_calls": 5,
+  "checks": {
+    "return_value_origin": {
+      "passed": false,
+      "detail": "Return value contains literal True for 'success' field, which is not derived from any child function. Also missing 'errors' field as specified in parent output."
+    },
+    "child_coverage": {
+      "passed": true,
+      "detail": "All child functions (ValidateSchema, OpenConnection, CopyRows, CloseConnection) are called directly in the parent code."
+    },
+    "no_direct_access": {
+      "passed": true,
+      "detail": "No direct reads or writes to global variables or data sources; all data operations go through child functions."
+    },
+    "no_cross_calls": {
+      "passed": true,
+      "detail": "No child function calls another child function; the tree structure is preserved."
+    }
+  },
+  "feedback": {
+    "reason": "cannot_satisfy_parent_output",
+    "offending_child": "",
+    "failed_checks": [
+      "return_value_origin"
+    ],
+    "missing_inputs": [],
+    "direct_resource_accesses": [],
+    "suggested_fix": "Re-decompose to include a child function that returns migration success status (including errors) based on actual outcomes, or have the parent compute success from child results (e.g., if errors exist, set success to False). Also ensure the output includes the 'errors' field from a child.",
+    "requires_redecomposition": true
+  },
+  "interview": [
+    {
+      "question": "请详细说明你在验证过程中发现的具体问题。哪些检查项没有通过？为什么？",
+      "answer": "您在验证结果中看到了四个检查项的结论，其中 **return_value_origin** 没有通过，这是导致最终判定为 “cannot_compose” 的根本原因。下面我详细说明为什么这项检查失败，以及它具体违反了哪些验证规则。\n\n---\n\n### return_value_origin 检查的目的\n这个检查要求 **父函数（parent function）的所有返回字段都必须直接来自某个子函数（child function）的返回值**。换句话说，父函数不能自己发明或硬编码输出字段的值（除了简单的结构重组或重命名），必须保证每个字段都有明确的“血缘关系”——即该字段的值是从某个子函数的 `return` 中继承下来的。这样做的目的是确保组合的可追踪性：整个数据流可以被完整地分解到叶子节点，父函数只是一个组合器，而不是计算逻辑的参与者。\n\n---\n\n### 具体发现问题\n\n#### 1. `success` 字段是硬编码的 `True`，未从任何子函数获取\n在验证的代码中，父函数返回了类似这样的字典：\n```python\n{'success': True, ...}\n```\n但这 `True` 是字面量，没有引用任何子函数的返回值。按照设计，父函数必须调用子函数（如 `CopyRows`）并根据其返回结果来设置 `success` 值，例如：\n```python\nresult = copy_rows()\nreturn {'success': result.get('success', False), 'errors': result.get('errors', [])}\n```\n如果强制写死 `True`，就等于跳过了子函数的真实执行结果，破坏了“父函数仅组合”的规则。\n\n#### 2. 缺少父输出所要求的 `errors` 字段\n父函数的输出定义（通常在验证的输入文件或规范中）明确要求包含 `errors` 字段，但在实际返回中并没有出现。该字段同样需要来自某个子函数（例如 `ValidateSchema` 或 `CopyRows` 可能返回错误列表）。缺失意味着父函数没有将子函数的错误信息传递给上层，导致组合后的结果不完整。\n\n---\n\n### 为什么其他检查项都通过了？\n\n- **child_coverage** 通过：父函数确实调用了所有指定的四个子函数（ValidateSchema、OpenConnection、CopyRows、CloseConnection），没有遗漏。\n- **no_direct_access** 通过：父函数没有直接读写数据库、文件或全局变量，所有数据操作都委托给了子函数。\n- **no_cross_calls** 通过：子函数之间没有相互调用，树状结构保持纯净。\n\n这说明问题的焦点完全集中在 **输出字段的来源合规性** 上。即使结构是树状的、调用覆盖全部子函数，只要父函数硬编码了某个字段或遗漏了必填字段，整个组合就不能被认为是通过验证的。按照验证规则，这种情况需要重新分解（redecompose），必须引入一个新的子函数来生成 `success` 和 `errors`，或者让父函数从现有的子函数结果中正确提取这两个字段。"
+    },
+    {
+      "question": "请列出所有在代码中没有被父函数直接调用的子节点名称。对于每个未被调用的子节点，你认为原因是什么？",
+      "answer": "根据您提供的验证结果，**child_coverage** 检查项是 **通过的**。在代码中，父函数直接调用了所有四个子函数：`ValidateSchema`、`OpenConnection`、`CopyRows` 和 `CloseConnection`。因此，**不存在未被父函数直接调用的子节点**。\n\n### 原因解释\n- 验证过程中，我逐行检查了父函数的调用语句，确认每个子函数都被显式调用了一次（或按设计逻辑调用）。调用顺序可能为：先 `ValidateSchema`，然后 `OpenConnection`，接着 `CopyRows`，最后 `CloseConnection`。没有遗漏任何一个子函数。\n- 如果一个子函数未被调用，`child_coverage` 将会标记为 **失败**，并列出缺失的子节点名称。但验证结果中该检查项为绿色通过，所以没有遗漏。\n\n### 补充说明\n您可能注意到验证最终判定为 `cannot_compose`，但那是因为 **return_value_origin** 检查失败（父函数硬编码了 `success` 字段且缺少 `errors` 字段），而不是因为子函数调用覆盖不全。所有子节点都被正确调用了。"
+    },
+    {
+      "question": "如果你认为这个分解存在问题，请提出具体的修复建议。应该如何重新分解才能解决这些问题？",
+      "answer": "鉴于验证结果中 `return_value_origin` 检查失败，根本原因是父函数硬编码了 `success=True` 且缺少 `errors` 字段，而这两个字段必须直接来自子函数的返回值。为了符合验证规则，**必须重新分解**，使父函数的输出能够完全从某个子函数的返回值中直接得到（而不是由父函数计算或硬编码）。以下是两种可行的修复方案，我推荐方案一。\n\n---\n\n### 方案一：合并步骤到一个新的子函数（推荐）\n\n**问题**：当前父函数同时调用四个子函数（ValidateSchema、OpenConnection、CopyRows、CloseConnection），但没有任何一个子函数能独立提供完整的迁移结果（包括 `success` 和 `errors`）。  \n**修复**：将这四个子功能封装到一个新的子函数 `ExecuteMigration` 中，使其负责整个迁移流程，并返回一个包含 `success` 和 `errors` 的字典。父函数只需调用这一个子函数并直接返回其结果。\n\n**重新分解后的树结构**：\n```\n父函数\n  └── 子函数: ExecuteMigration\n         (内部顺序调用 ValidateSchema, OpenConnection, CopyRows, CloseConnection)\n```\n\n**父函数代码示例**：\n```python\ndef parent():\n    result = execute_migration()   # 调用唯一的子函数\n    return result                   # 直接返回子函数的输出\n```\n\n**子函数 `ExecuteMigration` 内部逻辑**（示例）：\n```python\ndef execute_migration():\n    errors = []\n    schema_ok = validate_schema()\n    if not schema_ok['success']:\n        errors.extend(schema_ok['errors'])\n        return {'success': False, 'errors': errors}   # 提前返回，不再继续\n    conn = open_connection()\n    if not conn['success']:\n        errors.extend(conn['errors'])\n        return {'success': False, 'errors': errors}\n    copy_ok = copy_rows()\n    if not copy_ok['success']:\n        errors.extend(copy_ok['errors'])\n        # 仍然需要关闭连接\n        close_connection({'success': True, 'errors': []})  # 假设关闭连接总是成功\n        return {'success': False, 'errors': errors}\n    close_ok = close_connection(conn)\n    if not close_ok['success']:\n        errors.extend(close_ok['errors'])\n        return {'success': False, 'errors': errors}\n    return {'success': True, 'errors': []}\n```\n\n**为什么能通过所有检查**：\n- **return_value_origin**：父函数返回的 `success` 和 `errors` 完全来自子函数 `ExecuteMigration` 的返回值。\n- **child_coverage**：父函数调用了 `ExecuteMigration`，唯一子函数被覆盖。\n- **no_direct_access**：`ExecuteMigration` 内部访问数据源时仍通过原叶子函数，父函数没有直接操作。\n- **no_cross_calls**：父函数的直接子函数只有 `ExecuteMigration`，不存在其他子函数之间的交叉调用（`ExecuteMigration` 内部调用的函数不是父函数的直接子函数，因此不违反此规则）。\n\n**注意**：验证规则中的 `no_cross_calls` 禁止的是父函数的直接子函数之间互相调用，而这里 `ExecuteMigration` 是父函数唯一的直接子函数，它内部调用其他函数属于实现细节，不会触发该检查。\n\n---\n\n### 方案二：修改现有子函数，让其中一个返回完整结果\n\n如果坚持保留四个子函数的结构，则必须修改其中一个子函数的返回值，使其包含所有必要的状态信息。例如，让 `CopyRows` 子函数在内部也执行 `CloseConnection`（破坏现有职责？）或让 `CloseConnection` 返回包括所有错误信息。但这会导致子函数职责不清、耦合度高，且其他子函数的结果被忽略（例如 ValidateSchema 失败时，CloseConnection 的错误就不会被捕获）。此方案不推荐，因为很容易引入新的逻辑漏洞，且需要同时修改多个子函数的签名。\n\n---\n\n### 最终建议\n\n**立即采用方案一**：将四个步骤合并到一个名为 `ExecuteMigration` 的子函数中，父函数只调用它并直接返回结果。这既满足了验证规则，又保持了职责明确和可追溯性。如果需要保留原有子函数作为单元测试的粒度，可以继续保留它们，但强制让 `ExecuteMigration` 内部使用它们（此时原四个子函数成为 `ExecuteMigration` 的内部依赖，不再是父函数的直接子函数，树结构变为两层，但在验证时只检查父函数这一层的直接子函数）。"
+    },
+    {
+      "question": "在这个分解中，是否存在某个子节点承担了过多职责？如果有，它应该被拆分为哪些更小的子节点？",
+      "answer": "首先需要澄清“这个分解”指代的是哪一个：  \n- 如果是指**原始分解**（父函数直接调用 ValidateSchema、OpenConnection、CopyRows、CloseConnection 四个子函数），那么**不存在职责过多的子节点**。每个子函数的职责非常单一且界限清晰（验证、连接、复制、关闭），完全符合单一职责原则。  \n- 如果是指**我之前给出的修复方案一**（将四个步骤合并到 `ExecuteMigration` 一个子函数中），那么**`ExecuteMigration` 确实承担了过多职责**，因为它不仅要协调四个步骤的顺序、处理条件判断和提前返回，还要负责收集和归总错误信息，这违背了单一职责原则。\n\n---\n\n### 如果是修复方案一（合并）存在职责过多的问题，应如何重新拆分？\n\n验证规则的核心限制是：**父函数输出的每个字段（success、errors）必须直接来自某个子函数的返回值，不能由父函数自己计算或硬编码**。这意味着我们不能简单地将流程控制权重新还给父函数（父函数不允许做条件判断和错误聚合）。因此必须保留一个中间层子函数来执行流程控制和结果聚合，但可以将该中间层的内部职责进一步细分为更小的子节点，以实现更细粒度的职责分离。\n\n#### 推荐的重新分解方案（三层树结构）\n\n**第一层（父函数）**：只调用一个子函数 `MigrationCoordinator` 并直接返回其返回值。  \n**第二层（中间层子函数 `MigrationCoordinator`）**：负责协调迁移流程，但内部不再直接实现所有逻辑，而是调用第三层的、职责单一的子函数。  \n**第三层（叶子子函数）**：保持原始的四个独立子函数（ValidateSchema、OpenConnection、CopyRows、CloseConnection），每个只做一件事，并返回包含 `success` 和 `errors` 的字典。\n\n这样 `MigrationCoordinator` 的职责就是**流程编排与结果聚合**，它虽然比单个叶子函数职责稍重，但仍在合理范围内，且完全满足单一职责原则（它的唯一职责是“编排迁移流程并生成最终状态”）。以下是其内部结构的伪代码：\n\n```python\ndef migration_coordinator():\n    errors = []\n    \n    schema_result = validate_schema()\n    if not schema_result['success']:\n        return {'success': False, 'errors': errors + schema_result['errors']}\n    # 不将错误传递给父函数？这里按需设计：如果验证失败，直接返回，不继续打开连接。\n    \n    conn_result = open_connection()\n    if not conn_result['success']:\n        return {'success': False, 'errors': errors + conn_result['errors']}\n    \n    copy_result = copy_rows()\n    if not copy_result['success']:\n        close_connection({'success': True})  # 仍要关闭连接\n        return {'success': False, 'errors': errors + copy_result['errors']}\n    \n    close_result = close_connection(conn_result)\n    if not close_result['success']:\n        return {'success': False, 'errors': errors + close_result['errors']}\n    \n    return {'success': True, 'errors': []}\n```\n\n**父函数**：\n```python\ndef parent():\n    return migration_coordinator()\n```\n\n---\n\n### 这样拆分后是否解决了所有问题？\n\n- **return_value_origin**：父函数返回的 `success` 和 `errors` 完全来自 `MigrationCoordinator` 返回值，通过。  \n- **child_coverage**：父函数调用了 `MigrationCoordinator`，通过。  \n- **no_direct_access**：`MigrationCoordinator` 通过叶子函数访问资源，父函数无直接访问，通过。  \n- **no_cross_calls**：`MigrationCoordinator` 是父函数唯一的直接子节点，它内部调用叶子函数不违规（交叉调用禁止的是父函数的直接子节点之间的调用，而不是多层嵌套中的调用）。通过。  \n- **职责单一**：每个节点职责清晰——叶子节点负责单一操作；`MigrationCoordinator` 负责编排；父函数负责组合。没有节点承担过多职责。\n\n---\n\n### 结论\n\n- 原分解（四个叶子节点）**没有职责过多的子节点**。  \n- 如果采用了合并的方案，则确实存在职责过多的问题，应按照上述三层结构重新拆分：父函数 → `MigrationCoordinator`（编排+聚合） → 四个独立叶子操作。这样既满足验证规则，又保持了良好的职责分离。"
+    }
+  ],
+  "tags": [
+    "abstraction_level",
+    "infrastructure"
+  ]
+}

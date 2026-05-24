@@ -1,0 +1,900 @@
+"""
+Data models for decomposition tree nodes.
+"""
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+import json
+
+
+@dataclass
+class InputParam:
+    name: str
+    type: str
+    description: str = ""
+    source: str = ""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        result = {"name": self.name, "type": self.type, "description": self.description}
+        if self.source:
+            result["source"] = self.source
+        return result
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "InputParam":
+        return cls(
+            name=data.get("name", ""),
+            type=data.get("type", "Any"),
+            description=data.get("description", ""),
+            source=data.get("source", "")
+        )
+
+
+@dataclass
+class OutputParam:
+    name: str
+    type: str
+    description: str = ""
+    consumer: str = ""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        result = {"name": self.name, "type": self.type, "description": self.description}
+        if self.consumer:
+            result["consumer"] = self.consumer
+        return result
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "OutputParam":
+        return cls(
+            name=data.get("name", ""),
+            type=data.get("type", "Any"),
+            description=data.get("description", ""),
+            consumer=data.get("consumer", "")
+        )
+
+
+@dataclass
+class DataflowEdge:
+    from_node: str = ""
+    from_output: str = ""
+    to_node: str = ""
+    to_input: str = ""
+    note: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "from_node": self.from_node,
+            "from_output": self.from_output,
+            "to_node": self.to_node,
+            "to_input": self.to_input,
+            "note": self.note,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DataflowEdge":
+        return cls(
+            from_node=data.get("from_node", ""),
+            from_output=data.get("from_output", ""),
+            to_node=data.get("to_node", ""),
+            to_input=data.get("to_input", ""),
+            note=data.get("note", ""),
+        )
+
+
+@dataclass
+class CompositionFeedback:
+    status: str = "ok"
+    reason: str = ""
+    offending_child: str = ""
+    missing_inputs: List[Dict[str, Any]] = field(default_factory=list)
+    direct_resource_accesses: List[Dict[str, Any]] = field(default_factory=list)
+    suggested_fix: str = ""
+    requires_redecomposition: bool = False
+    checks: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    failed_checks: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "status": self.status,
+            "reason": self.reason,
+            "offending_child": self.offending_child,
+            "missing_inputs": self.missing_inputs,
+            "direct_resource_accesses": self.direct_resource_accesses,
+            "suggested_fix": self.suggested_fix,
+            "requires_redecomposition": self.requires_redecomposition,
+            "checks": self.checks,
+            "failed_checks": self.failed_checks,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CompositionFeedback":
+        return cls(
+            status=data.get("status", "ok"),
+            reason=data.get("reason", ""),
+            offending_child=data.get("offending_child", ""),
+            missing_inputs=data.get("missing_inputs", []),
+            direct_resource_accesses=data.get("direct_resource_accesses", []),
+            suggested_fix=data.get("suggested_fix", ""),
+            requires_redecomposition=data.get("requires_redecomposition", False),
+            checks=data.get("checks", {}),
+            failed_checks=data.get("failed_checks", []),
+        )
+
+
+@dataclass
+class FailureContext:
+    """Failure context: captures complete information about a single failure."""
+    stage: str  # "decompose" | "codegen" | "validate"
+    errors: List[str]
+    structured_errors: List[ValidationError]
+
+    # decompose stage info
+    decompose_messages: List[Dict[str, str]] = field(default_factory=list)
+    decompose_response: str = ""
+    children_snapshot: List[str] = field(default_factory=list)
+    decomposition_rationale: str = ""
+
+    # codegen stage info
+    generated_code: str = ""
+    composition_feedback: Optional[CompositionFeedback] = None
+
+    # validate stage info
+    repair_action: str = ""
+    fix_summary: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "stage": self.stage,
+            "errors": self.errors,
+            "structured_errors": [e.to_dict() for e in self.structured_errors],
+            "decompose_messages": self.decompose_messages,
+            "decompose_response": self.decompose_response,
+            "children_snapshot": self.children_snapshot,
+            "decomposition_rationale": self.decomposition_rationale,
+            "generated_code": self.generated_code,
+            "composition_feedback": self.composition_feedback.to_dict() if self.composition_feedback else None,
+            "repair_action": self.repair_action,
+            "fix_summary": self.fix_summary,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FailureContext":
+        return cls(
+            stage=data.get("stage", ""),
+            errors=data.get("errors", []),
+            structured_errors=[ValidationError.from_dict(e) for e in data.get("structured_errors", [])],
+            decompose_messages=data.get("decompose_messages", []),
+            decompose_response=data.get("decompose_response", ""),
+            children_snapshot=data.get("children_snapshot", []),
+            decomposition_rationale=data.get("decomposition_rationale", ""),
+            generated_code=data.get("generated_code", ""),
+            composition_feedback=CompositionFeedback.from_dict(data["composition_feedback"]) if data.get("composition_feedback") else None,
+            repair_action=data.get("repair_action", ""),
+            fix_summary=data.get("fix_summary", {}),
+        )
+
+
+@dataclass
+class DataSource:
+    name: str
+    category: str
+    access: str
+    data_type: str = ""
+    description: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "category": self.category,
+            "access": self.access,
+            "data_type": self.data_type,
+            "description": self.description
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DataSource":
+        return cls(
+            name=data.get("name", ""),
+            category=data.get("category", "memory"),
+            access=data.get("access", "read"),
+            data_type=data.get("data_type", "Any"),
+            description=data.get("description", "")
+        )
+
+
+@dataclass
+class DataOperation:
+    source_name: str
+    operation_type: str
+    description: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "source_name": self.source_name,
+            "operation_type": self.operation_type,
+            "description": self.description
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DataOperation":
+        return cls(
+            source_name=data.get("source_name", ""),
+            operation_type=data.get("operation_type", "read"),
+            description=data.get("description", "")
+        )
+
+
+@dataclass
+class GlobalVar:
+    variable: str
+    op: str
+    description: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "variable": self.variable,
+            "op": self.op,
+            "description": self.description
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GlobalVar":
+        return cls(
+            variable=data.get("variable", data.get("name", "")),
+            op=data.get("op", data.get("access", "read")),
+            description=data.get("description", "")
+        )
+
+
+@dataclass
+class Boundary:
+    in_scope: List[str] = field(default_factory=list)
+    out_of_scope: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {"in_scope": self.in_scope, "out_of_scope": self.out_of_scope}
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Boundary":
+        return cls(
+            in_scope=data.get("in_scope", []),
+            out_of_scope=data.get("out_of_scope", [])
+        )
+
+
+# === New Schema Types (改进.md: JsonPRD & SubPRD) ===
+
+@dataclass
+class FunctionalRequirement:
+    fr_id: str
+    title: str
+    description: str
+    priority: str = "medium"
+    related_nfr_ids: List[str] = field(default_factory=list)
+    depends_on: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "fr_id": self.fr_id, "title": self.title, "description": self.description,
+            "priority": self.priority, "related_nfr_ids": self.related_nfr_ids,
+            "depends_on": self.depends_on
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FunctionalRequirement":
+        return cls(
+            fr_id=data.get("fr_id", ""), title=data.get("title", ""),
+            description=data.get("description", ""), priority=data.get("priority", "medium"),
+            related_nfr_ids=data.get("related_nfr_ids", []),
+            depends_on=data.get("depends_on", [])
+        )
+
+
+@dataclass
+class NonFunctionalRequirement:
+    nfr_id: str
+    category: str
+    description: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"nfr_id": self.nfr_id, "category": self.category, "description": self.description}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "NonFunctionalRequirement":
+        return cls(
+            nfr_id=data.get("nfr_id", ""), category=data.get("category", ""),
+            description=data.get("description", "")
+        )
+
+
+@dataclass
+class AcceptanceCriterion:
+    ac_id: str
+    description: str
+    verification_method: str = ""
+    related_fr_ids: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "ac_id": self.ac_id, "description": self.description,
+            "verification_method": self.verification_method,
+            "related_fr_ids": self.related_fr_ids
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AcceptanceCriterion":
+        return cls(
+            ac_id=data.get("ac_id", ""), description=data.get("description", ""),
+            verification_method=data.get("verification_method", ""),
+            related_fr_ids=data.get("related_fr_ids", [])
+        )
+
+
+@dataclass
+class TechnicalConstraints:
+    storage: Dict[str, Any] = field(default_factory=dict)
+    concurrency: Dict[str, Any] = field(default_factory=dict)
+    ui: Dict[str, Any] = field(default_factory=dict)
+    language: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"storage": self.storage, "concurrency": self.concurrency, "ui": self.ui, "language": self.language}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TechnicalConstraints":
+        return cls(
+            storage=data.get("storage", {}), concurrency=data.get("concurrency", {}),
+            ui=data.get("ui", {}), language=data.get("language", "")
+        )
+
+
+@dataclass
+class GlobalStateSource:
+    source_id: str
+    type: str
+    description: str = ""
+    initial_state: Any = None
+    item_schema: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "source_id": self.source_id, "type": self.type,
+            "description": self.description, "initial_state": self.initial_state,
+            "item_schema": self.item_schema
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "GlobalStateSource":
+        return cls(
+            source_id=data.get("source_id", ""), type=data.get("type", "list"),
+            description=data.get("description", ""),
+            initial_state=data.get("initial_state"),
+            item_schema=data.get("item_schema", {})
+        )
+
+
+@dataclass
+class JsonPRD:
+    metadata: Dict[str, Any]
+    functional_requirements: List[FunctionalRequirement] = field(default_factory=list)
+    non_functional_requirements: List[NonFunctionalRequirement] = field(default_factory=list)
+    acceptance_criteria: List[AcceptanceCriterion] = field(default_factory=list)
+    technical_constraints: TechnicalConstraints = field(default_factory=TechnicalConstraints)
+    glossary: Dict[str, str] = field(default_factory=dict)
+    global_state_sources: List[GlobalStateSource] = field(default_factory=list)
+    input_spec: Dict[str, Any] = field(default_factory=dict)
+    output_spec: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "metadata": self.metadata,
+            "functional_requirements": [fr.to_dict() for fr in self.functional_requirements],
+            "non_functional_requirements": [nfr.to_dict() for nfr in self.non_functional_requirements],
+            "acceptance_criteria": [ac.to_dict() for ac in self.acceptance_criteria],
+            "technical_constraints": self.technical_constraints.to_dict(),
+            "glossary": self.glossary,
+            "global_state_sources": [gss.to_dict() for gss in self.global_state_sources],
+            "input_spec": self.input_spec,
+            "output_spec": self.output_spec
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "JsonPRD":
+        return cls(
+            metadata=data.get("metadata", {}),
+            functional_requirements=[FunctionalRequirement.from_dict(fr) for fr in data.get("functional_requirements", [])],
+            non_functional_requirements=[NonFunctionalRequirement.from_dict(nfr) for nfr in data.get("non_functional_requirements", [])],
+            acceptance_criteria=[AcceptanceCriterion.from_dict(ac) for ac in data.get("acceptance_criteria", [])],
+            technical_constraints=TechnicalConstraints.from_dict(data.get("technical_constraints", {})),
+            glossary=data.get("glossary", {}),
+            global_state_sources=[GlobalStateSource.from_dict(gss) for gss in data.get("global_state_sources", [])],
+            input_spec=data.get("input_spec", {}),
+            output_spec=data.get("output_spec", {})
+        )
+
+
+# === SubPRD Supporting Types ===
+
+@dataclass
+class Traceability:
+    parent_requirement_ids: List[str] = field(default_factory=list)
+    derived_from: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"parent_requirement_ids": self.parent_requirement_ids, "derived_from": self.derived_from}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Traceability":
+        return cls(
+            parent_requirement_ids=data.get("parent_requirement_ids", []),
+            derived_from=data.get("derived_from", "")
+        )
+
+
+@dataclass
+class StateOperation:
+    op_id: str
+    source_id: str
+    op_type: str
+    target: Dict[str, Any] = field(default_factory=dict)
+    payload: Dict[str, Any] = field(default_factory=dict)
+    constraint: str = ""
+    depends_on: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "op_id": self.op_id, "source_id": self.source_id, "op_type": self.op_type,
+            "target": self.target, "payload": self.payload,
+            "constraint": self.constraint, "depends_on": self.depends_on
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "StateOperation":
+        return cls(
+            op_id=data.get("op_id", ""), source_id=data.get("source_id", ""),
+            op_type=data.get("op_type", "read"), target=data.get("target", {}),
+            payload=data.get("payload", {}), constraint=data.get("constraint", ""),
+            depends_on=data.get("depends_on", "")
+        )
+
+
+@dataclass
+class SubPRD:
+    task_id: str = ""
+    purpose: str = ""
+    description: str = ""
+    inputs: List[InputParam] = field(default_factory=list)
+    outputs: List[OutputParam] = field(default_factory=list)
+    boundary: Boundary = field(default_factory=Boundary)
+    constraints: List[Dict[str, str]] = field(default_factory=list)
+    acceptance_criteria: List[AcceptanceCriterion] = field(default_factory=list)
+    traceability: Traceability = field(default_factory=Traceability)
+    global_state_operations: List[StateOperation] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "task_id": self.task_id, "purpose": self.purpose, "description": self.description,
+            "inputs": [i.to_dict() for i in self.inputs],
+            "outputs": [o.to_dict() for o in self.outputs],
+            "boundary": self.boundary.to_dict(),
+            "constraints": self.constraints,
+            "acceptance_criteria": [ac.to_dict() for ac in self.acceptance_criteria],
+            "traceability": self.traceability.to_dict(),
+            "global_state_operations": [op.to_dict() for op in self.global_state_operations],
+            "dependencies": self.dependencies
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SubPRD":
+        return cls(
+            task_id=data.get("task_id", ""), purpose=data.get("purpose", ""),
+            description=data.get("description", ""),
+            inputs=[InputParam.from_dict(i) for i in data.get("inputs", [])],
+            outputs=[OutputParam.from_dict(o) for o in data.get("outputs", [])],
+            boundary=Boundary.from_dict(data.get("boundary", {})),
+            constraints=data.get("constraints", []),
+            acceptance_criteria=[AcceptanceCriterion.from_dict(ac) for ac in data.get("acceptance_criteria", [])],
+            traceability=Traceability.from_dict(data.get("traceability", {})),
+            global_state_operations=[StateOperation.from_dict(op) for op in data.get("global_state_operations", [])],
+            dependencies=data.get("dependencies", [])
+        )
+
+
+@dataclass
+class ChildContract:
+    purpose: str
+    inputs: List[InputParam]
+    outputs: List[OutputParam]
+    behavior: str = ""
+    signature: str = ""
+    preconditions: List[str] = field(default_factory=list)
+    postconditions: List[str] = field(default_factory=list)
+    data_operations: List[DataOperation] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "purpose": self.purpose,
+            "inputs": [i.to_dict() for i in self.inputs],
+            "outputs": [o.to_dict() for o in self.outputs],
+            "behavior": self.behavior,
+            "signature": self.signature,
+            "preconditions": self.preconditions,
+            "postconditions": self.postconditions,
+            "data_operations": [op.to_dict() for op in self.data_operations]
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ChildContract":
+        return cls(
+            purpose=data.get("purpose", ""),
+            inputs=[InputParam.from_dict(i) for i in data.get("inputs", [])],
+            outputs=[OutputParam.from_dict(o) for o in data.get("outputs", [])],
+            behavior=data.get("behavior", ""),
+            signature=data.get("signature", ""),
+            preconditions=data.get("preconditions", []),
+            postconditions=data.get("postconditions", []),
+            data_operations=[DataOperation.from_dict(op) for op in data.get("data_operations", [])]
+        )
+
+
+@dataclass
+class ValidationError:
+    error_type: str  # SYNTAX_ERROR | SIGNATURE_MISMATCH | UNUSED_CHILD | GLOBAL_VAR_UNDECLARED | CONSERVATION_VIOLATION | UNKNOWN
+    message: str
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"error_type": self.error_type, "message": self.message, "details": self.details}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ValidationError":
+        return cls(
+            error_type=data.get("error_type", "UNKNOWN"),
+            message=data.get("message", ""),
+            details=data.get("details", {})
+        )
+
+
+@dataclass
+class ValidationResult:
+    passed: bool = False
+    errors: List[str] = field(default_factory=list)
+    structured_errors: List[ValidationError] = field(default_factory=list)
+    retry_count: int = 0
+    repair_action: str = "retry_code"
+    fix_summary: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "passed": self.passed,
+            "errors": self.errors,
+            "structured_errors": [e.to_dict() for e in self.structured_errors],
+            "retry_count": self.retry_count,
+            "repair_action": self.repair_action,
+            "fix_summary": self.fix_summary,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ValidationResult":
+        return cls(
+            passed=data.get("passed", False),
+            errors=data.get("errors", []),
+            structured_errors=[ValidationError.from_dict(e) for e in data.get("structured_errors", [])],
+            retry_count=data.get("retry_count", 0),
+            repair_action=data.get("repair_action", "retry_code"),
+            fix_summary=data.get("fix_summary", {}),
+        )
+
+
+@dataclass
+class AttemptRecord:
+    stage: str  # "decompose" | "codegen_parent" | "codegen_leaf" | "validate" | "redecompose"
+    attempt_number: int
+    children_snapshot: List[str] = field(default_factory=list)
+    contracts_snapshot: Dict[str, Any] = field(default_factory=dict)
+    decomposition_rationale: str = ""
+    generated_code: str = ""
+    validation_errors: List[str] = field(default_factory=list)
+    structured_errors: List[Dict[str, Any]] = field(default_factory=list)
+    decision: str = ""  # "continue" | "redecompose" | "retry_code" | "passed" | "failed"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "stage": self.stage,
+            "attempt_number": self.attempt_number,
+            "children_snapshot": self.children_snapshot,
+            "contracts_snapshot": self.contracts_snapshot,
+            "decomposition_rationale": self.decomposition_rationale,
+            "generated_code": self.generated_code,
+            "validation_errors": self.validation_errors,
+            "structured_errors": self.structured_errors,
+            "decision": self.decision
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AttemptRecord":
+        return cls(
+            stage=data.get("stage", ""),
+            attempt_number=data.get("attempt_number", 0),
+            children_snapshot=data.get("children_snapshot", []),
+            contracts_snapshot=data.get("contracts_snapshot", {}),
+            decomposition_rationale=data.get("decomposition_rationale", ""),
+            generated_code=data.get("generated_code", ""),
+            validation_errors=data.get("validation_errors", []),
+            structured_errors=data.get("structured_errors", []),
+            decision=data.get("decision", "")
+        )
+
+
+@dataclass
+class Node:
+    node_id: str
+    name: str
+    depth: int
+    parent_id: Optional[str] = None
+
+    purpose: str = ""
+    inputs: List[InputParam] = field(default_factory=list)
+    outputs: List[OutputParam] = field(default_factory=list)
+    boundary: Boundary = field(default_factory=Boundary)
+
+    global_vars: List[GlobalVar] = field(default_factory=list)
+    data_sources: List[DataSource] = field(default_factory=list)
+    preconditions: List[str] = field(default_factory=list)
+    postconditions: List[str] = field(default_factory=list)
+    error_handling: Dict[str, str] = field(default_factory=dict)
+
+    children: List["Node"] = field(default_factory=list)
+    children_contracts: Dict[str, ChildContract] = field(default_factory=dict)
+
+    decomposition_rationale: str = ""
+
+    subprd: Optional[SubPRD] = None
+
+    stop_decompose: bool = False
+    stop_reason: str = ""
+    estimated_lines: int = 0
+
+    code: str = ""
+    code_file: str = ""
+
+    last_failure: Optional[FailureContext] = None
+    attempt_history: List[AttemptRecord] = field(default_factory=list)
+    needs_human_intervention: bool = False
+
+    requested_capabilities: List[str] = field(default_factory=list)
+    granted_capabilities: Optional["CapabilityGrant"] = None
+
+    dataflow_edges: List[DataflowEdge] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node_id": self.node_id,
+            "name": self.name,
+            "depth": self.depth,
+            "parent_id": self.parent_id,
+            "purpose": self.purpose,
+            "inputs": [i.to_dict() for i in self.inputs],
+            "outputs": [o.to_dict() for o in self.outputs],
+            "boundary": self.boundary.to_dict(),
+            "global_vars": [g.to_dict() for g in self.global_vars],
+            "data_sources": [ds.to_dict() for ds in self.data_sources],
+            "preconditions": self.preconditions,
+            "postconditions": self.postconditions,
+            "error_handling": self.error_handling,
+            "children": [c.to_dict() for c in self.children],
+            "children_contracts": {k: v.to_dict() for k, v in self.children_contracts.items()},
+            "decomposition_rationale": self.decomposition_rationale,
+            "subprd": self.subprd.to_dict() if self.subprd else None,
+            "stop_decompose": self.stop_decompose,
+            "stop_reason": self.stop_reason,
+            "estimated_lines": self.estimated_lines,
+            "code": self.code,
+            "code_file": self.code_file,
+            "last_failure": self.last_failure.to_dict() if self.last_failure else None,
+            "attempt_history": [a.to_dict() for a in self.attempt_history],
+            "needs_human_intervention": self.needs_human_intervention,
+            "requested_capabilities": self.requested_capabilities,
+            "granted_capabilities": self.granted_capabilities.to_dict() if self.granted_capabilities else None,
+            "dataflow_edges": [e.to_dict() for e in self.dataflow_edges],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Node":
+        node = cls(
+            node_id=data.get("node_id", ""),
+            name=data.get("name", ""),
+            depth=data.get("depth", 0),
+            parent_id=data.get("parent_id"),
+            purpose=data.get("purpose", ""),
+            inputs=[InputParam.from_dict(i) for i in data.get("inputs", [])],
+            outputs=[OutputParam.from_dict(o) for o in data.get("outputs", [])],
+            boundary=Boundary.from_dict(data.get("boundary", {})),
+            global_vars=[GlobalVar.from_dict(g) for g in data.get("global_vars", [])],
+            data_sources=[DataSource.from_dict(ds) for ds in data.get("data_sources", [])],
+            preconditions=data.get("preconditions", []),
+            postconditions=data.get("postconditions", []),
+            error_handling=data.get("error_handling", {}),
+            children=[Node.from_dict(c) for c in data.get("children", [])],
+            children_contracts={
+                k: ChildContract.from_dict(v) for k, v in data.get("children_contracts", {}).items()
+            },
+            decomposition_rationale=data.get("decomposition_rationale", ""),
+            subprd=SubPRD.from_dict(data["subprd"]) if data.get("subprd") else None,
+            stop_decompose=data.get("stop_decompose", False),
+            stop_reason=data.get("stop_reason", ""),
+            estimated_lines=data.get("estimated_lines", 0),
+            code=data.get("code", ""),
+            code_file=data.get("code_file", ""),
+            last_failure=FailureContext.from_dict(data["last_failure"]) if data.get("last_failure") else None,
+            attempt_history=[AttemptRecord.from_dict(a) for a in data.get("attempt_history", [])],
+            needs_human_intervention=data.get("needs_human_intervention", False),
+            requested_capabilities=data.get("requested_capabilities", []),
+            granted_capabilities=CapabilityGrant.from_dict(data["granted_capabilities"]) if data.get("granted_capabilities") else None,
+            dataflow_edges=[DataflowEdge.from_dict(e) for e in data.get("dataflow_edges", [])],
+        )
+        return node
+    
+    def to_json(self, indent: int = 2) -> str:
+        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+    
+    @classmethod
+    def from_json(cls, json_str: str) -> "Node":
+        return cls.from_dict(json.loads(json_str))
+    
+    def get_context_for_child(self, child_name: str) -> Dict[str, Any]:
+        """
+        Get the context that should be passed to a child node.
+        This follows the black-box principle: child only receives what parent specifies.
+        If SubPRD is available, includes structured context.
+        """
+        contract = self.children_contracts.get(child_name)
+        if contract:
+            context = {
+                "name": child_name,
+                "purpose": contract.purpose,
+                "inputs": [i.to_dict() for i in contract.inputs],
+                "outputs": [o.to_dict() for o in contract.outputs],
+                "behavior": contract.behavior,
+                "preconditions": contract.preconditions,
+                "postconditions": contract.postconditions,
+                "parent_name": self.name,
+                "parent_purpose": self.purpose
+            }
+            child = next((c for c in self.children if c.name == child_name), None)
+            if child and child.subprd:
+                context["subprd"] = child.subprd.to_dict()
+            return context
+        return {}
+    
+    def get_interface_signature(self) -> str:
+        """Get the function signature for this node."""
+        inputs_str = ", ".join([f"{i.name}: {i.type}" for i in self.inputs])
+        outputs_str = ", ".join([o.type for o in self.outputs]) if self.outputs else "None"
+        if len(self.outputs) > 1:
+            outputs_str = f"Tuple[{outputs_str}]"
+        elif len(self.outputs) == 1:
+            outputs_str = self.outputs[0].type
+        return f"def {self.name}({inputs_str}) -> {outputs_str}:"
+
+
+# === Interface Layer Models (Phase 1 of interface_layer_fix_doc) ===
+
+@dataclass
+class ResourceSpec:
+    resource_id: str
+    description: str
+    storage_model: str
+    key_type: Optional[str] = None
+    value_type: Optional[str] = None
+    item_schema: Dict[str, Any] = field(default_factory=dict)
+    invariants: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "resource_id": self.resource_id,
+            "description": self.description,
+            "storage_model": self.storage_model,
+            "key_type": self.key_type,
+            "value_type": self.value_type,
+            "item_schema": self.item_schema,
+            "invariants": self.invariants
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ResourceSpec":
+        return cls(
+            resource_id=data.get("resource_id", ""),
+            description=data.get("description", ""),
+            storage_model=data.get("storage_model", "dict"),
+            key_type=data.get("key_type"),
+            value_type=data.get("value_type"),
+            item_schema=data.get("item_schema", {}),
+            invariants=data.get("invariants", [])
+        )
+
+
+@dataclass
+class InterfaceSpec:
+    interface_id: str
+    resource_id: str
+    operation: str
+    function_name: str
+    signature: str
+    description: str = ""
+    preconditions: List[str] = field(default_factory=list)
+    postconditions: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "interface_id": self.interface_id,
+            "resource_id": self.resource_id,
+            "operation": self.operation,
+            "function_name": self.function_name,
+            "signature": self.signature,
+            "description": self.description,
+            "preconditions": self.preconditions,
+            "postconditions": self.postconditions
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "InterfaceSpec":
+        return cls(
+            interface_id=data.get("interface_id", ""),
+            resource_id=data.get("resource_id", ""),
+            operation=data.get("operation", "read"),
+            function_name=data.get("function_name", ""),
+            signature=data.get("signature", ""),
+            description=data.get("description", ""),
+            preconditions=data.get("preconditions", []),
+            postconditions=data.get("postconditions", [])
+        )
+
+
+@dataclass
+class CapabilityGrant:
+    node_id: str
+    granted_interfaces: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node_id": self.node_id,
+            "granted_interfaces": self.granted_interfaces
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CapabilityGrant":
+        return cls(
+            node_id=data.get("node_id", ""),
+            granted_interfaces=data.get("granted_interfaces", [])
+        )
+
+
+@dataclass
+class InterfacePlan:
+    resources: List[ResourceSpec] = field(default_factory=list)
+    interfaces: List[InterfaceSpec] = field(default_factory=list)
+    created_at: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "resources": [r.to_dict() for r in self.resources],
+            "interfaces": [i.to_dict() for i in self.interfaces],
+            "created_at": self.created_at
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "InterfacePlan":
+        return cls(
+            resources=[ResourceSpec.from_dict(r) for r in data.get("resources", [])],
+            interfaces=[InterfaceSpec.from_dict(i) for i in data.get("interfaces", [])],
+            created_at=data.get("created_at", "")
+        )
+
+    def to_json(self, indent: int = 2) -> str:
+        return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "InterfacePlan":
+        return cls.from_dict(json.loads(json_str))

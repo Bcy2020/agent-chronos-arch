@@ -1,0 +1,636 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): Stores user information keyed by user_id.\n    Data Type: dict\n  - products (memory, read_write): Stores product information keyed by product_id.\n    Data Type: dict\n  - orders (memory, read_write): Stores order records keyed by order_id.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: Stores user information keyed by user_id.\n  - read_write on products: Stores product information keyed by product_id.\n  - read_write on orders: Stores order records keyed by order_id.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "UserManagement",
+        "purpose": "Handles all user-related operations including user validation, information retrieval, and balance updates",
+        "inputs": [
+          {
+            "name": "operation",
+            "type": "str",
+            "description": "Type of user operation to perform",
+            "source": "parent_input"
+          },
+          {
+            "name": "user_id",
+            "type": "int",
+            "description": "ID of the user to operate on",
+            "source": "parent_input"
+          },
+          {
+            "name": "updates",
+            "type": "Optional[dict]",
+            "description": "Dictionary of fields to update for the user",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "user_data",
+            "type": "dict",
+            "description": "User information if operation is get",
+            "consumer": "parent"
+          },
+          {
+            "name": "exists",
+            "type": "bool",
+            "description": "Whether user exists if operation is exists",
+            "consumer": "parent"
+          },
+          {
+            "name": "success",
+            "type": "bool",
+            "description": "Whether operation completed successfully",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "User validation",
+            "User information retrieval",
+            "User balance updates"
+          ],
+          "out_of_scope": [
+            "Order operations",
+            "Product operations"
+          ]
+        },
+        "preconditions": [
+          "Valid user_id provided"
+        ],
+        "postconditions": [
+          "User data retrieved or updated successfully"
+        ],
+        "behavior": "Performs user operations based on the operation type: 'get' retrieves user info, 'exists' checks user existence, 'update' modifies user fields like balance",
+        "signature": "def UserManagement(operation: str, user_id: int, updates: Optional[dict] = None) -> Tuple[Optional[dict], Optional[bool], bool]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation on single data source (users)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Read and write user information"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "User must exist before update operations"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "User information is correctly retrieved",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-002",
+            "description": "User balance is correctly updated",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read and write user information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.get",
+          "users.update",
+          "users.exists"
+        ]
+      },
+      {
+        "name": "ProductManagement",
+        "purpose": "Handles all product-related operations including product retrieval, stock updates, and inventory listing",
+        "inputs": [
+          {
+            "name": "operation",
+            "type": "str",
+            "description": "Type of product operation to perform",
+            "source": "parent_input"
+          },
+          {
+            "name": "product_id",
+            "type": "Optional[int]",
+            "description": "ID of the product to operate on",
+            "source": "parent_input"
+          },
+          {
+            "name": "updates",
+            "type": "Optional[dict]",
+            "description": "Dictionary of fields to update for the product",
+            "source": "parent_input"
+          },
+          {
+            "name": "low_stock_threshold",
+            "type": "Optional[int]",
+            "description": "Threshold for filtering low stock products",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "product_data",
+            "type": "dict",
+            "description": "Product information if operation is get",
+            "consumer": "parent"
+          },
+          {
+            "name": "product_list",
+            "type": "list",
+            "description": "List of products if operation is list",
+            "consumer": "parent"
+          },
+          {
+            "name": "success",
+            "type": "bool",
+            "description": "Whether operation completed successfully",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Product information retrieval",
+            "Product stock updates",
+            "Product inventory listing"
+          ],
+          "out_of_scope": [
+            "User operations",
+            "Order operations"
+          ]
+        },
+        "preconditions": [
+          "Valid product_id provided for get/update operations"
+        ],
+        "postconditions": [
+          "Product data retrieved or updated successfully"
+        ],
+        "behavior": "Performs product operations based on the operation type: 'get' retrieves product info, 'update' modifies product fields like stock, 'list' retrieves all products with optional filtering",
+        "signature": "def ProductManagement(operation: str, product_id: Optional[int] = None, updates: Optional[dict] = None, low_stock_threshold: Optional[int] = None) -> Tuple[Optional[dict], Optional[list], bool]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation on single data source (products)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Read and write product information"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Product must exist before update operations"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Product information is correctly retrieved",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-004",
+            "description": "Product stock is correctly updated",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-005",
+            "description": "Product list is correctly filtered",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read and write product information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-002"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.get",
+          "products.update",
+          "products.list"
+        ]
+      },
+      {
+        "name": "OrderManagement",
+        "purpose": "Handles all order-related operations including order creation, retrieval, updates, and listing",
+        "inputs": [
+          {
+            "name": "operation",
+            "type": "str",
+            "description": "Type of order operation to perform",
+            "source": "parent_input"
+          },
+          {
+            "name": "order_id",
+            "type": "Optional[int]",
+            "description": "ID of the order to operate on",
+            "source": "parent_input"
+          },
+          {
+            "name": "order_data",
+            "type": "Optional[dict]",
+            "description": "Order data for creation or updates",
+            "source": "parent_input"
+          },
+          {
+            "name": "user_id",
+            "type": "Optional[int]",
+            "description": "Filter orders by user ID",
+            "source": "parent_input"
+          },
+          {
+            "name": "status",
+            "type": "Optional[str]",
+            "description": "Filter orders by status",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Order information if operation is get",
+            "consumer": "parent"
+          },
+          {
+            "name": "order_list",
+            "type": "list",
+            "description": "List of orders if operation is list",
+            "consumer": "parent"
+          },
+          {
+            "name": "order_id",
+            "type": "int",
+            "description": "New order ID if operation is create",
+            "consumer": "parent"
+          },
+          {
+            "name": "success",
+            "type": "bool",
+            "description": "Whether operation completed successfully",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order creation",
+            "Order information retrieval",
+            "Order status updates",
+            "Order listing"
+          ],
+          "out_of_scope": [
+            "User operations",
+            "Product operations"
+          ]
+        },
+        "preconditions": [
+          "Valid order_id provided for get/update operations",
+          "Valid order_data provided for create operations"
+        ],
+        "postconditions": [
+          "Order created, retrieved, or updated successfully"
+        ],
+        "behavior": "Performs order operations based on the operation type: 'get' retrieves order info, 'create' creates new order, 'update' modifies order fields like status, 'list' retrieves orders with optional filtering",
+        "signature": "def OrderManagement(operation: str, order_id: Optional[int] = None, order_data: Optional[dict] = None, user_id: Optional[int] = None, status: Optional[str] = None) -> Tuple[Optional[dict], Optional[list], Optional[int], bool]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation on single data source (orders)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Read and write order information"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "Order must exist before update operations"
+          },
+          {
+            "constraint_id": "C-004",
+            "description": "Order creation requires valid order data"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-006",
+            "description": "Order information is correctly retrieved",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-007",
+            "description": "Order is correctly created",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-008",
+            "description": "Order status is correctly updated",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-009",
+            "description": "Order list is correctly filtered",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read and write order information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-003"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.create",
+          "orders.update",
+          "orders.list",
+          "orders.exists"
+        ]
+      },
+      {
+        "name": "OrderProcessingCoordinator",
+        "purpose": "Coordinates complex order processing workflows that involve multiple data sources and business logic",
+        "inputs": [
+          {
+            "name": "workflow_type",
+            "type": "str",
+            "description": "Type of order processing workflow to execute",
+            "source": "parent_input"
+          },
+          {
+            "name": "user_id",
+            "type": "int",
+            "description": "ID of the user initiating the workflow",
+            "source": "parent_input"
+          },
+          {
+            "name": "product_id",
+            "type": "int",
+            "description": "ID of the product involved in the workflow",
+            "source": "parent_input"
+          },
+          {
+            "name": "quantity",
+            "type": "int",
+            "description": "Quantity of product for the workflow",
+            "source": "parent_input"
+          },
+          {
+            "name": "order_id",
+            "type": "Optional[int]",
+            "description": "ID of existing order for update workflows",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result of the workflow execution",
+            "consumer": "parent"
+          },
+          {
+            "name": "success",
+            "type": "bool",
+            "description": "Whether workflow completed successfully",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Complex order workflows",
+            "Multi-source data coordination",
+            "Business logic execution"
+          ],
+          "out_of_scope": [
+            "Simple single-source operations"
+          ]
+        },
+        "preconditions": [
+          "Valid user_id and product_id provided",
+          "Sufficient product stock for purchase workflows"
+        ],
+        "postconditions": [
+          "Workflow completed successfully",
+          "Data consistency maintained across sources"
+        ],
+        "behavior": "Coordinates complex workflows like 'purchase' (validate user, check stock, create order, update inventory and balance) or 'cancel_order' (validate order, restore stock, refund balance)",
+        "signature": "def OrderProcessingCoordinator(workflow_type: str, user_id: int, product_id: int, quantity: int, order_id: Optional[int] = None) -> Tuple[dict, bool]",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Read user info and update balance"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Read product info and update stock"
+          },
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Create or update order records"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "User must exist and have sufficient balance for purchase workflows"
+          },
+          {
+            "constraint_id": "C-006",
+            "description": "Product must exist and have sufficient stock for purchase workflows"
+          },
+          {
+            "constraint_id": "C-007",
+            "description": "Order must exist and be cancellable for cancel workflows"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-010",
+            "description": "Purchase workflow correctly validates, creates order, and updates inventory/balance",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-011",
+            "description": "Cancel workflow correctly validates, cancels order, and restores inventory/balance",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-012",
+            "description": "Data consistency is maintained across all operations",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read user info and update balance"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read product info and update stock"
+          },
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Create or update order records"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.get",
+          "users.update",
+          "users.exists",
+          "products.get",
+          "products.update",
+          "orders.get",
+          "orders.create",
+          "orders.update",
+          "orders.exists"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores user information keyed by user_id"
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores product information keyed by product_id"
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores order records keyed by order_id"
+      }
+    ],
+    "decomposition_rationale": "The Order Management System is decomposed into four specialized children: UserManagement, ProductManagement, OrderManagement, and OrderProcessingCoordinator. The first three handle atomic operations on their respective data sources (users, products, orders), while OrderProcessingCoordinator orchestrates complex workflows that require coordination across multiple data sources. This decomposition follows the principle of separation of concerns, with each child responsible for a specific domain. The coordinator child handles business logic that requires multiple data operations (like purchase workflows that need to validate users, check product stock, create orders, and update balances/inventory), while the atomic children handle simple CRUD operations. The parent orchestrates by calling the appropriate child based on the input operation type.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "UserManagement, ProductManagement, OrderManagement, OrderProcessingCoordinator"
+      },
+      "parent_outputs_produced_by": {
+        "output": "UserManagement, ProductManagement, OrderManagement, OrderProcessingCoordinator"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "UserManagement",
+        "to_input": "operation, user_id, updates",
+        "note": "User operations are routed to UserManagement"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "ProductManagement",
+        "to_input": "operation, product_id, updates, low_stock_threshold",
+        "note": "Product operations are routed to ProductManagement"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "OrderManagement",
+        "to_input": "operation, order_id, order_data, user_id, status",
+        "note": "Simple order operations are routed to OrderManagement"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "OrderProcessingCoordinator",
+        "to_input": "workflow_type, user_id, product_id, quantity, order_id",
+        "note": "Complex order workflows are routed to OrderProcessingCoordinator"
+      },
+      {
+        "from_node": "UserManagement",
+        "from_output": "user_data, exists, success",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "User operation results are returned to parent"
+      },
+      {
+        "from_node": "ProductManagement",
+        "from_output": "product_data, product_list, success",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Product operation results are returned to parent"
+      },
+      {
+        "from_node": "OrderManagement",
+        "from_output": "order_data, order_list, order_id, success",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Simple order operation results are returned to parent"
+      },
+      {
+        "from_node": "OrderProcessingCoordinator",
+        "from_output": "result, success",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Complex workflow results are returned to parent"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

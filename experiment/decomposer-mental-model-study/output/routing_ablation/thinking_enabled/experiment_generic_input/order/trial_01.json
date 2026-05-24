@@ -1,0 +1,416 @@
+{
+  "experiment": {
+    "name": "generic_input",
+    "purpose_routing": true,
+    "separated_command": true,
+    "format_examples": true,
+    "coordinator_allowed": true,
+    "data_interfaces": true,
+    "generic_input": true
+  },
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nYOU MUST DECOMPOSE. You are NOT allowed to return 0 children or refuse to decompose. Even if the node seems simple, you MUST break it into at least 2 child functions.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ]\n    }\n  ],\n  \"decomposition_rationale\": \"Explain HOW these children work together to implement the parent.\"\n}",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order Management System\nNode Purpose: Order Management System. Routes commands to the appropriate handler.\n\nSubPRD Context:\n  Task Description:\n    Inputs: input: Any\n\n    Functional Requirements:\n    [FR-001] Create Order: 创建订单：用户指定商品列表和用户ID，检查用户存在、库存充足，计算总价，扣减库存，创建状态为pending的订单。\n    [FR-002] Pay Order: 支付订单：检查订单存在且状态为pending，用户余额充足，扣减余额，更新订单状态为paid。\n    [FR-003] Ship Order: 订单发货：检查订单存在且状态为paid，更新状态为shipped。\n    [FR-004] Complete Order: 订单完成：检查订单存在且状态为shipped，更新状态为completed。\n    [FR-005] Cancel Order: 取消订单：检查订单存在且状态为pending或paid，恢复商品库存，若已支付退还余额，更新状态为cancelled。\n    [FR-006] List Orders: 列出所有订单，支持按用户和状态筛选，显示订单详情。\n    [FR-007] Get User Orders: 获取指定用户的所有订单，计算订单总额及各种状态订单数量。\n    [FR-008] List Products: 列出所有商品，显示信息和库存，可筛选库存不足的商品。\n\n  Constraints:\n    - NFR-001: 数据一致性：库存扣减和恢复、余额扣减和退还必须保证原子性，避免数据不一致。\n    - NFR-002: 错误处理：提供明确错误信息，如库存不足、余额不足、无效订单等。\n\n  Acceptance Criteria:\n    - AC-001: 创建订单成功后，库存正确扣减，订单状态为pending。\n    - AC-002: 支付订单成功后，用户余额正确扣减，订单状态变为paid。\n    - AC-003: 取消订单后，库存和余额恢复，订单状态变为cancelled。\n    - AC-004: 订单状态流转正确：pending→paid→shipped→completed。\n    - AC-005: 库存不足时创建订单返回失败信息。\n    - AC-006: 余额不足时支付订单返回失败信息。\n\n    INPUT FORMAT:\n      Format: json\n      Description: 通过 manage_order函数接收命令和订单数据\n      Schema:\n        command: string (create_order|pay_order|ship_order|complete_order|cancel_order|list_orders|get_user_orders|list_products)\n        order_data: object (包含user_id, order_id, items, status_filter, user_filter, low_stock等字段，根据命令不同)\n      Examples:\n        {\"command\": \"create_order\", \"order_data\": {\"user_id\": 1, \"items\": [{\"product_id\": 2, \"quantity\": 2}]}}\n        {\"command\": \"pay_order\", \"order_data\": {\"order_id\": 1}}\n\n    OUTPUT FORMAT:\n      Format: json\n      Description: 返回操作结果，包含成功标志、消息和数据\n      Examples:\n        {\"success\": true, \"message\": \"订单创建成功\", \"data\": {\"order_id\": 1, \"total_price\": 199.8}}\n        {\"success\": false, \"message\": \"商品库存不足\", \"data\": {\"product_id\": 1, \"available\": 10, \"requested\": 15}}\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: 存储用户信息，以user_id为键\n  - read_write on products: 存储商品信息，以product_id为键\n  - read_write on orders: 存储订单记录，以order_id为键\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "CreateOrderHandler",
+        "purpose": "处理创建订单命令：检查用户存在、库存充足，计算总价，扣减库存，创建状态为pending的订单。",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "包含user_id和items列表",
+            "source": "来自父节点解析input.command后的order_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "包含success, message, data",
+            "consumer": "父节点作为最终输出"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "用户存在性检查",
+            "库存检查与扣减",
+            "订单创建"
+          ],
+          "out_of_scope": [
+            "余额操作",
+            "订单状态更新除pending外"
+          ]
+        },
+        "behavior": "接收order_data，验证用户存在，遍历items检查库存，计算总价，扣减库存，使用orders.create创建订单，返回成功结果。任何失败返回错误信息。",
+        "signature": "def CreateOrderHandler(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "This is a specific command handler that performs atomic operations.",
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read",
+            "description": "检查用户是否存在"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "读取商品信息并更新库存"
+          },
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "创建新订单"
+          }
+        ],
+        "requested_capabilities": [
+          "users.get",
+          "users.exists",
+          "products.get",
+          "products.update",
+          "orders.create"
+        ]
+      },
+      {
+        "name": "PayOrderHandler",
+        "purpose": "处理支付订单命令：检查订单存在且状态为pending，用户余额充足，扣减余额，更新订单状态为paid。",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "包含order_id",
+            "source": "来自父节点解析input.command后的order_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "包含success, message, data",
+            "consumer": "父节点作为最终输出"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "订单存在性与状态检查",
+            "用户余额检查与扣减",
+            "订单状态更新"
+          ],
+          "out_of_scope": [
+            "库存操作",
+            "订单创建"
+          ]
+        },
+        "behavior": "获取订单，验证状态为pending；获取用户，检查余额大于等于订单总价；扣减余额，更新订单状态为paid；返回成功。",
+        "signature": "def PayOrderHandler(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Same as above.",
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "读取订单信息并更新状态"
+          },
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "读取用户余额并扣减"
+          }
+        ],
+        "requested_capabilities": [
+          "orders.get",
+          "orders.exists",
+          "users.get",
+          "users.update",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "ShipOrderHandler",
+        "purpose": "处理订单发货命令：检查订单存在且状态为paid，更新状态为shipped。",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "包含order_id",
+            "source": "来自父节点解析input.command后的order_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "包含success, message, data",
+            "consumer": "父节点作为最终输出"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "订单存在性与状态检查",
+            "状态更新"
+          ],
+          "out_of_scope": [
+            "余额操作",
+            "库存操作"
+          ]
+        },
+        "behavior": "获取订单，验证状态为paid，更新状态为shipped，返回成功。",
+        "signature": "def ShipOrderHandler(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Same as above.",
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "读取并更新订单状态"
+          }
+        ],
+        "requested_capabilities": [
+          "orders.get",
+          "orders.exists",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "CompleteOrderHandler",
+        "purpose": "处理订单完成命令：检查订单存在且状态为shipped，更新状态为completed。",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "包含order_id",
+            "source": "来自父节点解析input.command后的order_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "包含success, message, data",
+            "consumer": "父节点作为最终输出"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "订单存在性与状态检查",
+            "状态更新"
+          ],
+          "out_of_scope": [
+            "余额操作",
+            "库存操作"
+          ]
+        },
+        "behavior": "获取订单，验证状态为shipped，更新状态为completed，返回成功。",
+        "signature": "def CompleteOrderHandler(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Same as above.",
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "读取并更新订单状态"
+          }
+        ],
+        "requested_capabilities": [
+          "orders.get",
+          "orders.exists",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "CancelOrderHandler",
+        "purpose": "处理取消订单命令：检查订单存在且状态为pending或paid，恢复商品库存，若已支付退还余额，更新状态为cancelled。",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "包含order_id",
+            "source": "来自父节点解析input.command后的order_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "包含success, message, data",
+            "consumer": "父节点作为最终输出"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "订单存在性与状态检查",
+            "库存恢复",
+            "余额退还",
+            "状态更新"
+          ],
+          "out_of_scope": [
+            "订单创建"
+          ]
+        },
+        "behavior": "获取订单，验证状态为pending或paid；如果是pending，恢复库存；如果是paid，恢复库存并退还余额到用户；更新订单状态为cancelled。",
+        "signature": "def CancelOrderHandler(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Same as above.",
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "读取并更新订单状态"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "恢复商品库存"
+          },
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "退还余额（如有）"
+          }
+        ],
+        "requested_capabilities": [
+          "orders.get",
+          "orders.exists",
+          "orders.update",
+          "products.get",
+          "products.update",
+          "users.get",
+          "users.update"
+        ]
+      },
+      {
+        "name": "ListOrdersHandler",
+        "purpose": "列出所有订单，支持按用户和状态筛选，显示订单详情。",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "包含可选的user_id和status_filter",
+            "source": "来自父节点解析input.command后的order_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "包含success, message, data (订单列表)",
+            "consumer": "父节点作为最终输出"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "查询订单"
+          ],
+          "out_of_scope": [
+            "修改订单",
+            "库存操作"
+          ]
+        },
+        "behavior": "根据order_data中的user_id和status参数调用orders.list，返回订单列表。",
+        "signature": "def ListOrdersHandler(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Same as above.",
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "读取订单列表"
+          }
+        ],
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      },
+      {
+        "name": "GetUserOrdersHandler",
+        "purpose": "获取指定用户的所有订单，计算订单总额及各种状态订单数量。",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "包含user_id",
+            "source": "来自父节点解析input.command后的order_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "包含success, message, data (包含订单列表、总额、各状态计数)",
+            "consumer": "父节点作为最终输出"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "查询用户订单",
+            "统计信息"
+          ],
+          "out_of_scope": [
+            "修改"
+          ]
+        },
+        "behavior": "根据user_id调用orders.list获取用户订单，统计总金额和按状态分组计数，返回结果。",
+        "signature": "def GetUserOrdersHandler(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Same as above.",
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "读取用户订单"
+          }
+        ],
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      },
+      {
+        "name": "ListProductsHandler",
+        "purpose": "列出所有商品，显示信息和库存，可筛选库存不足的商品。",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "包含可选的low_stock阈值",
+            "source": "来自父节点解析input.command后的order_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "包含success, message, data (商品列表)",
+            "consumer": "父节点作为最终输出"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "查询商品"
+          ],
+          "out_of_scope": [
+            "修改商品"
+          ]
+        },
+        "behavior": "调用products.list，若order_data中有low_stock参数则传入，否则不传，返回商品列表。",
+        "signature": "def ListProductsHandler(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Same as above.",
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "读取商品列表"
+          }
+        ],
+        "requested_capabilities": [
+          "products.list"
+        ]
+      }
+    ],
+    "decomposition_rationale": "The parent function parses the 'command' field from the input JSON and routes to the corresponding child handler. Each child is responsible for executing a specific order management operation, ensuring separation of concerns and maintainability. The children access the required data stores through the provided interfaces, and the parent composes their outputs into the final response."
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

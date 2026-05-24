@@ -1,0 +1,503 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): Stores user information keyed by user_id.\n    Data Type: dict\n  - products (memory, read_write): Stores product information keyed by product_id.\n    Data Type: dict\n  - orders (memory, read_write): Stores order records keyed by order_id.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: Stores user information keyed by user_id.\n  - read_write on products: Stores product information keyed by product_id.\n  - read_write on orders: Stores order records keyed by order_id.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "ParseAndValidateInput",
+        "purpose": "Parse the raw system input and validate its basic structure, extracting the action type and parameters",
+        "inputs": [
+          {
+            "name": "input",
+            "type": "Any",
+            "description": "Raw system input",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "action",
+            "type": "str",
+            "description": "Extracted action type (e.g., 'place_order', 'get_user', 'list_products')",
+            "consumer": "RouteToHandler"
+          },
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Extracted and validated parameters for the action",
+            "consumer": "RouteToHandler"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Parsing input format",
+            "Validating input structure",
+            "Extracting action and params"
+          ],
+          "out_of_scope": [
+            "Business logic execution",
+            "Data access"
+          ]
+        },
+        "preconditions": [
+          "Input is provided"
+        ],
+        "postconditions": [
+          "Action and params are extracted and validated"
+        ],
+        "behavior": "Parse the input (e.g., JSON string or dict), validate it has required fields (action, params), and return them. If invalid, raise an error.",
+        "signature": "def ParseAndValidateInput(input: Any) -> Tuple[str, dict]",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Input must contain 'action' and 'params' fields"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Valid input returns action and params",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "RouteToHandler",
+        "purpose": "Route the action to the appropriate handler function based on the action type",
+        "inputs": [
+          {
+            "name": "action",
+            "type": "str",
+            "description": "Action type to route",
+            "source": "ParseAndValidateInput.action"
+          },
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters for the action",
+            "source": "ParseAndValidateInput.params"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "Result from the handler execution",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Routing to correct handler",
+            "Calling handler with params",
+            "Returning handler result"
+          ],
+          "out_of_scope": [
+            "Input parsing",
+            "Handler implementation details"
+          ]
+        },
+        "preconditions": [
+          "Action is a known valid action type"
+        ],
+        "postconditions": [
+          "Correct handler is called and result is returned"
+        ],
+        "behavior": "Use a dispatch mechanism (e.g., if-elif or dict mapping) to call the appropriate handler function based on action, passing params. Return the handler's result.",
+        "signature": "def RouteToHandler(action: str, params: dict) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Must handle all valid action types"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-002",
+            "description": "Each action routes to correct handler",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "HandleUserActions",
+        "purpose": "Handle user-related actions such as getting user info or updating user balance",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters including user_id and optional updates",
+            "source": "RouteToHandler.params"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "Result of user action (e.g., user dict or success status)",
+            "consumer": "RouteToHandler.result"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Getting user by ID",
+            "Updating user fields",
+            "Checking user existence"
+          ],
+          "out_of_scope": [
+            "Order management",
+            "Product management"
+          ]
+        },
+        "preconditions": [
+          "params contains required fields for the specific action"
+        ],
+        "postconditions": [
+          "User data is read or updated as requested"
+        ],
+        "behavior": "Based on params (e.g., action subtype like 'get' or 'update'), call appropriate data interfaces to read or update user data. Return the result.",
+        "signature": "def HandleUserActions(params: dict) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Read or update user data"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "User must exist for update operations"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "User actions return correct data or status",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read or update user information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.get",
+          "users.update",
+          "users.exists"
+        ]
+      },
+      {
+        "name": "HandleProductActions",
+        "purpose": "Handle product-related actions such as listing products, getting product details, or updating stock",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters including product_id, low_stock_threshold, or updates",
+            "source": "RouteToHandler.params"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "Result of product action (e.g., product dict or list)",
+            "consumer": "RouteToHandler.result"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Getting product by ID",
+            "Listing products with optional low stock filter",
+            "Updating product stock"
+          ],
+          "out_of_scope": [
+            "User management",
+            "Order management"
+          ]
+        },
+        "preconditions": [
+          "params contains required fields for the specific action"
+        ],
+        "postconditions": [
+          "Product data is read or updated as requested"
+        ],
+        "behavior": "Based on params, call appropriate data interfaces to read or update product data. Return the result.",
+        "signature": "def HandleProductActions(params: dict) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Read or update product data"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "Product must exist for update operations"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-004",
+            "description": "Product actions return correct data or status",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read or update product information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.get",
+          "products.update",
+          "products.list"
+        ]
+      },
+      {
+        "name": "HandleOrderActions",
+        "purpose": "Handle order-related actions such as placing orders, getting order details, listing orders, or updating order status",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters including order_id, user_id, status, or order details",
+            "source": "RouteToHandler.params"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "Result of order action (e.g., order dict, order_id, or list)",
+            "consumer": "RouteToHandler.result"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating orders",
+            "Getting order by ID",
+            "Listing orders by user/status",
+            "Updating order status"
+          ],
+          "out_of_scope": [
+            "User management",
+            "Product management"
+          ]
+        },
+        "preconditions": [
+          "params contains required fields for the specific action"
+        ],
+        "postconditions": [
+          "Order data is read, created, or updated as requested"
+        ],
+        "behavior": "Based on params, call appropriate data interfaces to read, create, or update order data. Return the result.",
+        "signature": "def HandleOrderActions(params: dict) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Read, create, or update order data"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "Order must exist for update operations"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Order actions return correct data or status",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read, create, or update order records"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.create",
+          "orders.update",
+          "orders.list",
+          "orders.exists"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores user information keyed by user_id"
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores product information keyed by product_id"
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores order records keyed by order_id"
+      }
+    ],
+    "decomposition_rationale": "The Order Management System is decomposed into a pipeline of three stages: (1) ParseAndValidateInput extracts the action and params from the raw input, (2) RouteToHandler dispatches based on action to the correct handler, and (3) the appropriate handler (HandleUserActions, HandleProductActions, or HandleOrderActions) executes the business logic using data interfaces. This separation ensures each child has a single responsibility: parsing, routing, or domain-specific data operations. The parent orchestrates by calling ParseAndValidateInput first, then RouteToHandler with the results, which internally calls the correct handler. All parent inputs (input) are covered by ParseAndValidateInput, and all parent outputs (output) are produced by RouteToHandler (which returns the handler's result). The global_vars are distributed: users to HandleUserActions, products to HandleProductActions, orders to HandleOrderActions. Each handler uses only its relevant data interfaces via requested_capabilities.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "ParseAndValidateInput"
+      },
+      "parent_outputs_produced_by": {
+        "output": "RouteToHandler"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "ParseAndValidateInput",
+        "to_input": "input",
+        "note": "Raw input is parsed to extract action and params"
+      },
+      {
+        "from_node": "ParseAndValidateInput",
+        "from_output": "action",
+        "to_node": "RouteToHandler",
+        "to_input": "action",
+        "note": "Action type is used for routing"
+      },
+      {
+        "from_node": "ParseAndValidateInput",
+        "from_output": "params",
+        "to_node": "RouteToHandler",
+        "to_input": "params",
+        "note": "Params are passed to the handler"
+      },
+      {
+        "from_node": "RouteToHandler",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result is returned as system output"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "ParseAndValidateInput",
+        "to": "RouteToHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "HandleUserActions",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "HandleProductActions",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseAndValidateInput",
+        "to": "HandleOrderActions",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteToHandler",
+        "to": "ParseAndValidateInput",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteToHandler",
+        "to": "HandleUserActions",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteToHandler",
+        "to": "HandleProductActions",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteToHandler",
+        "to": "HandleOrderActions",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

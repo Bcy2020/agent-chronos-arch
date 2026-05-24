@@ -1,0 +1,2612 @@
+{
+  "node_id": "root",
+  "name": "PersonalTaskManager",
+  "depth": 0,
+  "parent_id": null,
+  "purpose": "A command-line task management application that allows users to create, list, complete, and delete tasks. Tasks are stored in memory during the session. The system supports task creation with title and description, task listing with status filtering, task completion marking, and task deletion.",
+  "inputs": [
+    {
+      "name": "command",
+      "type": "str",
+      "description": "User command: create, list, complete, delete"
+    },
+    {
+      "name": "task_data",
+      "type": "Optional[dict]",
+      "description": "Task data containing title, description, task_id, or status_filter depending on command"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "result",
+      "type": "dict",
+      "description": "Operation result with success status, message, and optional data"
+    }
+  ],
+  "boundary": {
+    "in_scope": [
+      "Task CRUD operations (create, list, complete, delete)",
+      "In-memory task storage",
+      "Task ID auto-generation",
+      "Status filtering for list operation",
+      "Input validation and error handling"
+    ],
+    "out_of_scope": [
+      "Database persistence",
+      "User authentication",
+      "Network operations",
+      "File I/O",
+      "Multi-user support"
+    ]
+  },
+  "global_vars": [
+    {
+      "name": "tasks",
+      "type": "Dict[int, dict]",
+      "access": "read_write",
+      "description": "In-memory task storage dictionary",
+      "data_source": "tasks",
+      "data_type": "dict",
+      "operations": [
+        "read",
+        "write"
+      ]
+    },
+    {
+      "name": "next_id",
+      "type": "int",
+      "access": "read_write",
+      "description": "Auto-increment counter for task IDs",
+      "data_source": "next_id",
+      "data_type": "int",
+      "operations": [
+        "read",
+        "write"
+      ]
+    }
+  ],
+  "data_sources": [
+    {
+      "name": "tasks",
+      "category": "memory",
+      "access": "read_write",
+      "data_type": "dict",
+      "description": "In-memory dictionary storing all tasks with task_id as key and task dictionary as value"
+    },
+    {
+      "name": "next_id",
+      "category": "memory",
+      "access": "read_write",
+      "data_type": "int",
+      "description": "Auto-increment counter for generating unique task IDs"
+    }
+  ],
+  "preconditions": [],
+  "postconditions": [],
+  "error_handling": {},
+  "children": [
+    {
+      "node_id": "root_0",
+      "name": "handle_create_task",
+      "depth": 1,
+      "parent_id": "root",
+      "purpose": "Create a new task with title and description, generate a unique ID, and store it in memory",
+      "inputs": [
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Dictionary containing 'title' and 'description' for the new task"
+        },
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "description": "Current tasks dictionary (passed by reference)"
+        },
+        {
+          "name": "next_id",
+          "type": "int",
+          "description": "Next available task ID counter (passed by reference)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Operation result with success status, message, and created task data"
+        }
+      ],
+      "boundary": {
+        "in_scope": [
+          "Task ID generation",
+          "Task data validation",
+          "Task storage in memory",
+          "Success/error response formatting"
+        ],
+        "out_of_scope": [
+          "Database persistence",
+          "File I/O",
+          "Network operations",
+          "User authentication"
+        ]
+      },
+      "global_vars": [],
+      "data_sources": [
+        {
+          "name": "tasks_dictionary",
+          "category": "memory",
+          "access": "read_write",
+          "data_type": "dict",
+          "description": "In-memory dictionary storing tasks with task_id as key"
+        }
+      ],
+      "preconditions": [
+        "task_data contains 'title' and 'description' keys",
+        "tasks and next_id are valid mutable references"
+      ],
+      "postconditions": [
+        "New task added to tasks dictionary",
+        "next_id incremented by 1",
+        "Result dictionary returned"
+      ],
+      "error_handling": {},
+      "children": [
+        {
+          "node_id": "root_0_0",
+          "name": "validate_task_data",
+          "depth": 2,
+          "parent_id": "root_0",
+          "purpose": "Validate the incoming task data for required fields and constraints",
+          "inputs": [
+            {
+              "name": "task_data",
+              "type": "dict",
+              "description": "Dictionary containing 'title' and 'description' for the new task"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "is_valid",
+              "type": "bool",
+              "description": "Whether the task data is valid"
+            },
+            {
+              "name": "error_message",
+              "type": "str",
+              "description": "Error message if validation fails, empty string otherwise"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Check for required fields",
+              "Validate field types",
+              "Check length constraints"
+            ],
+            "out_of_scope": [
+              "Database validation",
+              "Business rule validation beyond basic constraints"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "task_data is a dictionary"
+          ],
+          "postconditions": [
+            "Returns validation result with appropriate error message"
+          ],
+          "error_handling": {},
+          "children": [
+            {
+              "node_id": "root_0_0_0",
+              "name": "validate_required_fields",
+              "depth": 3,
+              "parent_id": "root_0_0",
+              "purpose": "Check that all required fields are present in the task data",
+              "inputs": [
+                {
+                  "name": "task_data",
+                  "type": "dict",
+                  "description": "Dictionary containing task data with 'title' and 'description' fields"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "all_present",
+                  "type": "bool",
+                  "description": "True if all required fields are present"
+                },
+                {
+                  "name": "missing_fields",
+                  "type": "list",
+                  "description": "List of missing required field names"
+                }
+              ],
+              "boundary": {
+                "in_scope": [
+                  "Check for presence of required fields 'title' and 'description'"
+                ],
+                "out_of_scope": [
+                  "Validate field values or types",
+                  "Check field constraints"
+                ]
+              },
+              "global_vars": [],
+              "data_sources": [],
+              "preconditions": [
+                "task_data is a dictionary"
+              ],
+              "postconditions": [
+                "Returns boolean indicating if all required fields are present",
+                "Returns list of missing field names if any"
+              ],
+              "error_handling": {},
+              "children": [],
+              "children_contracts": {},
+              "decomposition_rationale": "",
+              "stop_decompose": true,
+              "stop_reason": "PURE FUNCTION: Performs only mathematical transformation (dictionary key checking) with no I/O, state dependencies, or side effects",
+              "estimated_lines": 0,
+              "code": "def validate_required_fields(task_data):\n    \"\"\"\n    Check that all required fields are present in the task data.\n    \n    Args:\n        task_data (dict): Dictionary containing task data with 'title' and 'description' fields\n        \n    Returns:\n        tuple: (all_present, missing_fields)\n            - all_present (bool): True if all required fields are present\n            - missing_fields (list): List of missing required field names\n    \"\"\"\n    # Define the required fields\n    required_fields = ['title', 'description']\n    \n    # Initialize list for missing fields\n    missing_fields = []\n    \n    # Check each required field\n    for field in required_fields:\n        if field not in task_data:\n            missing_fields.append(field)\n    \n    # Determine if all fields are present\n    all_present = len(missing_fields) == 0\n    \n    return all_present, missing_fields",
+              "code_file": "output/nodes\\root_0_0_0_validate_required_fields.py",
+              "validation": {
+                "passed": true,
+                "errors": [],
+                "retry_count": 0
+              }
+            },
+            {
+              "node_id": "root_0_0_1",
+              "name": "validate_field_types",
+              "depth": 3,
+              "parent_id": "root_0_0",
+              "purpose": "Validate that the task data fields have the correct data types",
+              "inputs": [
+                {
+                  "name": "task_data",
+                  "type": "dict",
+                  "description": "Dictionary containing task data with 'title' and 'description' fields"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "types_valid",
+                  "type": "bool",
+                  "description": "True if all field types are correct"
+                },
+                {
+                  "name": "type_errors",
+                  "type": "list",
+                  "description": "List of type validation error messages"
+                }
+              ],
+              "boundary": {
+                "in_scope": [
+                  "Validate that 'title' is a string",
+                  "Validate that 'description' is a string"
+                ],
+                "out_of_scope": [
+                  "Validate field content or length",
+                  "Check for required fields"
+                ]
+              },
+              "global_vars": [],
+              "data_sources": [],
+              "preconditions": [
+                "task_data is a dictionary",
+                "Required fields are present (caller responsibility)"
+              ],
+              "postconditions": [
+                "Returns boolean indicating if all field types are correct",
+                "Returns list of type error messages if any"
+              ],
+              "error_handling": {},
+              "children": [],
+              "children_contracts": {},
+              "decomposition_rationale": "",
+              "stop_decompose": true,
+              "stop_reason": "PURE FUNCTION: Performs only type checking operations with no I/O, state dependencies, or side effects",
+              "estimated_lines": 0,
+              "code": "def validate_field_types(task_data):\n    \"\"\"\n    Validate that the task data fields have the correct data types.\n    \n    Args:\n        task_data: Dictionary containing task data with 'title' and 'description' fields\n        \n    Returns:\n        tuple: (types_valid, type_errors)\n            - types_valid: True if all field types are correct\n            - type_errors: List of type validation error messages\n    \"\"\"\n    type_errors = []\n    \n    # Validate 'title' field type\n    if 'title' in task_data:\n        if not isinstance(task_data['title'], str):\n            type_errors.append(f\"Field 'title' must be a string, got {type(task_data['title']).__name__}\")\n    \n    # Validate 'description' field type\n    if 'description' in task_data:\n        if not isinstance(task_data['description'], str):\n            type_errors.append(f\"Field 'description' must be a string, got {type(task_data['description']).__name__}\")\n    \n    # Determine if all types are valid\n    types_valid = len(type_errors) == 0\n    \n    return types_valid, type_errors",
+              "code_file": "output/nodes\\root_0_0_1_validate_field_types.py",
+              "validation": {
+                "passed": true,
+                "errors": [],
+                "retry_count": 0
+              }
+            },
+            {
+              "node_id": "root_0_0_2",
+              "name": "validate_length_constraints",
+              "depth": 3,
+              "parent_id": "root_0_0",
+              "purpose": "Validate that the task data fields meet length constraints",
+              "inputs": [
+                {
+                  "name": "task_data",
+                  "type": "dict",
+                  "description": "Dictionary containing task data with 'title' and 'description' fields"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "lengths_valid",
+                  "type": "bool",
+                  "description": "True if all field lengths are within constraints"
+                },
+                {
+                  "name": "length_errors",
+                  "type": "list",
+                  "description": "List of length constraint error messages"
+                }
+              ],
+              "boundary": {
+                "in_scope": [
+                  "Check title length is between 1 and 100 characters",
+                  "Check description length is between 0 and 1000 characters"
+                ],
+                "out_of_scope": [
+                  "Validate field types",
+                  "Check for required fields"
+                ]
+              },
+              "global_vars": [],
+              "data_sources": [],
+              "preconditions": [
+                "task_data is a dictionary",
+                "Required fields are present (caller responsibility)",
+                "Field types are correct (caller responsibility)"
+              ],
+              "postconditions": [
+                "Returns boolean indicating if all length constraints are met",
+                "Returns list of length error messages if any"
+              ],
+              "error_handling": {},
+              "children": [],
+              "children_contracts": {},
+              "decomposition_rationale": "",
+              "stop_decompose": true,
+              "stop_reason": "PURE FUNCTION: Performs only length checking operations with no I/O, state dependencies, or side effects",
+              "estimated_lines": 0,
+              "code": "def validate_length_constraints(task_data: dict) -> tuple[bool, list]:\n    \"\"\"\n    Validate that the task data fields meet length constraints.\n    \n    Args:\n        task_data: Dictionary containing task data with 'title' and 'description' fields\n        \n    Returns:\n        tuple[bool, list]: \n            - lengths_valid: True if all field lengths are within constraints\n            - length_errors: List of length constraint error messages\n    \"\"\"\n    length_errors = []\n    \n    # Validate title length constraint: 1 to 100 characters\n    if 'title' in task_data:\n        title = task_data['title']\n        if not isinstance(title, str):\n            # Even though field type validation is out of scope, we need to handle this\n            # to avoid runtime errors when calling len()\n            length_errors.append(\"Title must be a string for length validation\")\n        else:\n            title_len = len(title)\n            if title_len < 1:\n                length_errors.append(f\"Title must be at least 1 character long (got {title_len})\")\n            elif title_len > 100:\n                length_errors.append(f\"Title must be at most 100 characters long (got {title_len})\")\n    else:\n        # Even though required fields are caller responsibility, we should handle missing fields gracefully\n        length_errors.append(\"Title field is missing\")\n    \n    # Validate description length constraint: 0 to 1000 characters\n    if 'description' in task_data:\n        description = task_data['description']\n        if not isinstance(description, str):\n            # Handle non-string description to avoid runtime errors\n            length_errors.append(\"Description must be a string for length validation\")\n        else:\n            desc_len = len(description)\n            if desc_len > 1000:\n                length_errors.append(f\"Description must be at most 1000 characters long (got {desc_len})\")\n            # Note: No minimum check for description as it can be 0 characters (empty string)\n    else:\n        # Description might be optional based on constraints (0 to 1000 chars allows empty/missing)\n        # So we don't add an error for missing description\n        pass\n    \n    # Determine if all constraints are met\n    lengths_valid = len(length_errors) == 0\n    \n    return lengths_valid, length_errors",
+              "code_file": "output/nodes\\root_0_0_2_validate_length_constraints.py",
+              "validation": {
+                "passed": true,
+                "errors": [],
+                "retry_count": 0
+              }
+            },
+            {
+              "node_id": "root_0_0_3",
+              "name": "aggregate_validation_results",
+              "depth": 3,
+              "parent_id": "root_0_0",
+              "purpose": "Combine validation results from individual validators into final validation result",
+              "inputs": [
+                {
+                  "name": "required_valid",
+                  "type": "bool",
+                  "description": "Result from required fields validation"
+                },
+                {
+                  "name": "missing_fields",
+                  "type": "list",
+                  "description": "Missing fields from required validation"
+                },
+                {
+                  "name": "types_valid",
+                  "type": "bool",
+                  "description": "Result from field types validation"
+                },
+                {
+                  "name": "type_errors",
+                  "type": "list",
+                  "description": "Type errors from type validation"
+                },
+                {
+                  "name": "lengths_valid",
+                  "type": "bool",
+                  "description": "Result from length constraints validation"
+                },
+                {
+                  "name": "length_errors",
+                  "type": "list",
+                  "description": "Length errors from length validation"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "is_valid",
+                  "type": "bool",
+                  "description": "Whether all validations passed"
+                },
+                {
+                  "name": "error_message",
+                  "type": "str",
+                  "description": "Combined error message if validation fails"
+                }
+              ],
+              "boundary": {
+                "in_scope": [
+                  "Combine validation results",
+                  "Format error messages"
+                ],
+                "out_of_scope": [
+                  "Perform actual validation checks",
+                  "Modify validation logic"
+                ]
+              },
+              "global_vars": [],
+              "data_sources": [],
+              "preconditions": [
+                "All input parameters are provided"
+              ],
+              "postconditions": [
+                "Returns final validation boolean result",
+                "Returns formatted error message string"
+              ],
+              "error_handling": {},
+              "children": [],
+              "children_contracts": {},
+              "decomposition_rationale": "",
+              "stop_decompose": true,
+              "stop_reason": "PURE FUNCTION: Performs only data aggregation and formatting with no I/O, state dependencies, or side effects",
+              "estimated_lines": 0,
+              "code": "def aggregate_validation_results(required_valid, missing_fields, types_valid, type_errors, lengths_valid, length_errors):\n    \"\"\"\n    Combine validation results from individual validators into final validation result.\n    \n    Args:\n        required_valid (bool): Result from required fields validation\n        missing_fields (list): Missing fields from required validation\n        types_valid (bool): Result from field types validation\n        type_errors (list): Type errors from type validation\n        lengths_valid (bool): Result from length constraints validation\n        length_errors (list): Length errors from length validation\n        \n    Returns:\n        tuple: (is_valid, error_message) where:\n            is_valid (bool): Whether all validations passed\n            error_message (str): Combined error message if validation fails\n    \"\"\"\n    \n    # Check if all validations passed\n    is_valid = required_valid and types_valid and lengths_valid\n    \n    # If all validations passed, return success\n    if is_valid:\n        return True, \"All validations passed\"\n    \n    # Build error message sections\n    error_sections = []\n    \n    # Required fields errors\n    if not required_valid and missing_fields:\n        missing_fields_str = \", \".join(str(field) for field in missing_fields)\n        error_sections.append(f\"Missing required fields: {missing_fields_str}\")\n    \n    # Type errors\n    if not types_valid and type_errors:\n        type_errors_str = \"; \".join(str(error) for error in type_errors)\n        error_sections.append(f\"Type errors: {type_errors_str}\")\n    \n    # Length errors\n    if not lengths_valid and length_errors:\n        length_errors_str = \"; \".join(str(error) for error in length_errors)\n        error_sections.append(f\"Length errors: {length_errors_str}\")\n    \n    # Combine all error sections\n    error_message = \" | \".join(error_sections)\n    \n    return False, error_message",
+              "code_file": "output/nodes\\root_0_0_3_aggregate_validation_results.py",
+              "validation": {
+                "passed": true,
+                "errors": [],
+                "retry_count": 0
+              }
+            }
+          ],
+          "children_contracts": {
+            "validate_required_fields": {
+              "purpose": "Check that all required fields are present in the task data",
+              "inputs": [
+                {
+                  "name": "task_data",
+                  "type": "dict",
+                  "description": "Dictionary containing task data with 'title' and 'description' fields"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "all_present",
+                  "type": "bool",
+                  "description": "True if all required fields are present"
+                },
+                {
+                  "name": "missing_fields",
+                  "type": "list",
+                  "description": "List of missing required field names"
+                }
+              ],
+              "behavior": "Checks if the required fields 'title' and 'description' exist as keys in the task_data dictionary. Returns True and empty list if both are present, False and list of missing field names otherwise.",
+              "signature": "def validate_required_fields(task_data: dict) -> tuple[bool, list[str]]",
+              "preconditions": [
+                "task_data is a dictionary"
+              ],
+              "postconditions": [
+                "Returns boolean indicating if all required fields are present",
+                "Returns list of missing field names if any"
+              ],
+              "data_operations": []
+            },
+            "validate_field_types": {
+              "purpose": "Validate that the task data fields have the correct data types",
+              "inputs": [
+                {
+                  "name": "task_data",
+                  "type": "dict",
+                  "description": "Dictionary containing task data with 'title' and 'description' fields"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "types_valid",
+                  "type": "bool",
+                  "description": "True if all field types are correct"
+                },
+                {
+                  "name": "type_errors",
+                  "type": "list",
+                  "description": "List of type validation error messages"
+                }
+              ],
+              "behavior": "Checks that the 'title' field value is a string and the 'description' field value is a string. Returns True and empty list if both are strings, False and list of error messages otherwise.",
+              "signature": "def validate_field_types(task_data: dict) -> tuple[bool, list[str]]",
+              "preconditions": [
+                "task_data is a dictionary",
+                "Required fields are present (caller responsibility)"
+              ],
+              "postconditions": [
+                "Returns boolean indicating if all field types are correct",
+                "Returns list of type error messages if any"
+              ],
+              "data_operations": []
+            },
+            "validate_length_constraints": {
+              "purpose": "Validate that the task data fields meet length constraints",
+              "inputs": [
+                {
+                  "name": "task_data",
+                  "type": "dict",
+                  "description": "Dictionary containing task data with 'title' and 'description' fields"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "lengths_valid",
+                  "type": "bool",
+                  "description": "True if all field lengths are within constraints"
+                },
+                {
+                  "name": "length_errors",
+                  "type": "list",
+                  "description": "List of length constraint error messages"
+                }
+              ],
+              "behavior": "Checks that the 'title' field string length is between 1 and 100 characters (inclusive), and the 'description' field string length is between 0 and 1000 characters (inclusive). Returns True and empty list if constraints are met, False and list of error messages otherwise.",
+              "signature": "def validate_length_constraints(task_data: dict) -> tuple[bool, list[str]]",
+              "preconditions": [
+                "task_data is a dictionary",
+                "Required fields are present (caller responsibility)",
+                "Field types are correct (caller responsibility)"
+              ],
+              "postconditions": [
+                "Returns boolean indicating if all length constraints are met",
+                "Returns list of length error messages if any"
+              ],
+              "data_operations": []
+            },
+            "aggregate_validation_results": {
+              "purpose": "Combine validation results from individual validators into final validation result",
+              "inputs": [
+                {
+                  "name": "required_valid",
+                  "type": "bool",
+                  "description": "Result from required fields validation"
+                },
+                {
+                  "name": "missing_fields",
+                  "type": "list",
+                  "description": "Missing fields from required validation"
+                },
+                {
+                  "name": "types_valid",
+                  "type": "bool",
+                  "description": "Result from field types validation"
+                },
+                {
+                  "name": "type_errors",
+                  "type": "list",
+                  "description": "Type errors from type validation"
+                },
+                {
+                  "name": "lengths_valid",
+                  "type": "bool",
+                  "description": "Result from length constraints validation"
+                },
+                {
+                  "name": "length_errors",
+                  "type": "list",
+                  "description": "Length errors from length validation"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "is_valid",
+                  "type": "bool",
+                  "description": "Whether all validations passed"
+                },
+                {
+                  "name": "error_message",
+                  "type": "str",
+                  "description": "Combined error message if validation fails"
+                }
+              ],
+              "behavior": "Checks if all validation results (required_valid, types_valid, lengths_valid) are True. If any is False, combines the error messages from missing_fields, type_errors, and length_errors into a single formatted error message. Returns True and empty string if all validations pass, False and combined error message otherwise.",
+              "signature": "def aggregate_validation_results(required_valid: bool, missing_fields: list[str], types_valid: bool, type_errors: list[str], lengths_valid: bool, length_errors: list[str]) -> tuple[bool, str]",
+              "preconditions": [
+                "All input parameters are provided"
+              ],
+              "postconditions": [
+                "Returns final validation boolean result",
+                "Returns formatted error message string"
+              ],
+              "data_operations": []
+            }
+          },
+          "decomposition_rationale": "The parent validate_task_data function is decomposed into four child functions that work together in a sequential validation pipeline: 1) validate_required_fields checks for presence of required fields, 2) validate_field_types validates data types of the fields, 3) validate_length_constraints checks field length limits, and 4) aggregate_validation_results combines all validation results into the final output. The flow is: first check required fields, then if present check types, then if types correct check lengths, and finally aggregate all results. This decomposition ensures all parent responsibilities are covered: required field checking, type validation, and length constraints. The children are at the same abstraction level (individual validation checks) and collectively implement the complete validation logic without overlapping responsibilities.",
+          "stop_decompose": false,
+          "stop_reason": "",
+          "estimated_lines": 0,
+          "code": "def validate_task_data(task_data: dict) -> tuple[bool, str]:\n    \"\"\"\n    Validate the incoming task data for required fields and constraints.\n    \n    Args:\n        task_data: Dictionary containing 'title' and 'description' for the new task\n        \n    Returns:\n        tuple[bool, str]: (is_valid, error_message)\n            - is_valid: Whether the task data is valid\n            - error_message: Error message if validation fails, empty string otherwise\n    \"\"\"\n    # Step 1: Validate required fields\n    required_valid, missing_fields = validate_required_fields(task_data)\n    \n    # Step 2: Validate field types (only if required fields are present)\n    types_valid, type_errors = validate_field_types(task_data)\n    \n    # Step 3: Validate length constraints (only if types are correct)\n    lengths_valid, length_errors = validate_length_constraints(task_data)\n    \n    # Step 4: Aggregate all validation results\n    is_valid, error_message = aggregate_validation_results(\n        required_valid=required_valid,\n        missing_fields=missing_fields,\n        types_valid=types_valid,\n        type_errors=type_errors,\n        lengths_valid=lengths_valid,\n        length_errors=length_errors\n    )\n    \n    return is_valid, error_message",
+          "code_file": "output/nodes\\root_0_0_validate_task_data.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 1
+          }
+        },
+        {
+          "node_id": "root_0_1",
+          "name": "generate_task_id",
+          "depth": 2,
+          "parent_id": "root_0",
+          "purpose": "Generate a unique task ID and increment the next_id counter",
+          "inputs": [
+            {
+              "name": "next_id",
+              "type": "int",
+              "description": "Next available task ID counter (passed by reference)"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "Generated unique task ID"
+            },
+            {
+              "name": "next_id",
+              "type": "int",
+              "description": "Updated next_id counter (incremented by 1)"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "ID generation",
+              "Counter increment"
+            ],
+            "out_of_scope": [
+              "ID collision detection",
+              "Distributed ID generation"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "next_id is a positive integer"
+          ],
+          "postconditions": [
+            "task_id equals input next_id",
+            "next_id is incremented by 1"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only mathematical transformation with no side effects",
+          "estimated_lines": 0,
+          "code": "def generate_task_id(next_id: int) -> tuple[int, int]:\n    \"\"\"\n    Generate a unique task ID and increment the next_id counter.\n    \n    Args:\n        next_id: Next available task ID counter (passed by reference)\n        \n    Returns:\n        tuple[int, int]: Generated unique task ID and updated next_id counter\n        \n    Preconditions:\n        - next_id is a positive integer\n        \n    Postconditions:\n        - task_id equals input next_id\n        - next_id is incremented by 1\n    \"\"\"\n    # Validate preconditions\n    if not isinstance(next_id, int):\n        raise TypeError(f\"next_id must be an integer, got {type(next_id).__name__}\")\n    \n    if next_id <= 0:\n        raise ValueError(f\"next_id must be a positive integer, got {next_id}\")\n    \n    # Generate task ID (equals current next_id)\n    task_id = next_id\n    \n    # Increment next_id for future use\n    next_id += 1\n    \n    # Return both values as a tuple\n    return task_id, next_id",
+          "code_file": "output/nodes\\root_0_1_generate_task_id.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_0_2",
+          "name": "create_task_object",
+          "depth": 2,
+          "parent_id": "root_0",
+          "purpose": "Create a complete task object with ID, title, description, and timestamps",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "Unique task ID"
+            },
+            {
+              "name": "task_data",
+              "type": "dict",
+              "description": "Dictionary containing 'title' and 'description' for the new task"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "task_object",
+              "type": "dict",
+              "description": "Complete task object with all required fields"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Task object construction",
+              "Timestamp generation",
+              "Field population"
+            ],
+            "out_of_scope": [
+              "Data validation",
+              "Business logic processing"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "task_id is valid integer",
+            "task_data contains valid title and description"
+          ],
+          "postconditions": [
+            "Task object contains id, title, description, created_at, and updated_at fields"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only data transformation with no side effects",
+          "estimated_lines": 0,
+          "code": "def create_task_object(task_id: int, task_data: dict) -> dict:\n    \"\"\"\n    Create a complete task object with ID, title, description, and timestamps.\n    \n    Args:\n        task_id: Unique task ID\n        task_data: Dictionary containing 'title' and 'description' for the new task\n        \n    Returns:\n        Complete task object with all required fields\n    \"\"\"\n    from datetime import datetime\n    \n    # Get current timestamp for both created and updated fields\n    current_time = datetime.now()\n    \n    # Construct the complete task object\n    task_object = {\n        'id': task_id,\n        'title': task_data.get('title', ''),\n        'description': task_data.get('description', ''),\n        'created_at': current_time,\n        'updated_at': current_time\n    }\n    \n    return task_object",
+          "code_file": "output/nodes\\root_0_2_create_task_object.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_0_3",
+          "name": "store_task_in_memory",
+          "depth": 2,
+          "parent_id": "root_0",
+          "purpose": "Store the task object in the in-memory tasks dictionary",
+          "inputs": [
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary (passed by reference)"
+            },
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "Task ID to use as key"
+            },
+            {
+              "name": "task_object",
+              "type": "dict",
+              "description": "Complete task object to store"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Updated tasks dictionary with new task added"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Dictionary insertion",
+              "Key-value assignment"
+            ],
+            "out_of_scope": [
+              "Concurrency control",
+              "Persistence operations",
+              "Cache invalidation"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "tasks is a valid dictionary",
+            "task_id not already in tasks"
+          ],
+          "postconditions": [
+            "tasks[task_id] equals task_object",
+            "tasks contains one additional entry"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "ATOMIC OPERATION: Performs exactly one write operation to a single data source",
+          "estimated_lines": 0,
+          "code": "def store_task_in_memory(tasks: dict, task_id: int, task_object: dict) -> dict:\n    \"\"\"\n    Store a task object in the in-memory tasks dictionary.\n    \n    Args:\n        tasks: Current tasks dictionary (passed by reference)\n        task_id: Task ID to use as key\n        task_object: Complete task object to store\n        \n    Returns:\n        Updated tasks dictionary with new task added\n        \n    Preconditions:\n        - tasks is a valid dictionary\n        - task_id not already in tasks\n    Postconditions:\n        - tasks[task_id] equals task_object\n        - tasks contains one additional entry\n    \"\"\"\n    # Validate preconditions\n    if not isinstance(tasks, dict):\n        raise TypeError(\"tasks must be a dictionary\")\n    \n    if not isinstance(task_id, int):\n        raise TypeError(\"task_id must be an integer\")\n    \n    if not isinstance(task_object, dict):\n        raise TypeError(\"task_object must be a dictionary\")\n    \n    if task_id in tasks:\n        raise ValueError(f\"task_id {task_id} already exists in tasks\")\n    \n    # Perform the dictionary insertion\n    tasks[task_id] = task_object\n    \n    # Verify postconditions\n    assert tasks[task_id] == task_object, \"Postcondition failed: tasks[task_id] does not equal task_object\"\n    \n    return tasks",
+          "code_file": "output/nodes\\root_0_3_store_task_in_memory.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_0_4",
+          "name": "format_create_response",
+          "depth": 2,
+          "parent_id": "root_0",
+          "purpose": "Format the success or error response for the create task operation",
+          "inputs": [
+            {
+              "name": "success",
+              "type": "bool",
+              "description": "Whether the operation succeeded"
+            },
+            {
+              "name": "message",
+              "type": "str",
+              "description": "Success or error message"
+            },
+            {
+              "name": "task_object",
+              "type": "dict",
+              "description": "Created task object (if successful)"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Formatted operation result dictionary"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Response formatting",
+              "Result structure creation"
+            ],
+            "out_of_scope": [
+              "HTTP response formatting",
+              "Serialization",
+              "Logging"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "message is a string"
+          ],
+          "postconditions": [
+            "Result dictionary contains success, message, and data fields"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only data transformation with no side effects",
+          "estimated_lines": 0,
+          "code": "def format_create_response(success: bool, message: str, task_object: dict = None) -> dict:\n    \"\"\"\n    Format the success or error response for the create task operation.\n    \n    Args:\n        success: Whether the operation succeeded\n        message: Success or error message\n        task_object: Created task object (if successful)\n        \n    Returns:\n        dict: Formatted operation result dictionary with success, message, and data fields\n    \"\"\"\n    # Validate preconditions\n    if not isinstance(message, str):\n        raise TypeError(\"message must be a string\")\n    \n    # Build the base response structure\n    response = {\n        \"success\": success,\n        \"message\": message\n    }\n    \n    # Add task data if successful and task_object is provided\n    if success and task_object is not None:\n        # Ensure task_object is a dictionary\n        if not isinstance(task_object, dict):\n            raise TypeError(\"task_object must be a dictionary when provided\")\n        response[\"data\"] = task_object\n    else:\n        # For errors or when no task_object is provided, data is None\n        response[\"data\"] = None\n    \n    # Verify postconditions\n    required_fields = [\"success\", \"message\", \"data\"]\n    for field in required_fields:\n        if field not in response:\n            raise RuntimeError(f\"Postcondition failed: missing field '{field}' in response\")\n    \n    return response",
+          "code_file": "output/nodes\\root_0_4_format_create_response.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        }
+      ],
+      "children_contracts": {
+        "validate_task_data": {
+          "purpose": "Validate the incoming task data for required fields and constraints",
+          "inputs": [
+            {
+              "name": "task_data",
+              "type": "dict",
+              "description": "Dictionary containing 'title' and 'description' for the new task"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "is_valid",
+              "type": "bool",
+              "description": "Whether the task data is valid"
+            },
+            {
+              "name": "error_message",
+              "type": "str",
+              "description": "Error message if validation fails, empty string otherwise"
+            }
+          ],
+          "behavior": "Checks if task_data contains required 'title' and 'description' keys, validates they are strings, and checks for minimum length constraints. Returns validation status and error message.",
+          "signature": "def validate_task_data(task_data: dict) -> tuple[bool, str]",
+          "preconditions": [
+            "task_data is a dictionary"
+          ],
+          "postconditions": [
+            "Returns validation result with appropriate error message"
+          ],
+          "data_operations": []
+        },
+        "generate_task_id": {
+          "purpose": "Generate a unique task ID and increment the next_id counter",
+          "inputs": [
+            {
+              "name": "next_id",
+              "type": "int",
+              "description": "Next available task ID counter (passed by reference)"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "Generated unique task ID"
+            },
+            {
+              "name": "next_id",
+              "type": "int",
+              "description": "Updated next_id counter (incremented by 1)"
+            }
+          ],
+          "behavior": "Uses the current next_id value as the new task ID, then increments next_id by 1 for future use. Returns both the generated ID and updated counter.",
+          "signature": "def generate_task_id(next_id: int) -> tuple[int, int]",
+          "preconditions": [
+            "next_id is a positive integer"
+          ],
+          "postconditions": [
+            "task_id equals input next_id",
+            "next_id is incremented by 1"
+          ],
+          "data_operations": []
+        },
+        "create_task_object": {
+          "purpose": "Create a complete task object with ID, title, description, and timestamps",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "Unique task ID"
+            },
+            {
+              "name": "task_data",
+              "type": "dict",
+              "description": "Dictionary containing 'title' and 'description' for the new task"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "task_object",
+              "type": "dict",
+              "description": "Complete task object with all required fields"
+            }
+          ],
+          "behavior": "Creates a complete task dictionary with the provided ID, title, description, and adds created_at/updated_at timestamps. Returns the fully formed task object.",
+          "signature": "def create_task_object(task_id: int, task_data: dict) -> dict",
+          "preconditions": [
+            "task_id is valid integer",
+            "task_data contains valid title and description"
+          ],
+          "postconditions": [
+            "Task object contains id, title, description, created_at, and updated_at fields"
+          ],
+          "data_operations": []
+        },
+        "store_task_in_memory": {
+          "purpose": "Store the task object in the in-memory tasks dictionary",
+          "inputs": [
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary (passed by reference)"
+            },
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "Task ID to use as key"
+            },
+            {
+              "name": "task_object",
+              "type": "dict",
+              "description": "Complete task object to store"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Updated tasks dictionary with new task added"
+            }
+          ],
+          "behavior": "Inserts the task_object into the tasks dictionary using task_id as the key. Returns the updated dictionary.",
+          "signature": "def store_task_in_memory(tasks: Dict[int, dict], task_id: int, task_object: dict) -> Dict[int, dict]",
+          "preconditions": [
+            "tasks is a valid dictionary",
+            "task_id not already in tasks"
+          ],
+          "postconditions": [
+            "tasks[task_id] equals task_object",
+            "tasks contains one additional entry"
+          ],
+          "data_operations": [
+            {
+              "source_name": "tasks_dictionary",
+              "operation_type": "write",
+              "description": "Insert task object into dictionary with task_id as key"
+            }
+          ]
+        },
+        "format_create_response": {
+          "purpose": "Format the success or error response for the create task operation",
+          "inputs": [
+            {
+              "name": "success",
+              "type": "bool",
+              "description": "Whether the operation succeeded"
+            },
+            {
+              "name": "message",
+              "type": "str",
+              "description": "Success or error message"
+            },
+            {
+              "name": "task_object",
+              "type": "dict",
+              "description": "Created task object (if successful)"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Formatted operation result dictionary"
+            }
+          ],
+          "behavior": "Creates a standardized response dictionary with success status, message, and task data (if successful). Returns the formatted result.",
+          "signature": "def format_create_response(success: bool, message: str, task_object: dict = None) -> dict",
+          "preconditions": [
+            "message is a string"
+          ],
+          "postconditions": [
+            "Result dictionary contains success, message, and data fields"
+          ],
+          "data_operations": []
+        }
+      },
+      "decomposition_rationale": "The parent handle_create_task function is decomposed into five sequential child functions that work together to implement the complete task creation workflow: 1) validate_task_data checks input validity, 2) generate_task_id creates a unique ID and updates the counter, 3) create_task_object constructs the complete task data structure, 4) store_task_in_memory persists the task to the in-memory store, and 5) format_create_response creates the standardized output. The flow is: validate → generate ID → create object → store → format response. If validation fails, the flow short-circuits to format an error response. All children work with the same data sources and collectively implement all parent responsibilities without hidden coordination.",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "estimated_lines": 0,
+      "code": "def handle_create_task(task_data: dict, tasks: dict, next_id: int) -> dict:\n    \"\"\"\n    Create a new task with title and description, generate a unique ID, and store it in memory.\n    \n    Args:\n        task_data: Dictionary containing 'title' and 'description' for the new task\n        tasks: Current tasks dictionary (passed by reference)\n        next_id: Next available task ID counter (passed by reference)\n    \n    Returns:\n        Operation result with success status, message, and created task data\n    \"\"\"\n    # Step 1: Validate the incoming task data\n    is_valid, validation_message = validate_task_data(task_data)\n    \n    if not is_valid:\n        # If validation fails, format an error response and return early\n        return format_create_response(\n            success=False,\n            message=validation_message,\n            task_object=None\n        )\n    \n    # Step 2: Generate a unique task ID and update the counter\n    task_id, updated_next_id = generate_task_id(next_id)\n    \n    # Step 3: Create the complete task object with ID and timestamps\n    task_object = create_task_object(task_id, task_data)\n    \n    # Step 4: Store the task in the in-memory dictionary\n    updated_tasks = store_task_in_memory(tasks, task_id, task_object)\n    \n    # Step 5: Format the success response\n    return format_create_response(\n        success=True,\n        message=\"Task created successfully\",\n        task_object=task_object\n    )",
+      "code_file": "output/nodes\\root_0_handle_create_task.py",
+      "validation": {
+        "passed": true,
+        "errors": [],
+        "retry_count": 1
+      }
+    },
+    {
+      "node_id": "root_1",
+      "name": "handle_list_tasks",
+      "depth": 1,
+      "parent_id": "root",
+      "purpose": "Retrieve tasks from memory, optionally filtered by status, and format them for display",
+      "inputs": [
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Dictionary optionally containing 'status_filter' key"
+        },
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "description": "Current tasks dictionary"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Operation result with success status, message, and list of tasks"
+        }
+      ],
+      "boundary": {
+        "in_scope": [
+          "Task retrieval from memory",
+          "Status filtering (pending/completed)",
+          "Result formatting",
+          "Empty list handling"
+        ],
+        "out_of_scope": [
+          "Database queries",
+          "File I/O",
+          "Network operations",
+          "Complex sorting or pagination"
+        ]
+      },
+      "global_vars": [
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "access": "read",
+          "description": "Global tasks dictionary passed as input parameter",
+          "data_source": "tasks_memory",
+          "data_type": "dict",
+          "operations": [
+            "read"
+          ]
+        }
+      ],
+      "data_sources": [
+        {
+          "name": "tasks_memory",
+          "category": "memory",
+          "access": "read",
+          "data_type": "dict",
+          "description": "In-memory dictionary storing tasks with integer keys and task dictionaries as values"
+        }
+      ],
+      "preconditions": [
+        "tasks dictionary exists and is accessible"
+      ],
+      "postconditions": [
+        "Result dictionary contains appropriate task list",
+        "Original tasks dictionary unchanged"
+      ],
+      "error_handling": {},
+      "children": [
+        {
+          "node_id": "root_1_0",
+          "name": "extract_status_filter",
+          "depth": 2,
+          "parent_id": "root_1",
+          "purpose": "Extract and validate the status filter from the input task_data dictionary",
+          "inputs": [
+            {
+              "name": "task_data",
+              "type": "dict",
+              "description": "Dictionary optionally containing 'status_filter' key"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "status_filter",
+              "type": "str",
+              "description": "Validated status filter value ('pending', 'completed', or None)"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Extract 'status_filter' key",
+              "Validate filter values ('pending', 'completed')",
+              "Handle missing or invalid filters"
+            ],
+            "out_of_scope": [
+              "Modify task_data",
+              "Validate other keys in task_data",
+              "Database operations"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "task_data is a dictionary"
+          ],
+          "postconditions": [
+            "status_filter is either 'pending', 'completed', or None"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only mathematical transformations with no I/O operations or side effects",
+          "estimated_lines": 0,
+          "code": "def extract_status_filter(task_data):\n    \"\"\"\n    Extract and validate the status filter from the input task_data dictionary.\n    \n    Args:\n        task_data: Dictionary optionally containing 'status_filter' key\n        \n    Returns:\n        str or None: Validated status filter value ('pending', 'completed', or None)\n        \n    Preconditions:\n        - task_data is a dictionary\n        \n    Postconditions:\n        - Returns either 'pending', 'completed', or None\n    \"\"\"\n    # Validate input type\n    if not isinstance(task_data, dict):\n        raise TypeError(\"task_data must be a dictionary\")\n    \n    # Extract status_filter from task_data\n    status_filter = task_data.get('status_filter')\n    \n    # Handle None or missing key\n    if status_filter is None:\n        return None\n    \n    # Ensure status_filter is a string\n    if not isinstance(status_filter, str):\n        return None\n    \n    # Normalize the string (lowercase, strip whitespace)\n    normalized_filter = status_filter.lower().strip()\n    \n    # Validate against allowed values\n    if normalized_filter in ('pending', 'completed'):\n        return normalized_filter\n    else:\n        return None",
+          "code_file": "output/nodes\\root_1_0_extract_status_filter.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_1_1",
+          "name": "filter_tasks_by_status",
+          "depth": 2,
+          "parent_id": "root_1",
+          "purpose": "Filter tasks dictionary based on status filter criteria",
+          "inputs": [
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary"
+            },
+            {
+              "name": "status_filter",
+              "type": "str",
+              "description": "Status filter value ('pending', 'completed', or None)"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "filtered_tasks",
+              "type": "List[dict]",
+              "description": "List of tasks matching the filter criteria"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Iterate through tasks dictionary",
+              "Apply status filter logic",
+              "Extract task details"
+            ],
+            "out_of_scope": [
+              "Modify original tasks dictionary",
+              "Complex sorting",
+              "Pagination",
+              "Database operations"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "tasks is a dictionary",
+            "status_filter is either 'pending', 'completed', or None"
+          ],
+          "postconditions": [
+            "filtered_tasks contains only tasks matching the filter criteria",
+            "Original tasks dictionary unchanged"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only mathematical transformations with no I/O operations or side effects",
+          "estimated_lines": 0,
+          "code": "def filter_tasks_by_status(tasks: dict, status_filter: str) -> list:\n    \"\"\"\n    Filter tasks dictionary based on status filter criteria.\n    \n    Args:\n        tasks: Dictionary of tasks where keys are task IDs and values are task dictionaries\n        status_filter: Status filter value ('pending', 'completed', or None)\n        \n    Returns:\n        List of task dictionaries matching the filter criteria\n        \n    Raises:\n        TypeError: If tasks is not a dictionary\n        ValueError: If status_filter has an invalid value\n    \"\"\"\n    # Validate preconditions\n    if not isinstance(tasks, dict):\n        raise TypeError(\"tasks must be a dictionary\")\n    \n    if status_filter not in ['pending', 'completed', None]:\n        raise ValueError(\"status_filter must be 'pending', 'completed', or None\")\n    \n    # Initialize result list\n    filtered_tasks = []\n    \n    # Iterate through tasks dictionary\n    for task_id, task_details in tasks.items():\n        # Validate task structure\n        if not isinstance(task_details, dict):\n            continue  # Skip invalid task entries\n            \n        # Apply status filter logic\n        if status_filter is None:\n            # Include all tasks when no filter is specified\n            filtered_tasks.append({\n                'id': task_id,\n                **task_details\n            })\n        else:\n            # Check if task has a status field and it matches the filter\n            if 'status' in task_details and task_details['status'] == status_filter:\n                filtered_tasks.append({\n                    'id': task_id,\n                    **task_details\n                })\n    \n    return filtered_tasks",
+          "code_file": "output/nodes\\root_1_1_filter_tasks_by_status.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_1_2",
+          "name": "format_task_list_result",
+          "depth": 2,
+          "parent_id": "root_1",
+          "purpose": "Format the filtered task list into the required result structure",
+          "inputs": [
+            {
+              "name": "filtered_tasks",
+              "type": "List[dict]",
+              "description": "List of filtered tasks"
+            },
+            {
+              "name": "status_filter",
+              "type": "str",
+              "description": "Status filter that was applied"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Formatted result dictionary with success status, message, and task list"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Create result dictionary structure",
+              "Generate appropriate success message",
+              "Handle empty task list"
+            ],
+            "out_of_scope": [
+              "Modify task data",
+              "Database operations",
+              "Complex error handling"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "filtered_tasks is a list"
+          ],
+          "postconditions": [
+            "result dictionary contains 'success', 'message', and 'tasks' keys",
+            "result['tasks'] contains the filtered_tasks list"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only mathematical transformations with no I/O operations or side effects",
+          "estimated_lines": 0,
+          "code": "def format_task_list_result(filtered_tasks: list, status_filter: str) -> dict:\n    \"\"\"\n    Format the filtered task list into the required result structure.\n    \n    Args:\n        filtered_tasks: List of filtered tasks\n        status_filter: Status filter that was applied\n        \n    Returns:\n        dict: Formatted result dictionary with success status, message, and task list\n    \"\"\"\n    # Validate preconditions\n    if not isinstance(filtered_tasks, list):\n        raise TypeError(\"filtered_tasks must be a list\")\n    \n    # Create result dictionary structure\n    result = {\n        \"success\": True,\n        \"message\": \"\",\n        \"tasks\": filtered_tasks\n    }\n    \n    # Generate appropriate success message based on task count and status filter\n    task_count = len(filtered_tasks)\n    \n    if task_count == 0:\n        if status_filter:\n            result[\"message\"] = f\"No tasks found with status '{status_filter}'\"\n        else:\n            result[\"message\"] = \"No tasks found\"\n    else:\n        if status_filter:\n            result[\"message\"] = f\"Found {task_count} task(s) with status '{status_filter}'\"\n        else:\n            result[\"message\"] = f\"Found {task_count} task(s)\"\n    \n    # Ensure postconditions are met\n    assert \"success\" in result, \"Result must contain 'success' key\"\n    assert \"message\" in result, \"Result must contain 'message' key\"\n    assert \"tasks\" in result, \"Result must contain 'tasks' key\"\n    assert result[\"tasks\"] == filtered_tasks, \"Result tasks must match filtered_tasks\"\n    \n    return result",
+          "code_file": "output/nodes\\root_1_2_format_task_list_result.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        }
+      ],
+      "children_contracts": {
+        "extract_status_filter": {
+          "purpose": "Extract and validate the status filter from the input task_data dictionary",
+          "inputs": [
+            {
+              "name": "task_data",
+              "type": "dict",
+              "description": "Dictionary optionally containing 'status_filter' key"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "status_filter",
+              "type": "str",
+              "description": "Validated status filter value ('pending', 'completed', or None)"
+            }
+          ],
+          "behavior": "Checks if task_data contains a 'status_filter' key. If present, validates that the value is either 'pending' or 'completed'. Returns the validated filter or None if not present or invalid.",
+          "signature": "def extract_status_filter(task_data: dict) -> str | None",
+          "preconditions": [
+            "task_data is a dictionary"
+          ],
+          "postconditions": [
+            "status_filter is either 'pending', 'completed', or None"
+          ],
+          "data_operations": []
+        },
+        "filter_tasks_by_status": {
+          "purpose": "Filter tasks dictionary based on status filter criteria",
+          "inputs": [
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary"
+            },
+            {
+              "name": "status_filter",
+              "type": "str",
+              "description": "Status filter value ('pending', 'completed', or None)"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "filtered_tasks",
+              "type": "List[dict]",
+              "description": "List of tasks matching the filter criteria"
+            }
+          ],
+          "behavior": "Iterates through the tasks dictionary. If status_filter is None, includes all tasks. If status_filter is 'pending', includes only tasks with status 'pending'. If status_filter is 'completed', includes only tasks with status 'completed'. Returns a list of task dictionaries.",
+          "signature": "def filter_tasks_by_status(tasks: Dict[int, dict], status_filter: str | None) -> List[dict]",
+          "preconditions": [
+            "tasks is a dictionary",
+            "status_filter is either 'pending', 'completed', or None"
+          ],
+          "postconditions": [
+            "filtered_tasks contains only tasks matching the filter criteria",
+            "Original tasks dictionary unchanged"
+          ],
+          "data_operations": []
+        },
+        "format_task_list_result": {
+          "purpose": "Format the filtered task list into the required result structure",
+          "inputs": [
+            {
+              "name": "filtered_tasks",
+              "type": "List[dict]",
+              "description": "List of filtered tasks"
+            },
+            {
+              "name": "status_filter",
+              "type": "str",
+              "description": "Status filter that was applied"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Formatted result dictionary with success status, message, and task list"
+            }
+          ],
+          "behavior": "Creates a result dictionary with 'success' always set to True. Generates an appropriate message based on the number of tasks and the status filter applied. Includes the filtered_tasks list in the result. Handles empty task list gracefully.",
+          "signature": "def format_task_list_result(filtered_tasks: List[dict], status_filter: str | None) -> dict",
+          "preconditions": [
+            "filtered_tasks is a list"
+          ],
+          "postconditions": [
+            "result dictionary contains 'success', 'message', and 'tasks' keys",
+            "result['tasks'] contains the filtered_tasks list"
+          ],
+          "data_operations": []
+        }
+      },
+      "decomposition_rationale": "The parent function handle_list_tasks is decomposed into three sequential child functions that work together to implement the parent's responsibilities: 1) extract_status_filter extracts and validates the optional status filter from input data, 2) filter_tasks_by_status applies the filter to the tasks dictionary to produce a filtered list, and 3) format_task_list_result packages the filtered list into the required output format. The flow is linear: extract → filter → format. The first child handles input validation, the second performs the core filtering logic, and the third ensures proper output formatting. Together they cover all parent responsibilities: task retrieval (via the tasks input), status filtering, result formatting, and empty list handling.",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "estimated_lines": 0,
+      "code": "def handle_list_tasks(task_data: dict, tasks: dict) -> dict:\n    # Step 1: Extract status filter from input data\n    status_filter = extract_status_filter(task_data)\n    \n    # Step 2: Filter tasks based on the status filter\n    filtered_tasks = filter_tasks_by_status(tasks, status_filter)\n    \n    # Step 3: Format the result with appropriate message\n    result = format_task_list_result(filtered_tasks, status_filter)\n    \n    return result",
+      "code_file": "output/nodes\\root_1_handle_list_tasks.py",
+      "validation": {
+        "passed": true,
+        "errors": [],
+        "retry_count": 0
+      }
+    },
+    {
+      "node_id": "root_2",
+      "name": "handle_complete_task",
+      "depth": 1,
+      "parent_id": "root",
+      "purpose": "Mark a specific task as completed by updating its status in memory",
+      "inputs": [
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Dictionary containing 'task_id' of task to complete"
+        },
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "description": "Current tasks dictionary (passed by reference)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Operation result with success status and message"
+        }
+      ],
+      "boundary": {
+        "in_scope": [
+          "Task existence validation",
+          "Status update to 'completed'",
+          "Error handling for non-existent tasks",
+          "Success response"
+        ],
+        "out_of_scope": [
+          "Database updates",
+          "File I/O",
+          "Network operations",
+          "Partial completion or rollback"
+        ]
+      },
+      "global_vars": [],
+      "data_sources": [
+        {
+          "name": "tasks",
+          "category": "memory",
+          "access": "read_write",
+          "data_type": "dict",
+          "description": "In-memory dictionary storing tasks with task_id as key and task object as value"
+        }
+      ],
+      "preconditions": [
+        "task_data contains 'task_id' key",
+        "tasks dictionary exists and is mutable"
+      ],
+      "postconditions": [
+        "Task status updated to 'completed' if task exists",
+        "Tasks dictionary modified",
+        "Appropriate success/error result returned"
+      ],
+      "error_handling": {},
+      "children": [
+        {
+          "node_id": "root_2_0",
+          "name": "validate_task_exists",
+          "depth": 2,
+          "parent_id": "root_2",
+          "purpose": "Validate that the specified task exists in the tasks dictionary",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the task to validate"
+            },
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "is_valid",
+              "type": "bool",
+              "description": "True if task exists, False otherwise"
+            },
+            {
+              "name": "task",
+              "type": "dict",
+              "description": "The task object if found, None otherwise"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Check if task_id exists in tasks dictionary",
+              "Return task object if found"
+            ],
+            "out_of_scope": [
+              "Modify task status",
+              "Handle missing task_id parameter",
+              "Database operations"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "task_id is provided",
+            "tasks dictionary is not None"
+          ],
+          "postconditions": [
+            "Task existence validated",
+            "Task object returned if found"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only mathematical transformation (dictionary lookup) with no side effects",
+          "estimated_lines": 0,
+          "code": "def validate_task_exists(task_id: int, tasks: dict) -> tuple[bool, dict | None]:\n    \"\"\"\n    Validate that the specified task exists in the tasks dictionary.\n    \n    Args:\n        task_id: ID of the task to validate\n        tasks: Current tasks dictionary with task IDs as keys\n        \n    Returns:\n        tuple[bool, dict | None]: \n            - bool: True if task exists, False otherwise\n            - dict | None: The task object if found, None otherwise\n    \"\"\"\n    # Check if task_id exists in tasks dictionary\n    if task_id in tasks:\n        return True, tasks[task_id]\n    else:\n        return False, None",
+          "code_file": "output/nodes\\root_2_0_validate_task_exists.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_2_1",
+          "name": "update_task_status",
+          "depth": 2,
+          "parent_id": "root_2",
+          "purpose": "Update the status of a task to 'completed'",
+          "inputs": [
+            {
+              "name": "task",
+              "type": "dict",
+              "description": "Task object to update"
+            },
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "updated_task",
+              "type": "dict",
+              "description": "Task with updated status"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Set task status to 'completed'",
+              "Update tasks dictionary"
+            ],
+            "out_of_scope": [
+              "Validate task existence",
+              "Error handling for invalid tasks",
+              "Database persistence"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "Task object exists",
+            "Tasks dictionary is mutable"
+          ],
+          "postconditions": [
+            "Task status updated to 'completed'",
+            "Tasks dictionary modified"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "ATOMIC OPERATION: Performs exactly one write operation on a single data source (tasks dictionary)",
+          "estimated_lines": 0,
+          "code": "def update_task_status(task: dict, tasks: dict) -> dict:\n    \"\"\"\n    Update the status of a task to 'completed'.\n    \n    Args:\n        task: Task object to update\n        tasks: Current tasks dictionary\n        \n    Returns:\n        Task with updated status\n    \"\"\"\n    # Update the task status\n    task['status'] = 'completed'\n    \n    # Update the tasks dictionary if the task has an ID\n    if 'id' in task:\n        task_id = task['id']\n        if task_id in tasks:\n            tasks[task_id] = task\n    \n    return task",
+          "code_file": "output/nodes\\root_2_1_update_task_status.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_2_2",
+          "name": "create_success_response",
+          "depth": 2,
+          "parent_id": "root_2",
+          "purpose": "Create a success response dictionary for a completed task operation",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the completed task"
+            },
+            {
+              "name": "task",
+              "type": "dict",
+              "description": "Updated task object"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Success response dictionary"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Format success response with task details"
+            ],
+            "out_of_scope": [
+              "Error handling",
+              "Validation",
+              "Data modification"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "Task ID is valid",
+            "Task object exists"
+          ],
+          "postconditions": [
+            "Success response dictionary created"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only data transformation (dictionary creation) with no side effects",
+          "estimated_lines": 0,
+          "code": "def create_success_response(task_id: int, task: dict) -> dict:\n    \"\"\"\n    Create a success response dictionary for a completed task operation.\n    \n    Args:\n        task_id: ID of the completed task\n        task: Updated task object\n        \n    Returns:\n        Success response dictionary with task details\n    \"\"\"\n    # Create the success response dictionary\n    response = {\n        \"status\": \"success\",\n        \"message\": \"Task operation completed successfully\",\n        \"task_id\": task_id,\n        \"task\": task,\n        \"timestamp\": datetime.datetime.now().isoformat()\n    }\n    \n    return response",
+          "code_file": "output/nodes\\root_2_2_create_success_response.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_2_3",
+          "name": "create_error_response",
+          "depth": 2,
+          "parent_id": "root_2",
+          "purpose": "Create an error response dictionary for a failed task completion operation",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the task that was not found"
+            },
+            {
+              "name": "error_message",
+              "type": "str",
+              "description": "Description of the error"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Error response dictionary"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Format error response with error details"
+            ],
+            "out_of_scope": [
+              "Task validation",
+              "Status updates",
+              "Data modification"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "Task ID is provided",
+            "Error message is provided"
+          ],
+          "postconditions": [
+            "Error response dictionary created"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only data transformation (dictionary creation) with no side effects",
+          "estimated_lines": 0,
+          "code": "def create_error_response(task_id: int, error_message: str) -> dict:\n    \"\"\"\n    Create an error response dictionary for a failed task completion operation.\n    \n    Args:\n        task_id: ID of the task that was not found\n        error_message: Description of the error\n        \n    Returns:\n        dict: Error response dictionary with error details\n        \n    Preconditions:\n        - Task ID is provided\n        - Error message is provided\n    \"\"\"\n    \n    # Validate inputs (basic validation as per preconditions)\n    if not isinstance(task_id, int):\n        raise TypeError(\"task_id must be an integer\")\n    \n    if not isinstance(error_message, str):\n        raise TypeError(\"error_message must be a string\")\n    \n    if not error_message.strip():\n        raise ValueError(\"error_message cannot be empty\")\n    \n    # Create error response dictionary\n    error_response = {\n        \"success\": False,\n        \"task_id\": task_id,\n        \"error\": {\n            \"message\": error_message,\n            \"type\": \"TaskCompletionError\",\n            \"timestamp\": datetime.datetime.now().isoformat()\n        },\n        \"status\": \"failed\",\n        \"suggestions\": [\n            \"Verify the task ID exists\",\n            \"Check if the task is already completed\",\n            \"Ensure you have proper permissions\"\n        ]\n    }\n    \n    return error_response",
+          "code_file": "output/nodes\\root_2_3_create_error_response.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        }
+      ],
+      "children_contracts": {
+        "validate_task_exists": {
+          "purpose": "Validate that the specified task exists in the tasks dictionary",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the task to validate"
+            },
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "is_valid",
+              "type": "bool",
+              "description": "True if task exists, False otherwise"
+            },
+            {
+              "name": "task",
+              "type": "dict",
+              "description": "The task object if found, None otherwise"
+            }
+          ],
+          "behavior": "Checks if the given task_id exists as a key in the tasks dictionary. If found, returns True and the task object. If not found, returns False and None.",
+          "signature": "def validate_task_exists(task_id: int, tasks: Dict[int, dict]) -> Tuple[bool, Optional[dict]]",
+          "preconditions": [
+            "task_id is provided",
+            "tasks dictionary is not None"
+          ],
+          "postconditions": [
+            "Task existence validated",
+            "Task object returned if found"
+          ],
+          "data_operations": [
+            {
+              "source_name": "tasks",
+              "operation_type": "read",
+              "description": "Read task from tasks dictionary by task_id"
+            }
+          ]
+        },
+        "update_task_status": {
+          "purpose": "Update the status of a task to 'completed'",
+          "inputs": [
+            {
+              "name": "task",
+              "type": "dict",
+              "description": "Task object to update"
+            },
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "updated_task",
+              "type": "dict",
+              "description": "Task with updated status"
+            }
+          ],
+          "behavior": "Updates the 'status' field of the given task object to 'completed' and updates the task in the tasks dictionary with the modified task object.",
+          "signature": "def update_task_status(task: dict, tasks: Dict[int, dict]) -> dict",
+          "preconditions": [
+            "Task object exists",
+            "Tasks dictionary is mutable"
+          ],
+          "postconditions": [
+            "Task status updated to 'completed'",
+            "Tasks dictionary modified"
+          ],
+          "data_operations": [
+            {
+              "source_name": "tasks",
+              "operation_type": "read_write",
+              "description": "Read task from dictionary, update its status, and write back"
+            }
+          ]
+        },
+        "create_success_response": {
+          "purpose": "Create a success response dictionary for a completed task operation",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the completed task"
+            },
+            {
+              "name": "task",
+              "type": "dict",
+              "description": "Updated task object"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Success response dictionary"
+            }
+          ],
+          "behavior": "Creates a standardized success response dictionary containing success status, message, and the completed task details.",
+          "signature": "def create_success_response(task_id: int, task: dict) -> dict",
+          "preconditions": [
+            "Task ID is valid",
+            "Task object exists"
+          ],
+          "postconditions": [
+            "Success response dictionary created"
+          ],
+          "data_operations": []
+        },
+        "create_error_response": {
+          "purpose": "Create an error response dictionary for a failed task completion operation",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the task that was not found"
+            },
+            {
+              "name": "error_message",
+              "type": "str",
+              "description": "Description of the error"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "result",
+              "type": "dict",
+              "description": "Error response dictionary"
+            }
+          ],
+          "behavior": "Creates a standardized error response dictionary containing failure status, error message, and the task ID that caused the error.",
+          "signature": "def create_error_response(task_id: int, error_message: str) -> dict",
+          "preconditions": [
+            "Task ID is provided",
+            "Error message is provided"
+          ],
+          "postconditions": [
+            "Error response dictionary created"
+          ],
+          "data_operations": []
+        }
+      },
+      "decomposition_rationale": "The parent handle_complete_task function is decomposed into four child functions that work together in a sequential flow: 1) validate_task_exists checks if the task exists in the tasks dictionary, 2) update_task_status modifies the task's status to 'completed' if validation succeeds, 3) create_success_response formats a success response when the operation completes successfully, and 4) create_error_response formats an error response when validation fails. The coordination logic (which child to call based on validation result) will be implemented in the parent function that composes these children. This decomposition separates validation, data modification, and response formatting concerns while maintaining the parent's external interface.",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "estimated_lines": 0,
+      "code": "def handle_complete_task(task_data: dict, tasks: dict) -> dict:\n    \"\"\"Mark a specific task as completed by updating its status in memory.\"\"\"\n    # Extract task_id from input data\n    task_id = task_data.get('task_id')\n    \n    # Validate that the task exists\n    exists, task = validate_task_exists(task_id, tasks)\n    \n    if exists:\n        # Update the task status to 'completed'\n        updated_task = update_task_status(task, tasks)\n        \n        # Create success response\n        result = create_success_response(task_id, updated_task)\n    else:\n        # Create error response for non-existent task\n        error_msg = f\"Task with ID {task_id} not found\"\n        result = create_error_response(task_id, error_msg)\n    \n    return result",
+      "code_file": "output/nodes\\root_2_handle_complete_task.py",
+      "validation": {
+        "passed": true,
+        "errors": [],
+        "retry_count": 0
+      }
+    },
+    {
+      "node_id": "root_3",
+      "name": "handle_delete_task",
+      "depth": 1,
+      "parent_id": "root",
+      "purpose": "Remove a specific task from memory storage",
+      "inputs": [
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Dictionary containing 'task_id' of task to delete"
+        },
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "description": "Current tasks dictionary (passed by reference)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Operation result with success status and message"
+        }
+      ],
+      "boundary": {
+        "in_scope": [
+          "Task existence validation",
+          "Task removal from dictionary",
+          "Error handling for non-existent tasks",
+          "Success response"
+        ],
+        "out_of_scope": [
+          "Database deletion",
+          "File I/O",
+          "Network operations",
+          "Cascade deletion or cleanup"
+        ]
+      },
+      "global_vars": [],
+      "data_sources": [
+        {
+          "name": "tasks",
+          "category": "memory",
+          "access": "read_write",
+          "data_type": "dict",
+          "description": "In-memory dictionary storing tasks by ID"
+        }
+      ],
+      "preconditions": [
+        "task_data contains 'task_id' key",
+        "tasks dictionary exists and is mutable"
+      ],
+      "postconditions": [
+        "Task removed from tasks dictionary if it exists",
+        "Tasks dictionary modified",
+        "Appropriate success/error result returned"
+      ],
+      "error_handling": {},
+      "children": [
+        {
+          "node_id": "root_3_0",
+          "name": "validate_task_exists",
+          "depth": 2,
+          "parent_id": "root_3",
+          "purpose": "Validate that the specified task exists in the tasks dictionary",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the task to validate"
+            },
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "exists",
+              "type": "bool",
+              "description": "True if task exists, False otherwise"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Check if task_id exists as key in tasks dictionary"
+            ],
+            "out_of_scope": [
+              "Task data validation",
+              "Permission checks",
+              "Database operations"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "task_id is valid integer",
+            "tasks dictionary is not None"
+          ],
+          "postconditions": [
+            "exists accurately reflects task presence in dictionary"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only mathematical transformation (dictionary key check) with no side effects",
+          "estimated_lines": 0,
+          "code": "def validate_task_exists(task_id: int, tasks: dict[int, dict]) -> bool:\n    \"\"\"\n    Validate that the specified task exists in the tasks dictionary.\n    \n    Args:\n        task_id: ID of the task to validate\n        tasks: Current tasks dictionary\n        \n    Returns:\n        True if task exists, False otherwise\n    \"\"\"\n    # Precondition check: tasks dictionary is not None\n    if tasks is None:\n        raise ValueError(\"tasks dictionary cannot be None\")\n    \n    # Check if task_id exists as key in tasks dictionary\n    exists = task_id in tasks\n    \n    return exists",
+          "code_file": "output/nodes\\root_3_0_validate_task_exists.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_3_1",
+          "name": "remove_task_from_dict",
+          "depth": 2,
+          "parent_id": "root_3",
+          "purpose": "Remove a task from the tasks dictionary by its ID",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the task to remove"
+            },
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Tasks dictionary to modify"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "removed",
+              "type": "bool",
+              "description": "True if task was removed, False otherwise"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Remove task_id key from dictionary",
+              "Return removal status"
+            ],
+            "out_of_scope": [
+              "Validation of task existence",
+              "Cleanup of task data",
+              "Notification of removal"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "task_id is valid integer",
+            "tasks dictionary is mutable"
+          ],
+          "postconditions": [
+            "Task removed from dictionary if it existed",
+            "Dictionary modified in place"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "ATOMIC OPERATION: Performs exactly one write operation on a single data source (tasks dictionary)",
+          "estimated_lines": 0,
+          "code": "def remove_task_from_dict(task_id: int, tasks: dict) -> bool:\n    \"\"\"\n    Remove a task from the tasks dictionary by its ID.\n    \n    Args:\n        task_id: ID of the task to remove\n        tasks: Tasks dictionary to modify (will be modified in place)\n    \n    Returns:\n        True if task was removed, False otherwise\n    \"\"\"\n    try:\n        # Check if task_id exists in the dictionary\n        if task_id in tasks:\n            # Remove the task by its ID\n            del tasks[task_id]\n            return True\n        else:\n            # Task ID not found in dictionary\n            return False\n    except Exception as e:\n        # Handle any unexpected errors (e.g., tasks is not a dictionary)\n        # Log the error if needed, but return False as removal failed\n        return False",
+          "code_file": "output/nodes\\root_3_1_remove_task_from_dict.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_3_2",
+          "name": "create_success_response",
+          "depth": 2,
+          "parent_id": "root_3",
+          "purpose": "Create a success response dictionary for task deletion",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the deleted task"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "response",
+              "type": "dict",
+              "description": "Success response dictionary"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Format success response with status and message"
+            ],
+            "out_of_scope": [
+              "Error handling",
+              "Logging",
+              "Notification"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "task_id is valid integer"
+          ],
+          "postconditions": [
+            "Response contains success status and appropriate message"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only data transformation (dictionary creation) with no side effects",
+          "estimated_lines": 0,
+          "code": "def create_success_response(task_id: int) -> dict:\n    \"\"\"\n    Create a success response dictionary for task deletion.\n    \n    Args:\n        task_id: ID of the deleted task\n        \n    Returns:\n        dict: Success response dictionary with status and message\n    \"\"\"\n    response = {\n        \"status\": \"success\",\n        \"message\": f\"Task with ID {task_id} has been successfully deleted.\",\n        \"deleted_task_id\": task_id\n    }\n    \n    return response",
+          "code_file": "output/nodes\\root_3_2_create_success_response.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        },
+        {
+          "node_id": "root_3_3",
+          "name": "create_error_response",
+          "depth": 2,
+          "parent_id": "root_3",
+          "purpose": "Create an error response dictionary for non-existent task",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the non-existent task"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "response",
+              "type": "dict",
+              "description": "Error response dictionary"
+            }
+          ],
+          "boundary": {
+            "in_scope": [
+              "Format error response with status and message"
+            ],
+            "out_of_scope": [
+              "Logging",
+              "Retry logic",
+              "Alternative task suggestions"
+            ]
+          },
+          "global_vars": [],
+          "data_sources": [],
+          "preconditions": [
+            "task_id is valid integer"
+          ],
+          "postconditions": [
+            "Response contains error status and appropriate message"
+          ],
+          "error_handling": {},
+          "children": [],
+          "children_contracts": {},
+          "decomposition_rationale": "",
+          "stop_decompose": true,
+          "stop_reason": "PURE FUNCTION: Performs only data transformation (dictionary creation) with no side effects",
+          "estimated_lines": 0,
+          "code": "def create_error_response(task_id: int) -> dict:\n    \"\"\"\n    Create an error response dictionary for a non-existent task.\n    \n    Args:\n        task_id: ID of the non-existent task\n        \n    Returns:\n        Dictionary containing error status and appropriate message\n    \"\"\"\n    # Validate input type (though preconditions say it's valid integer)\n    if not isinstance(task_id, int):\n        raise TypeError(f\"task_id must be an integer, got {type(task_id).__name__}\")\n    \n    # Create the error response dictionary\n    response = {\n        \"status\": \"error\",\n        \"error_code\": \"TASK_NOT_FOUND\",\n        \"message\": f\"Task with ID {task_id} does not exist\",\n        \"task_id\": task_id,\n        \"timestamp\": datetime.datetime.now().isoformat()\n    }\n    \n    return response",
+          "code_file": "output/nodes\\root_3_3_create_error_response.py",
+          "validation": {
+            "passed": true,
+            "errors": [],
+            "retry_count": 0
+          }
+        }
+      ],
+      "children_contracts": {
+        "validate_task_exists": {
+          "purpose": "Validate that the specified task exists in the tasks dictionary",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the task to validate"
+            },
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Current tasks dictionary"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "exists",
+              "type": "bool",
+              "description": "True if task exists, False otherwise"
+            }
+          ],
+          "behavior": "Checks if the provided task_id exists as a key in the tasks dictionary and returns a boolean indicating existence",
+          "signature": "def validate_task_exists(task_id: int, tasks: Dict[int, dict]) -> bool",
+          "preconditions": [
+            "task_id is valid integer",
+            "tasks dictionary is not None"
+          ],
+          "postconditions": [
+            "exists accurately reflects task presence in dictionary"
+          ],
+          "data_operations": [
+            {
+              "source_name": "tasks",
+              "operation_type": "read",
+              "description": "Check if task_id exists in dictionary"
+            }
+          ]
+        },
+        "remove_task_from_dict": {
+          "purpose": "Remove a task from the tasks dictionary by its ID",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the task to remove"
+            },
+            {
+              "name": "tasks",
+              "type": "Dict[int, dict]",
+              "description": "Tasks dictionary to modify"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "removed",
+              "type": "bool",
+              "description": "True if task was removed, False otherwise"
+            }
+          ],
+          "behavior": "Removes the task_id key from the tasks dictionary using the pop method and returns whether a task was actually removed",
+          "signature": "def remove_task_from_dict(task_id: int, tasks: Dict[int, dict]) -> bool",
+          "preconditions": [
+            "task_id is valid integer",
+            "tasks dictionary is mutable"
+          ],
+          "postconditions": [
+            "Task removed from dictionary if it existed",
+            "Dictionary modified in place"
+          ],
+          "data_operations": [
+            {
+              "source_name": "tasks",
+              "operation_type": "write",
+              "description": "Remove task from dictionary"
+            }
+          ]
+        },
+        "create_success_response": {
+          "purpose": "Create a success response dictionary for task deletion",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the deleted task"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "response",
+              "type": "dict",
+              "description": "Success response dictionary"
+            }
+          ],
+          "behavior": "Creates a standardized success response dictionary with status 'success' and a message indicating which task was deleted",
+          "signature": "def create_success_response(task_id: int) -> dict",
+          "preconditions": [
+            "task_id is valid integer"
+          ],
+          "postconditions": [
+            "Response contains success status and appropriate message"
+          ],
+          "data_operations": []
+        },
+        "create_error_response": {
+          "purpose": "Create an error response dictionary for non-existent task",
+          "inputs": [
+            {
+              "name": "task_id",
+              "type": "int",
+              "description": "ID of the non-existent task"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "response",
+              "type": "dict",
+              "description": "Error response dictionary"
+            }
+          ],
+          "behavior": "Creates a standardized error response dictionary with status 'error' and a message indicating the task was not found",
+          "signature": "def create_error_response(task_id: int) -> dict",
+          "preconditions": [
+            "task_id is valid integer"
+          ],
+          "postconditions": [
+            "Response contains error status and appropriate message"
+          ],
+          "data_operations": []
+        }
+      },
+      "decomposition_rationale": "The parent handle_delete_task function is decomposed into four child functions that work together in a sequential flow: 1) First, validate_task_exists checks if the task exists in the dictionary. 2) Based on the validation result, either remove_task_from_dict is called to delete the task, or an error path is taken. 3) Depending on the outcome, either create_success_response or create_error_response generates the appropriate response dictionary. The coordination logic (if-else branching) remains in the parent function, which calls these children in the correct sequence. This decomposition separates validation, data modification, and response creation concerns while maintaining the parent's external interface.",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "estimated_lines": 0,
+      "code": "def handle_delete_task(task_data: dict, tasks: dict) -> dict:\n    \"\"\"Remove a specific task from memory storage.\"\"\"\n    # Extract task_id from input data\n    task_id = task_data.get('task_id')\n    \n    # Validate that the task exists\n    exists = validate_task_exists(task_id, tasks)\n    \n    if exists:\n        # Remove the task from the dictionary\n        removed = remove_task_from_dict(task_id, tasks)\n        if removed:\n            # Create success response\n            return create_success_response(task_id)\n        else:\n            # This should not happen if validation passed, but handle gracefully\n            return create_error_response(task_id)\n    else:\n        # Task doesn't exist, return error response\n        return create_error_response(task_id)",
+      "code_file": "output/nodes\\root_3_handle_delete_task.py",
+      "validation": {
+        "passed": true,
+        "errors": [],
+        "retry_count": 0
+      }
+    },
+    {
+      "node_id": "root_4",
+      "name": "validate_task_data",
+      "depth": 1,
+      "parent_id": "root",
+      "purpose": "Validate task data based on command type and return standardized format",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "User command: create, list, complete, delete"
+        },
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Raw task data from user input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validated_data",
+          "type": "dict",
+          "description": "Validated and standardized task data"
+        },
+        {
+          "name": "error_message",
+          "type": "str",
+          "description": "Empty string if valid, error message if invalid"
+        }
+      ],
+      "boundary": {
+        "in_scope": [
+          "Command-specific validation",
+          "Required field checking",
+          "Data type validation",
+          "Error message generation"
+        ],
+        "out_of_scope": [
+          "Business logic execution",
+          "Data storage operations",
+          "Complex data transformation"
+        ]
+      },
+      "global_vars": [],
+      "data_sources": [],
+      "preconditions": [
+        "command is one of: create, list, complete, delete",
+        "task_data is a dictionary"
+      ],
+      "postconditions": [
+        "Returns validated_data with expected structure or empty dict",
+        "Returns error_message indicating validation issues or empty string"
+      ],
+      "error_handling": {},
+      "children": [],
+      "children_contracts": {},
+      "decomposition_rationale": "",
+      "stop_decompose": true,
+      "stop_reason": "PURE FUNCTION",
+      "estimated_lines": 0,
+      "code": "def validate_task_data(command, task_data):\n    \"\"\"\n    Validate task data based on command type and return standardized format.\n    \n    Args:\n        command: str - User command: create, list, complete, delete\n        task_data: dict - Raw task data from user input\n        \n    Returns:\n        tuple: (validated_data, error_message)\n            validated_data: dict - Validated and standardized task data\n            error_message: str - Empty string if valid, error message if invalid\n    \"\"\"\n    # Validate preconditions\n    if not isinstance(command, str):\n        return {}, \"Command must be a string\"\n    \n    if command not in [\"create\", \"list\", \"complete\", \"delete\"]:\n        return {}, f\"Invalid command: {command}. Must be one of: create, list, complete, delete\"\n    \n    if not isinstance(task_data, dict):\n        return {}, \"Task data must be a dictionary\"\n    \n    # Initialize validated data\n    validated_data = {}\n    \n    # Command-specific validation\n    if command == \"create\":\n        # Required fields for create\n        if \"title\" not in task_data:\n            return {}, \"Missing required field: title\"\n        \n        title = task_data.get(\"title\")\n        if not isinstance(title, str):\n            return {}, \"Title must be a string\"\n        \n        title = title.strip()\n        if not title:\n            return {}, \"Title cannot be empty\"\n        \n        if len(title) > 200:\n            return {}, \"Title cannot exceed 200 characters\"\n        \n        # Optional fields\n        description = task_data.get(\"description\", \"\")\n        if not isinstance(description, str):\n            return {}, \"Description must be a string\"\n        \n        description = description.strip()\n        if len(description) > 1000:\n            return {}, \"Description cannot exceed 1000 characters\"\n        \n        priority = task_data.get(\"priority\", \"medium\")\n        if not isinstance(priority, str):\n            return {}, \"Priority must be a string\"\n        \n        priority = priority.lower()\n        if priority not in [\"low\", \"medium\", \"high\"]:\n            return {}, \"Priority must be one of: low, medium, high\"\n        \n        due_date = task_data.get(\"due_date\")\n        if due_date is not None:\n            if not isinstance(due_date, str):\n                return {}, \"Due date must be a string\"\n            \n            # Simple date format validation (YYYY-MM-DD)\n            import re\n            date_pattern = r'^\\d{4}-\\d{2}-\\d{2}$'\n            if not re.match(date_pattern, due_date):\n                return {}, \"Due date must be in YYYY-MM-DD format\"\n            \n            # Validate date components\n            try:\n                year, month, day = map(int, due_date.split('-'))\n                if month < 1 or month > 12:\n                    return {}, \"Month must be between 01 and 12\"\n                if day < 1 or day > 31:\n                    return {}, \"Day must be between 01 and 31\"\n            except ValueError:\n                return {}, \"Invalid date format\"\n        \n        # Build validated data\n        validated_data = {\n            \"title\": title,\n            \"description\": description,\n            \"priority\": priority,\n            \"due_date\": due_date\n        }\n        \n    elif command == \"list\":\n        # Optional filters for list\n        filters = {}\n        \n        status = task_data.get(\"status\")\n        if status is not None:\n            if not isinstance(status, str):\n                return {}, \"Status must be a string\"\n            \n            status = status.lower()\n            if status not in [\"pending\", \"completed\", \"all\"]:\n                return {}, \"Status must be one of: pending, completed, all\"\n            filters[\"status\"] = status\n        \n        priority = task_data.get(\"priority\")\n        if priority is not None:\n            if not isinstance(priority, str):\n                return {}, \"Priority must be a string\"\n            \n            priority = priority.lower()\n            if priority not in [\"low\", \"medium\", \"high\", \"all\"]:\n                return {}, \"Priority must be one of: low, medium, high, all\"\n            filters[\"priority\"] = priority\n        \n        # Pagination parameters\n        limit = task_data.get(\"limit\")\n        if limit is not None:\n            if not isinstance(limit, int):\n                return {}, \"Limit must be an integer\"\n            \n            if limit < 1 or limit > 100:\n                return {}, \"Limit must be between 1 and 100\"\n            filters[\"limit\"] = limit\n        \n        offset = task_data.get(\"offset\")\n        if offset is not None:\n            if not isinstance(offset, int):\n                return {}, \"Offset must be an integer\"\n            \n            if offset < 0:\n                return {}, \"Offset cannot be negative\"\n            filters[\"offset\"] = offset\n        \n        validated_data = {\"filters\": filters}\n        \n    elif command in [\"complete\", \"delete\"]:\n        # Required field for complete and delete\n        if \"task_id\" not in task_data:\n            return {}, f\"Missing required field for {command}: task_id\"\n        \n        task_id = task_data.get(\"task_id\")\n        \n        # Validate task_id type\n        if not isinstance(task_id, (str, int)):\n            return {}, \"Task ID must be a string or integer\"\n        \n        # Convert to string for consistency\n        task_id_str = str(task_id).strip()\n        if not task_id_str:\n            return {}, \"Task ID cannot be empty\"\n        \n        # Additional validation for string IDs\n        if isinstance(task_id, str):\n            if len(task_id_str) > 50:\n                return {}, \"Task ID cannot exceed 50 characters\"\n            \n            # Check for valid characters (alphanumeric and hyphens)\n            import re\n            if not re.match(r'^[a-zA-Z0-9\\-]+$', task_id_str):\n                return {}, \"Task ID can only contain letters, numbers, and hyphens\"\n        \n        # For integer IDs, ensure positive\n        if isinstance(task_id, int):\n            if task_id <= 0:\n                return {}, \"Task ID must be a positive integer\"\n        \n        validated_data = {\"task_id\": task_id_str}\n        \n        # For complete command, check optional completion_note\n        if command == \"complete\":\n            completion_note = task_data.get(\"completion_note\")\n            if completion_note is not None:\n                if not isinstance(completion_note, str):\n                    return {}, \"Completion note must be a string\"\n                \n                completion_note = completion_note.strip()\n                if len(completion_note) > 500:\n                    return {}, \"Completion note cannot exceed 500 characters\"\n                validated_data[\"completion_note\"] = completion_note\n    \n    return validated_data, \"\"",
+      "code_file": "output/nodes\\root_4_validate_task_data.py",
+      "validation": {
+        "passed": true,
+        "errors": [],
+        "retry_count": 0
+      }
+    }
+  ],
+  "children_contracts": {
+    "handle_create_task": {
+      "purpose": "Create a new task with title and description, generate a unique ID, and store it in memory",
+      "inputs": [
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Dictionary containing 'title' and 'description' for the new task"
+        },
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "description": "Current tasks dictionary (passed by reference)"
+        },
+        {
+          "name": "next_id",
+          "type": "int",
+          "description": "Next available task ID counter (passed by reference)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Operation result with success status, message, and created task data"
+        }
+      ],
+      "behavior": "Validates input task data, generates a new task ID using next_id, creates a task dictionary with title, description, status='pending', and id, stores it in tasks, increments next_id, and returns success result with task data.",
+      "signature": "def handle_create_task(task_data: dict, tasks: Dict[int, dict], next_id: int) -> dict",
+      "preconditions": [
+        "task_data contains 'title' and 'description' keys",
+        "tasks and next_id are valid mutable references"
+      ],
+      "postconditions": [
+        "New task added to tasks dictionary",
+        "next_id incremented by 1",
+        "Result dictionary returned"
+      ],
+      "data_operations": [
+        {
+          "source_name": "tasks",
+          "operation_type": "read_write",
+          "description": "Read current tasks and write new task"
+        },
+        {
+          "source_name": "next_id",
+          "operation_type": "read_write",
+          "description": "Read current ID and write incremented value"
+        }
+      ]
+    },
+    "handle_list_tasks": {
+      "purpose": "Retrieve tasks from memory, optionally filtered by status, and format them for display",
+      "inputs": [
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Dictionary optionally containing 'status_filter' key"
+        },
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "description": "Current tasks dictionary"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Operation result with success status, message, and list of tasks"
+        }
+      ],
+      "behavior": "Reads all tasks from memory, applies status filter if provided in task_data (filtering by 'status' field), formats tasks into a list, and returns success result with the task list.",
+      "signature": "def handle_list_tasks(task_data: dict, tasks: Dict[int, dict]) -> dict",
+      "preconditions": [
+        "tasks dictionary exists and is accessible"
+      ],
+      "postconditions": [
+        "Result dictionary contains appropriate task list",
+        "Original tasks dictionary unchanged"
+      ],
+      "data_operations": [
+        {
+          "source_name": "tasks",
+          "operation_type": "read",
+          "description": "Read all tasks from memory storage"
+        }
+      ]
+    },
+    "handle_complete_task": {
+      "purpose": "Mark a specific task as completed by updating its status in memory",
+      "inputs": [
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Dictionary containing 'task_id' of task to complete"
+        },
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "description": "Current tasks dictionary (passed by reference)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Operation result with success status and message"
+        }
+      ],
+      "behavior": "Validates that task_id exists in tasks dictionary, updates the task's status field to 'completed', and returns success result. If task doesn't exist, returns error result.",
+      "signature": "def handle_complete_task(task_data: dict, tasks: Dict[int, dict]) -> dict",
+      "preconditions": [
+        "task_data contains 'task_id' key",
+        "tasks dictionary exists and is mutable"
+      ],
+      "postconditions": [
+        "Task status updated to 'completed' if task exists",
+        "Tasks dictionary modified",
+        "Appropriate success/error result returned"
+      ],
+      "data_operations": [
+        {
+          "source_name": "tasks",
+          "operation_type": "read_write",
+          "description": "Read task existence and write status update"
+        }
+      ]
+    },
+    "handle_delete_task": {
+      "purpose": "Remove a specific task from memory storage",
+      "inputs": [
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Dictionary containing 'task_id' of task to delete"
+        },
+        {
+          "name": "tasks",
+          "type": "Dict[int, dict]",
+          "description": "Current tasks dictionary (passed by reference)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Operation result with success status and message"
+        }
+      ],
+      "behavior": "Validates that task_id exists in tasks dictionary, removes the task entry from the dictionary, and returns success result. If task doesn't exist, returns error result.",
+      "signature": "def handle_delete_task(task_data: dict, tasks: Dict[int, dict]) -> dict",
+      "preconditions": [
+        "task_data contains 'task_id' key",
+        "tasks dictionary exists and is mutable"
+      ],
+      "postconditions": [
+        "Task removed from tasks dictionary if it exists",
+        "Tasks dictionary modified",
+        "Appropriate success/error result returned"
+      ],
+      "data_operations": [
+        {
+          "source_name": "tasks",
+          "operation_type": "read_write",
+          "description": "Read task existence and write deletion"
+        }
+      ]
+    },
+    "validate_task_data": {
+      "purpose": "Validate task data based on command type and return standardized format",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "User command: create, list, complete, delete"
+        },
+        {
+          "name": "task_data",
+          "type": "dict",
+          "description": "Raw task data from user input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validated_data",
+          "type": "dict",
+          "description": "Validated and standardized task data"
+        },
+        {
+          "name": "error_message",
+          "type": "str",
+          "description": "Empty string if valid, error message if invalid"
+        }
+      ],
+      "behavior": "Based on command type, validates that task_data contains required fields with appropriate types. For 'create': validates title and description are non-empty strings. For 'list': validates optional status_filter. For 'complete' and 'delete': validates task_id is integer. Returns standardized data and error message.",
+      "signature": "def validate_task_data(command: str, task_data: dict) -> tuple[dict, str]",
+      "preconditions": [
+        "command is one of: create, list, complete, delete",
+        "task_data is a dictionary"
+      ],
+      "postconditions": [
+        "Returns validated_data with expected structure or empty dict",
+        "Returns error_message indicating validation issues or empty string"
+      ],
+      "data_operations": []
+    }
+  },
+  "decomposition_rationale": "The PersonalTaskManager is decomposed into five child functions that collectively implement all parent responsibilities. The flow is: 1) validate_task_data first validates and standardizes input based on command type. 2) Based on the command, one of four handler functions is called: handle_create_task for 'create' command (creates new task with auto-generated ID), handle_list_tasks for 'list' command (retrieves tasks with optional filtering), handle_complete_task for 'complete' command (marks task as completed), or handle_delete_task for 'delete' command (removes task). All handlers share access to the global tasks dictionary and next_id counter. The handlers perform the actual business logic and data operations, while validate_task_data ensures input correctness. This decomposition separates validation from execution and groups related operations by command type, maintaining the parent's external interface while making each child focused on a specific responsibility.",
+  "stop_decompose": false,
+  "stop_reason": "",
+  "estimated_lines": 0,
+  "code": "def PersonalTaskManager(command: str, task_data: dict = None) -> dict:\n    \"\"\"\n    A command-line task management application that allows users to create, list, complete, and delete tasks.\n    \n    Args:\n        command: User command: create, list, complete, delete\n        task_data: Optional task data containing title, description, task_id, or status_filter\n    \n    Returns:\n        Operation result with success status, message, and optional data\n    \"\"\"\n    # Initialize global variables\n    tasks = {}\n    next_id = 1\n    \n    # Handle None task_data\n    if task_data is None:\n        task_data = {}\n    \n    # Validate input data\n    validated_data, error_message = validate_task_data(command, task_data)\n    \n    # If validation failed, return error\n    if error_message:\n        return {\n            'success': False,\n            'message': f'Validation error: {error_message}',\n            'data': None\n        }\n    \n    # Execute command based on command type\n    if command == 'create':\n        result = handle_create_task(validated_data, tasks, next_id)\n    elif command == 'list':\n        result = handle_list_tasks(validated_data, tasks)\n    elif command == 'complete':\n        result = handle_complete_task(validated_data, tasks)\n    elif command == 'delete':\n        result = handle_delete_task(validated_data, tasks)\n    else:\n        # This should not happen due to validation, but handle just in case\n        result = {\n            'success': False,\n            'message': f'Unknown command: {command}',\n            'data': None\n        }\n    \n    # Ensure result has the expected structure\n    if 'success' not in result:\n        result['success'] = False\n    if 'message' not in result:\n        result['message'] = 'Operation completed'\n    if 'data' not in result:\n        result['data'] = None\n    \n    return result",
+  "code_file": "output/nodes\\root_PersonalTaskManager.py",
+  "validation": {
+    "passed": true,
+    "errors": [],
+    "retry_count": 0
+  }
+}

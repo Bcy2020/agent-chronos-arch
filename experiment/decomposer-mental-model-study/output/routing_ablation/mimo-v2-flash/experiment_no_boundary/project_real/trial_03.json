@@ -1,0 +1,1406 @@
+{
+  "experiment": {
+    "name": "no_boundary",
+    "ablation": "no_boundary"
+  },
+  "ablation": "no_boundary",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Project_Task_Manager\nNode Purpose: Project Task Manager\n\nSubPRD Context:\n  Task Description:\n    INPUT FORMAT:\n      Format: json\n      Description: Input is a JSON object with command and project_data fields. The command specifies the operation, and project_data contains the parameters.\n      Schema:\n        command: string (one of: create_project, update_project, delete_project, create_task, assign_task, update_task_status, complete_task, delete_task, list_project_tasks, get_member_tasks, get_project_progress, add_member, update_member_availability)\n        project_data: object containing relevant fields for the command\n      Examples:\n        {\"command\": \"create_project\", \"project_data\": {\"name\": \"\\u7f51\\u7ad9\\u91cd\\u6784\", \"description\": \"\\u91cd\\u6784\\u516c\\u53f8\\u5b98\\u7f51\", \"owner_id\": 6}}\n    \n    OUTPUT FORMAT:\n      Format: json\n      Description: Output is a JSON object with success, message, and data fields.\n      Schema:\n        success: boolean\n        message: string\n        data: object (varies by command)\n      Examples:\n        {\"success\": true, \"message\": \"\\u9879\\u76ee\\u521b\\u5efa\\u6210\\u529f\", \"data\": {\"project_id\": 1, \"status\": \"planning\"}}\n    \n    Functional Requirements:\n    [FR-001] Create Project: Create a new project with name, description, owner_id. Check owner exists. Default status planning. Record creation time.\n    [FR-002] Update Project: Update project info: description, owner_id, status, deadline. Check project exists. Record status changes.\n    [FR-003] Delete Project: Delete project and all its tasks. Check project exists.\n    [FR-004] Create Task: Create task with project_id, title, description, priority, estimated_hours. Check project exists and status is planning or active. Default status todo. No assignee.\n    [FR-005] Assign Task: Assign task to a member. Check task exists and unassigned or reassignable. Check member exists and available. Optionally check skills. Update assignee_id and member status to busy.\n    [FR-006] Update Task Status: Update task status. Check task exists. Status flow: todo->in_progress->review->done. Blocked can be set anytime. Record actual_hours when done.\n    [FR-007] Complete Task: Complete a task from review to done. Record actual_hours. Release member (set available).\n    [FR-008] Delete Task: Delete a task. Check task exists. If assigned, release member.\n    [FR-009] List Project Tasks: List tasks for a project with optional filters: status, priority, assignee. Show task details and progress.\n    [FR-010] Get Member Tasks: Get all tasks for a member: current and historical. Calculate total hours.\n    [FR-011] Get Project Progress: Get project progress: completion rate, task counts by status, estimated vs actual hours, estimated completion time.\n    [FR-012] Add Member: Add a new team member. Check member_id uniqueness.\n    [FR-013] Update Member Availability: Update member availability. Can only set to offline if no active tasks.\n  Constraints:\n    - TC-STORAGE: Storage: memory - Three independent in-memory data sources: members, projects, tasks.\n    - TC-CONCURRENCY: Concurrency: single-user, auth_required: False\n    - TC-UI: UI: api\n    - TC-LANGUAGE: Language: Python\n  Acceptance Criteria:\n    - AC-001: Create project with valid owner returns success with project_id and status planning.\n    - AC-002: Create project with invalid owner returns failure.\n    - AC-003: Update project status to active sets deadline correctly.\n    - AC-004: Delete project removes project and all its tasks.\n    - AC-005: Create task in active project returns task with status todo.\n    - AC-006: Assign task to available member updates assignee and member status to busy.\n    - AC-007: Assign task to busy member returns failure.\n    - AC-008: Update task status from todo to in_progress succeeds.\n    - AC-009: Complete task from review sets status done and releases member.\n    - AC-010: Delete task releases member if assigned.\n    - AC-011: List project tasks with status filter returns correct tasks.\n    - AC-012: Get member tasks returns current and completed tasks with total hours.\n    - AC-013: Get project progress returns correct completion rate and hours.\n    - AC-014: Add member with unique ID succeeds.\n    - AC-015: Update member availability to offline fails if member has active tasks.\n  Traces to: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, FR-013\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\n\n\nData Sources (AVAILABLE DATA STORES):\n  - members (memory, read_write): Stores team member information.\n    Data Type: list\n  - projects (memory, read_write): Stores project information.\n    Data Type: list\n  - tasks (memory, read_write): Stores task records.\n    Data Type: list\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on members: Stores team member information.\n  - read_write on projects: Stores project information.\n  - read_write on tasks: Stores task records.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - members.get: def get_member(member_id: int) -> Optional[dict]:\n    Description: Retrieve a member by member_id\n  - members.list: def list_members(**filters) -> list[dict]:\n    Description: List members with optional filters (e.g., role, availability)\n  - members.create: def create_member(data: dict) -> dict:\n    Description: Create a new member with auto-generated member_id\n  - members.update: def update_member(member_id: int, data: dict) -> dict:\n    Description: Update an existing member with given fields\n  - members.delete: def delete_member(member_id: int) -> bool:\n    Description: Delete a member by member_id\n  - members.exists: def exists_member(member_id: int) -> bool:\n    Description: Check if a member exists by member_id\n  - projects.get: def get_project(project_id: int) -> Optional[dict]:\n    Description: Retrieve a project by project_id\n  - projects.list: def list_projects(**filters) -> list[dict]:\n    Description: List projects with optional filters (e.g., status, owner_id)\n  - projects.create: def create_project(data: dict) -> dict:\n    Description: Create a new project with auto-generated project_id\n  - projects.update: def update_project(project_id: int, data: dict) -> dict:\n    Description: Update an existing project with given fields\n  - projects.delete: def delete_project(project_id: int) -> bool:\n    Description: Delete a project by project_id\n  - projects.exists: def exists_project(project_id: int) -> bool:\n    Description: Check if a project exists by project_id\n  - tasks.get: def get_task(task_id: int) -> Optional[dict]:\n    Description: Retrieve a task by task_id\n  - tasks.list: def list_tasks(**filters) -> list[dict]:\n    Description: List tasks with optional filters (e.g., project_id, status, priority, assignee_id)\n  - tasks.create: def create_task(data: dict) -> dict:\n    Description: Create a new task with auto-generated task_id\n  - tasks.update: def update_task(task_id: int, data: dict) -> dict:\n    Description: Update an existing task with given fields\n  - tasks.delete: def delete_task(task_id: int) -> bool:\n    Description: Delete a task by task_id\n  - tasks.exists: def exists_task(task_id: int) -> bool:\n    Description: Check if a task exists by task_id\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "Parse_Input_Command",
+        "purpose": "Parse the input JSON to extract the command and project_data fields.",
+        "inputs": [
+          {
+            "name": "input_json",
+            "type": "dict",
+            "description": "The raw input JSON object containing command and project_data.",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "The extracted command string.",
+            "consumer": "Command_Dispatcher"
+          },
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "The extracted project_data object.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Parsing JSON structure",
+            "Validating presence of command and project_data"
+          ],
+          "out_of_scope": [
+            "Executing business logic",
+            "Data storage operations"
+          ]
+        },
+        "preconditions": [
+          "Input is a valid JSON object"
+        ],
+        "postconditions": [
+          "Command and project_data are extracted and available"
+        ],
+        "behavior": "Takes the input dictionary, validates it contains 'command' and 'project_data' keys, and returns them as separate outputs.",
+        "signature": "def Parse_Input_Command(input_json: dict) -> tuple[str, dict]",
+        "stop_decompose": true,
+        "stop_reason": "Pure function: performs only data parsing and validation with no side effects.",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [],
+        "acceptance_criteria": [],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004",
+            "FR-005",
+            "FR-006",
+            "FR-007",
+            "FR-008",
+            "FR-009",
+            "FR-010",
+            "FR-011",
+            "FR-012",
+            "FR-013"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "Command_Dispatcher",
+        "purpose": "Route the command to the appropriate handler function based on the command string.",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "The command string extracted from input.",
+            "source": "Parse_Input_Command"
+          },
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "The project_data object extracted from input.",
+            "source": "Parse_Input_Command"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "handler_result",
+            "type": "dict",
+            "description": "The result from the invoked handler function.",
+            "consumer": "Format_Output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Command routing",
+            "Invoking the correct handler function"
+          ],
+          "out_of_scope": [
+            "Executing handler logic",
+            "Data operations"
+          ]
+        },
+        "preconditions": [
+          "Command is a valid string from the allowed list"
+        ],
+        "postconditions": [
+          "Correct handler is invoked and result is returned"
+        ],
+        "behavior": "Uses a switch-like structure to call the appropriate child handler based on the command. The handler will process project_data and return a result dictionary.",
+        "signature": "def Command_Dispatcher(command: str, project_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [],
+        "acceptance_criteria": [],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004",
+            "FR-005",
+            "FR-006",
+            "FR-007",
+            "FR-008",
+            "FR-009",
+            "FR-010",
+            "FR-011",
+            "FR-012",
+            "FR-013"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "Format_Output",
+        "purpose": "Format the handler result into the standard output JSON with success, message, and data fields.",
+        "inputs": [
+          {
+            "name": "handler_result",
+            "type": "dict",
+            "description": "The result dictionary from the command handler.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "The formatted output JSON object.",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Formatting output JSON",
+            "Adding success/message/data fields"
+          ],
+          "out_of_scope": [
+            "Business logic",
+            "Data operations"
+          ]
+        },
+        "preconditions": [
+          "Handler result is a valid dictionary"
+        ],
+        "postconditions": [
+          "Output is a valid JSON object with success, message, and data fields"
+        ],
+        "behavior": "Takes the handler result and wraps it in the standard output format. If handler result contains 'success', 'message', and 'data', use them; otherwise, construct appropriate values.",
+        "signature": "def Format_Output(handler_result: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Pure function: performs only data formatting with no side effects.",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [],
+        "acceptance_criteria": [],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004",
+            "FR-005",
+            "FR-006",
+            "FR-007",
+            "FR-008",
+            "FR-009",
+            "FR-010",
+            "FR-011",
+            "FR-012",
+            "FR-013"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "Handle_Create_Project",
+        "purpose": "Execute the create_project command: validate owner, create project, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Project data containing name, description, owner_id.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating owner existence",
+            "Creating project in memory",
+            "Setting default status planning"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Project data contains name, description, owner_id"
+        ],
+        "postconditions": [
+          "Project created with auto-generated ID and status planning"
+        ],
+        "behavior": "Check if owner exists via members.get. If not, return failure. If exists, create project with projects.create, set status to planning, and return success with project_id.",
+        "signature": "def Handle_Create_Project(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read from members and write to projects on a single data source each.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "members",
+            "operation_type": "read",
+            "description": "Check owner existence"
+          },
+          {
+            "source_name": "projects",
+            "operation_type": "write",
+            "description": "Create new project"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Create project with valid owner returns success with project_id and status planning",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-002",
+            "description": "Create project with invalid owner returns failure",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "members",
+            "op": "read",
+            "description": "Read members to check owner existence"
+          },
+          {
+            "variable": "projects",
+            "op": "write",
+            "description": "Write new project to projects store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "members.get",
+          "projects.create"
+        ]
+      },
+      {
+        "name": "Handle_Update_Project",
+        "purpose": "Execute the update_project command: validate project exists, update fields, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Project data containing project_id and fields to update.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating project existence",
+            "Updating project fields",
+            "Recording status changes"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Project data contains project_id and valid update fields"
+        ],
+        "postconditions": [
+          "Project updated with new values and status change recorded"
+        ],
+        "behavior": "Check if project exists via projects.get. If not, return failure. If exists, update project with projects.update and return success.",
+        "signature": "def Handle_Update_Project(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read and write on a single data source (projects).",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "projects",
+            "operation_type": "read_write",
+            "description": "Read project existence and update project fields"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Update project status to active sets deadline correctly",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "projects",
+            "op": "read_write",
+            "description": "Read and update project information"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-002"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "projects.get",
+          "projects.update"
+        ]
+      },
+      {
+        "name": "Handle_Delete_Project",
+        "purpose": "Execute the delete_project command: validate project exists, delete project and its tasks, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Project data containing project_id.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating project existence",
+            "Deleting project and its tasks"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Project data contains project_id"
+        ],
+        "postconditions": [
+          "Project and all its tasks are deleted"
+        ],
+        "behavior": "Check if project exists via projects.get. If not, return failure. If exists, delete all tasks for the project via tasks.list and tasks.delete, then delete the project via projects.delete.",
+        "signature": "def Handle_Delete_Project(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read/write on projects and tasks on single data sources each.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "projects",
+            "operation_type": "read_write",
+            "description": "Read project existence and delete project"
+          },
+          {
+            "source_name": "tasks",
+            "operation_type": "read_write",
+            "description": "List and delete tasks for the project"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-004",
+            "description": "Delete project removes project and all its tasks",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "projects",
+            "op": "read_write",
+            "description": "Read and delete project"
+          },
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "List and delete tasks for the project"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-003"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "projects.get",
+          "projects.delete",
+          "tasks.list",
+          "tasks.delete"
+        ]
+      },
+      {
+        "name": "Handle_Create_Task",
+        "purpose": "Execute the create_task command: validate project exists and is active, create task, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data containing project_id, title, description, priority, estimated_hours.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating project existence and status",
+            "Creating task with default status todo"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Task data contains project_id and required fields"
+        ],
+        "postconditions": [
+          "Task created with auto-generated ID and status todo"
+        ],
+        "behavior": "Check if project exists and status is planning or active via projects.get. If not, return failure. If valid, create task with tasks.create and set status to todo.",
+        "signature": "def Handle_Create_Task(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read from projects and write to tasks on single data sources each.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "projects",
+            "operation_type": "read",
+            "description": "Check project existence and status"
+          },
+          {
+            "source_name": "tasks",
+            "operation_type": "write",
+            "description": "Create new task"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Create task in active project returns task with status todo",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "projects",
+            "op": "read",
+            "description": "Read project information"
+          },
+          {
+            "variable": "tasks",
+            "op": "write",
+            "description": "Write new task to tasks store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "projects.get",
+          "tasks.create"
+        ]
+      },
+      {
+        "name": "Handle_Assign_Task",
+        "purpose": "Execute the assign_task command: validate task and member, assign task, update member status, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data containing task_id and member_id.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating task and member existence",
+            "Checking task assignability and member availability",
+            "Updating task assignee and member status"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Task data contains task_id and member_id"
+        ],
+        "postconditions": [
+          "Task assigned to member and member status set to busy"
+        ],
+        "behavior": "Check if task exists and is unassigned/reassignable via tasks.get. Check if member exists and is available via members.get. If valid, update task assignee_id and update member status to busy.",
+        "signature": "def Handle_Assign_Task(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read/write on tasks and members on single data sources each.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read_write",
+            "description": "Read task existence and update assignee"
+          },
+          {
+            "source_name": "members",
+            "operation_type": "read_write",
+            "description": "Read member existence and update status to busy"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-006",
+            "description": "Assign task to available member updates assignee and member status to busy",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-007",
+            "description": "Assign task to busy member returns failure",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "Read task and update assignee"
+          },
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "Read member and update status"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-005"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "tasks.get",
+          "tasks.update",
+          "members.get",
+          "members.update"
+        ]
+      },
+      {
+        "name": "Handle_Update_Task_Status",
+        "purpose": "Execute the update_task_status command: validate task exists, update status according to flow, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data containing task_id and new_status.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating task existence",
+            "Updating status according to flow",
+            "Recording actual_hours when done"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Task data contains task_id and new_status"
+        ],
+        "postconditions": [
+          "Task status updated and actual_hours recorded if done"
+        ],
+        "behavior": "Check if task exists via tasks.get. If not, return failure. If exists, validate status flow (todo->in_progress->review->done, blocked anytime). Update status and record actual_hours if done.",
+        "signature": "def Handle_Update_Task_Status(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read/write on a single data source (tasks).",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read_write",
+            "description": "Read task existence and update status"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-008",
+            "description": "Update task status from todo to in_progress succeeds",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "Read and update task status"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-006"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "tasks.get",
+          "tasks.update"
+        ]
+      },
+      {
+        "name": "Handle_Complete_Task",
+        "purpose": "Execute the complete_task command: validate task in review, complete it, release member, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data containing task_id and actual_hours.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating task in review status",
+            "Completing task and recording actual_hours",
+            "Releasing member (set available)"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Task data contains task_id and actual_hours"
+        ],
+        "postconditions": [
+          "Task status set to done, actual_hours recorded, member set to available"
+        ],
+        "behavior": "Check if task exists and is in review status via tasks.get. If not, return failure. If valid, update task status to done, record actual_hours, and update member status to available.",
+        "signature": "def Handle_Complete_Task(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read/write on tasks and members on single data sources each.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read_write",
+            "description": "Read task and update status to done"
+          },
+          {
+            "source_name": "members",
+            "operation_type": "read_write",
+            "description": "Update member status to available"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-009",
+            "description": "Complete task from review sets status done and releases member",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "Read and update task status"
+          },
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "Update member availability"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-007"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "tasks.get",
+          "tasks.update",
+          "members.update"
+        ]
+      },
+      {
+        "name": "Handle_Delete_Task",
+        "purpose": "Execute the delete_task command: validate task exists, release member if assigned, delete task, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data containing task_id.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating task existence",
+            "Releasing member if assigned",
+            "Deleting task"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Task data contains task_id"
+        ],
+        "postconditions": [
+          "Task deleted and member released if assigned"
+        ],
+        "behavior": "Check if task exists via tasks.get. If not, return failure. If assigned, update member status to available. Then delete task via tasks.delete.",
+        "signature": "def Handle_Delete_Task(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read/write on tasks and members on single data sources each.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read_write",
+            "description": "Read task existence and delete task"
+          },
+          {
+            "source_name": "members",
+            "operation_type": "read_write",
+            "description": "Update member status if assigned"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-010",
+            "description": "Delete task releases member if assigned",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "Read and delete task"
+          },
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "Update member availability"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-008"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "tasks.get",
+          "tasks.delete",
+          "members.update"
+        ]
+      },
+      {
+        "name": "Handle_List_Project_Tasks",
+        "purpose": "Execute the list_project_tasks command: list tasks for a project with optional filters and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data containing project_id and optional filters (status, priority, assignee).",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Listing tasks for a project with filters",
+            "Showing task details and progress"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Task data contains project_id"
+        ],
+        "postconditions": [
+          "List of tasks returned with optional filtering"
+        ],
+        "behavior": "List tasks for the project via tasks.list with filters. Return success with the list.",
+        "signature": "def Handle_List_Project_Tasks(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read on a single data source (tasks).",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read",
+            "description": "List tasks for project with filters"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-011",
+            "description": "List project tasks with status filter returns correct tasks",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read",
+            "description": "List tasks for project"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-009"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "tasks.list"
+        ]
+      },
+      {
+        "name": "Handle_Get_Member_Tasks",
+        "purpose": "Execute the get_member_tasks command: get all tasks for a member, calculate total hours, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data containing member_id.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Getting tasks for a member",
+            "Calculating total hours"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Task data contains member_id"
+        ],
+        "postconditions": [
+          "List of current and historical tasks with total hours returned"
+        ],
+        "behavior": "List tasks for the member via tasks.list. Calculate total estimated and actual hours. Return success with tasks and total hours.",
+        "signature": "def Handle_Get_Member_Tasks(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read on a single data source (tasks).",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read",
+            "description": "List tasks for member"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-012",
+            "description": "Get member tasks returns current and completed tasks with total hours",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read",
+            "description": "List tasks for member"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-010"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "tasks.list"
+        ]
+      },
+      {
+        "name": "Handle_Get_Project_Progress",
+        "purpose": "Execute the get_project_progress command: calculate project progress metrics and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data containing project_id.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Calculating completion rate",
+            "Task counts by status",
+            "Estimated vs actual hours",
+            "Estimated completion time"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Task data contains project_id"
+        ],
+        "postconditions": [
+          "Project progress metrics returned"
+        ],
+        "behavior": "List tasks for the project via tasks.list. Calculate completion rate, task counts by status, estimated vs actual hours, and estimated completion time. Return success with metrics.",
+        "signature": "def Handle_Get_Project_Progress(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read on a single data source (tasks).",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read",
+            "description": "List tasks for project to calculate progress"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-013",
+            "description": "Get project progress returns correct completion rate and hours",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read",
+            "description": "List tasks for project"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-011"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "tasks.list"
+        ]
+      },
+      {
+        "name": "Handle_Add_Member",
+        "purpose": "Execute the add_member command: validate member_id uniqueness, create member, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Member data containing member details.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating member_id uniqueness",
+            "Creating new member"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Member data contains member details"
+        ],
+        "postconditions": [
+          "New member created with auto-generated ID"
+        ],
+        "behavior": "Check if member_id already exists via members.exists. If exists, return failure. If not, create member via members.create.",
+        "signature": "def Handle_Add_Member(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read and write on a single data source (members).",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "members",
+            "operation_type": "read_write",
+            "description": "Check member existence and create new member"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-014",
+            "description": "Add member with unique ID succeeds",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "Check and create member"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-012"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "members.exists",
+          "members.create"
+        ]
+      },
+      {
+        "name": "Handle_Update_Member_Availability",
+        "purpose": "Execute the update_member_availability command: validate member has no active tasks, update availability, and return result.",
+        "inputs": [
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Member data containing member_id and new availability.",
+            "source": "Command_Dispatcher"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dictionary with success, message, and data.",
+            "consumer": "Command_Dispatcher"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating member has no active tasks",
+            "Updating member availability"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Data storage interfaces"
+          ]
+        },
+        "preconditions": [
+          "Member data contains member_id and new availability"
+        ],
+        "postconditions": [
+          "Member availability updated if no active tasks"
+        ],
+        "behavior": "Check if member has active tasks via tasks.list. If active tasks exist and trying to set offline, return failure. Otherwise, update member availability via members.update.",
+        "signature": "def Handle_Update_Member_Availability(project_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: performs read/write on members and read on tasks on single data sources each.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "members",
+            "operation_type": "read_write",
+            "description": "Update member availability"
+          },
+          {
+            "source_name": "tasks",
+            "operation_type": "read",
+            "description": "Check for active tasks"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-015",
+            "description": "Update member availability to offline fails if member has active tasks",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "Update member availability"
+          },
+          {
+            "variable": "tasks",
+            "op": "read",
+            "description": "Check for active tasks"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-013"
+          ],
+          "derived_from": "Command_Dispatcher"
+        },
+        "requested_capabilities": [
+          "tasks.list",
+          "members.update"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "members",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores team member information"
+      },
+      {
+        "name": "projects",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores project information"
+      },
+      {
+        "name": "tasks",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores task records"
+      }
+    ],
+    "decomposition_rationale": "The Project_Task_Manager is decomposed into a main processing flow: Parse_Input_Command -> Command_Dispatcher -> Format_Output. The Command_Dispatcher routes to specific command handlers (e.g., Handle_Create_Project, Handle_Update_Project, etc.) based on the command string. Each handler is an atomic operation that performs data operations on the required data sources (members, projects, tasks) using the available data interfaces. The handlers collectively cover all 13 functional requirements. The parent orchestrates by calling children in sequence: first Parse_Input_Command to extract command and data, then Command_Dispatcher to route and execute the appropriate handler, and finally Format_Output to produce the standard output. The Command_Dispatcher does not directly access data; it delegates to handlers that perform actual data operations. This ensures a clean separation of concerns and adherence to the tree structure rule (no cross-calls between siblings).",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "Parse_Input_Command"
+      },
+      "parent_outputs_produced_by": {
+        "output": "Format_Output"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Parse_Input_Command",
+        "to_input": "input_json",
+        "note": "Parent input is passed to Parse_Input_Command for parsing"
+      },
+      {
+        "from_node": "Parse_Input_Command",
+        "from_output": "command",
+        "to_node": "Command_Dispatcher",
+        "to_input": "command",
+        "note": "Parsed command is passed to Command_Dispatcher for routing"
+      },
+      {
+        "from_node": "Parse_Input_Command",
+        "from_output": "project_data",
+        "to_node": "Command_Dispatcher",
+        "to_input": "project_data",
+        "note": "Parsed project_data is passed to Command_Dispatcher for processing"
+      },
+      {
+        "from_node": "Command_Dispatcher",
+        "from_output": "handler_result",
+        "to_node": "Format_Output",
+        "to_input": "handler_result",
+        "note": "Handler result is passed to Format_Output for standard formatting"
+      },
+      {
+        "from_node": "Format_Output",
+        "from_output": "output",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Formatted output is returned to parent"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "Command_Dispatcher",
+        "to": "Parse_Input_Command",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Format_Output",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Create_Project",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Update_Project",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Delete_Project",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Create_Task",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Assign_Task",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Update_Task_Status",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Complete_Task",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Delete_Task",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_List_Project_Tasks",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Get_Member_Tasks",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Get_Project_Progress",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Add_Member",
+        "method": "structural_router"
+      },
+      {
+        "from": "Command_Dispatcher",
+        "to": "Handle_Update_Member_Availability",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

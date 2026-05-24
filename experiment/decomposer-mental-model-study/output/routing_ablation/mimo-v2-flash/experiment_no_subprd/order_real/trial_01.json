@@ -1,0 +1,573 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): Stores user information keyed by user_id.\n    Data Type: dict\n  - products (memory, read_write): Stores product information keyed by product_id.\n    Data Type: dict\n  - orders (memory, read_write): Stores order records keyed by order_id.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: Stores user information keyed by user_id.\n  - read_write on products: Stores product information keyed by product_id.\n  - read_write on orders: Stores order records keyed by order_id.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "Validate_User_Exists",
+        "purpose": "Validates that a user exists in the system before proceeding with order operations.",
+        "inputs": [
+          {
+            "name": "user_id",
+            "type": "int",
+            "description": "ID of the user to validate",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "user_exists",
+            "type": "bool",
+            "description": "True if user exists, False otherwise",
+            "consumer": "Order_Coordinator"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Checking user existence in the users data store"
+          ],
+          "out_of_scope": [
+            "Modifying user data",
+            "Order creation or update"
+          ]
+        },
+        "preconditions": [
+          "user_id is provided"
+        ],
+        "postconditions": [
+          "user_exists is True if user exists, False otherwise"
+        ],
+        "behavior": "Checks if the user exists by calling the users.exists interface. Returns a boolean indicating existence.",
+        "signature": "def Validate_User_Exists(user_id: int) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads from a single data source (users) to check existence.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read",
+            "description": "Check if user exists"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "User ID must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Returns True for existing user, False for non-existing user",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read",
+            "description": "Read user existence from users data store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.exists"
+        ]
+      },
+      {
+        "name": "Validate_Product_Exists",
+        "purpose": "Validates that a product exists in the system before proceeding with order operations.",
+        "inputs": [
+          {
+            "name": "product_id",
+            "type": "int",
+            "description": "ID of the product to validate",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "product_exists",
+            "type": "bool",
+            "description": "True if product exists, False otherwise",
+            "consumer": "Order_Coordinator"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Checking product existence in the products data store"
+          ],
+          "out_of_scope": [
+            "Modifying product data",
+            "Order creation or update"
+          ]
+        },
+        "preconditions": [
+          "product_id is provided"
+        ],
+        "postconditions": [
+          "product_exists is True if product exists, False otherwise"
+        ],
+        "behavior": "Checks if the product exists by calling the products.exists interface. Returns a boolean indicating existence.",
+        "signature": "def Validate_Product_Exists(product_id: int) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads from a single data source (products) to check existence.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "Check if product exists"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Product ID must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-002",
+            "description": "Returns True for existing product, False for non-existing product",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "Read product existence from products data store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.exists"
+        ]
+      },
+      {
+        "name": "Check_Inventory_Availability",
+        "purpose": "Checks if the requested quantity of a product is available in inventory.",
+        "inputs": [
+          {
+            "name": "product_id",
+            "type": "int",
+            "description": "ID of the product to check inventory for",
+            "source": "parent_input"
+          },
+          {
+            "name": "quantity",
+            "type": "int",
+            "description": "Requested quantity to check availability for",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "is_available",
+            "type": "bool",
+            "description": "True if requested quantity is available, False otherwise",
+            "consumer": "Order_Coordinator"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading product stock from products data store"
+          ],
+          "out_of_scope": [
+            "Updating inventory",
+            "Order creation"
+          ]
+        },
+        "preconditions": [
+          "product_id and quantity are provided"
+        ],
+        "postconditions": [
+          "is_available is True if stock >= quantity, False otherwise"
+        ],
+        "behavior": "Retrieves product information to get current stock, then compares with requested quantity. Returns boolean indicating availability.",
+        "signature": "def Check_Inventory_Availability(product_id: int, quantity: int) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Pure function: mathematical comparison with no side effects.",
+        "node_type": "pure_function",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "Read product stock information"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "Quantity must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Returns True when stock >= quantity, False otherwise",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "Read product stock from products data store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-002"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.get"
+        ]
+      },
+      {
+        "name": "Create_New_Order",
+        "purpose": "Creates a new order in the system.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Order details including user_id, product_id, quantity, etc.",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order_id",
+            "type": "int",
+            "description": "ID of the newly created order",
+            "consumer": "Order_Coordinator"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating order in orders data store"
+          ],
+          "out_of_scope": [
+            "Validating user or product existence",
+            "Updating inventory"
+          ]
+        },
+        "preconditions": [
+          "order_data is a valid dictionary with required fields"
+        ],
+        "postconditions": [
+          "New order is created and order_id is returned"
+        ],
+        "behavior": "Calls orders.create interface to create a new order with the provided order_data. Returns the new order_id.",
+        "signature": "def Create_New_Order(order_data: dict) -> int",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: writes to a single data source (orders) to create an order.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "write",
+            "description": "Create a new order record"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "Order data must contain user_id, product_id, and quantity"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-004",
+            "description": "Returns a valid order_id for a new order",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "write",
+            "description": "Write new order to orders data store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-003"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.create"
+        ]
+      },
+      {
+        "name": "Update_Order_Status",
+        "purpose": "Updates the status of an existing order.",
+        "inputs": [
+          {
+            "name": "order_id",
+            "type": "int",
+            "description": "ID of the order to update",
+            "source": "parent_input"
+          },
+          {
+            "name": "new_status",
+            "type": "str",
+            "description": "New status to set for the order",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "update_success",
+            "type": "bool",
+            "description": "True if update was successful, False otherwise",
+            "consumer": "Order_Coordinator"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Updating order status in orders data store"
+          ],
+          "out_of_scope": [
+            "Creating new orders",
+            "Validating order existence"
+          ]
+        },
+        "preconditions": [
+          "order_id and new_status are provided"
+        ],
+        "postconditions": [
+          "Order status is updated if order exists"
+        ],
+        "behavior": "Checks if order exists, then updates its status. Returns success status.",
+        "signature": "def Update_Order_Status(order_id: int, new_status: str) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: reads and writes to a single data source (orders) to update status.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Read order existence and update status"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "Order ID must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Returns True if order exists and status is updated, False otherwise",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read and write order status in orders data store"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.exists",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "Order_Coordinator",
+        "purpose": "Coordinates the order management workflow by orchestrating child functions.",
+        "inputs": [
+          {
+            "name": "input",
+            "type": "Any",
+            "description": "System input containing operation type and parameters",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "Any",
+            "description": "System output containing operation result",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Orchestrating order management operations",
+            "Calling child functions"
+          ],
+          "out_of_scope": [
+            "Direct data operations",
+            "Business logic implementation"
+          ]
+        },
+        "preconditions": [
+          "Input is provided"
+        ],
+        "postconditions": [
+          "Output contains result of the orchestrated operation"
+        ],
+        "behavior": "Parses input to determine operation type (e.g., create_order, update_status). Calls appropriate child functions in sequence, handles errors, and returns result.",
+        "signature": "def Order_Coordinator(input: Any) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-006",
+            "description": "Input must contain valid operation type"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-006",
+            "description": "Correctly orchestrates operations and returns appropriate output",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores user information keyed by user_id"
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores product information keyed by product_id"
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores order records keyed by order_id"
+      }
+    ],
+    "decomposition_rationale": "The Order_Management_System is decomposed into a coordinator child (Order_Coordinator) that orchestrates the workflow and five atomic/pure function children that handle specific operations. The coordinator parses the input to determine the operation type (e.g., create order, update status) and calls the appropriate child functions in sequence. For example, creating an order involves validating user and product existence, checking inventory availability, and then creating the order. Each child function is focused on a single responsibility: validation, inventory check, order creation, or status update. The children do not call each other; the coordinator directly invokes them based on the operation type. This ensures a tree structure where the parent (Order_Management_System) calls the coordinator, which in turn calls the other children. All data operations are performed by the children, with the coordinator only handling orchestration.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "Order_Coordinator"
+      },
+      "parent_outputs_produced_by": {
+        "output": "Order_Coordinator"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "Order_Coordinator",
+        "to_input": "input",
+        "note": "Parent passes input to coordinator for processing"
+      },
+      {
+        "from_node": "Order_Coordinator",
+        "from_output": "output",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Coordinator returns processed result to parent"
+      },
+      {
+        "from_node": "Order_Coordinator",
+        "from_output": "user_id",
+        "to_node": "Validate_User_Exists",
+        "to_input": "user_id",
+        "note": "Coordinator passes user_id to validation child"
+      },
+      {
+        "from_node": "Order_Coordinator",
+        "from_output": "product_id",
+        "to_node": "Validate_Product_Exists",
+        "to_input": "product_id",
+        "note": "Coordinator passes product_id to validation child"
+      },
+      {
+        "from_node": "Order_Coordinator",
+        "from_output": "product_id",
+        "to_node": "Check_Inventory_Availability",
+        "to_input": "product_id",
+        "note": "Coordinator passes product_id to inventory check"
+      },
+      {
+        "from_node": "Order_Coordinator",
+        "from_output": "quantity",
+        "to_node": "Check_Inventory_Availability",
+        "to_input": "quantity",
+        "note": "Coordinator passes quantity to inventory check"
+      },
+      {
+        "from_node": "Order_Coordinator",
+        "from_output": "order_data",
+        "to_node": "Create_New_Order",
+        "to_input": "order_data",
+        "note": "Coordinator passes order_data to create order"
+      },
+      {
+        "from_node": "Order_Coordinator",
+        "from_output": "order_id",
+        "to_node": "Update_Order_Status",
+        "to_input": "order_id",
+        "note": "Coordinator passes order_id to update status"
+      },
+      {
+        "from_node": "Order_Coordinator",
+        "from_output": "new_status",
+        "to_node": "Update_Order_Status",
+        "to_input": "new_status",
+        "note": "Coordinator passes new_status to update status"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

@@ -1,0 +1,750 @@
+{
+  "experiment": {
+    "name": "no_stop_conditions",
+    "ablation": "no_stop_conditions"
+  },
+  "ablation": "no_stop_conditions",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Project_Task_Manager\nNode Purpose: Project Task Manager\n\nSubPRD Context:\n  Task Description:\n    INPUT FORMAT:\n      Format: json\n      Description: Input is a JSON object with command and project_data fields. The command specifies the operation, and project_data contains the parameters.\n      Schema:\n        command: string (one of: create_project, update_project, delete_project, create_task, assign_task, update_task_status, complete_task, delete_task, list_project_tasks, get_member_tasks, get_project_progress, add_member, update_member_availability)\n        project_data: object containing relevant fields for the command\n      Examples:\n        {\"command\": \"create_project\", \"project_data\": {\"name\": \"\\u7f51\\u7ad9\\u91cd\\u6784\", \"description\": \"\\u91cd\\u6784\\u516c\\u53f8\\u5b98\\u7f51\", \"owner_id\": 6}}\n    \n    OUTPUT FORMAT:\n      Format: json\n      Description: Output is a JSON object with success, message, and data fields.\n      Schema:\n        success: boolean\n        message: string\n        data: object (varies by command)\n      Examples:\n        {\"success\": true, \"message\": \"\\u9879\\u76ee\\u521b\\u5efa\\u6210\\u529f\", \"data\": {\"project_id\": 1, \"status\": \"planning\"}}\n    \n    Functional Requirements:\n    [FR-001] Create Project: Create a new project with name, description, owner_id. Check owner exists. Default status planning. Record creation time.\n    [FR-002] Update Project: Update project info: description, owner_id, status, deadline. Check project exists. Record status changes.\n    [FR-003] Delete Project: Delete project and all its tasks. Check project exists.\n    [FR-004] Create Task: Create task with project_id, title, description, priority, estimated_hours. Check project exists and status is planning or active. Default status todo. No assignee.\n    [FR-005] Assign Task: Assign task to a member. Check task exists and unassigned or reassignable. Check member exists and available. Optionally check skills. Update assignee_id and member status to busy.\n    [FR-006] Update Task Status: Update task status. Check task exists. Status flow: todo->in_progress->review->done. Blocked can be set anytime. Record actual_hours when done.\n    [FR-007] Complete Task: Complete a task from review to done. Record actual_hours. Release member (set available).\n    [FR-008] Delete Task: Delete a task. Check task exists. If assigned, release member.\n    [FR-009] List Project Tasks: List tasks for a project with optional filters: status, priority, assignee. Show task details and progress.\n    [FR-010] Get Member Tasks: Get all tasks for a member: current and historical. Calculate total hours.\n    [FR-011] Get Project Progress: Get project progress: completion rate, task counts by status, estimated vs actual hours, estimated completion time.\n    [FR-012] Add Member: Add a new team member. Check member_id uniqueness.\n    [FR-013] Update Member Availability: Update member availability. Can only set to offline if no active tasks.\n  Constraints:\n    - TC-STORAGE: Storage: memory - Three independent in-memory data sources: members, projects, tasks.\n    - TC-CONCURRENCY: Concurrency: single-user, auth_required: False\n    - TC-UI: UI: api\n    - TC-LANGUAGE: Language: Python\n  Acceptance Criteria:\n    - AC-001: Create project with valid owner returns success with project_id and status planning.\n    - AC-002: Create project with invalid owner returns failure.\n    - AC-003: Update project status to active sets deadline correctly.\n    - AC-004: Delete project removes project and all its tasks.\n    - AC-005: Create task in active project returns task with status todo.\n    - AC-006: Assign task to available member updates assignee and member status to busy.\n    - AC-007: Assign task to busy member returns failure.\n    - AC-008: Update task status from todo to in_progress succeeds.\n    - AC-009: Complete task from review sets status done and releases member.\n    - AC-010: Delete task releases member if assigned.\n    - AC-011: List project tasks with status filter returns correct tasks.\n    - AC-012: Get member tasks returns current and completed tasks with total hours.\n    - AC-013: Get project progress returns correct completion rate and hours.\n    - AC-014: Add member with unique ID succeeds.\n    - AC-015: Update member availability to offline fails if member has active tasks.\n  Traces to: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, FR-013\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - members (memory, read_write): Stores team member information.\n    Data Type: list\n  - projects (memory, read_write): Stores project information.\n    Data Type: list\n  - tasks (memory, read_write): Stores task records.\n    Data Type: list\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on members: Stores team member information.\n  - read_write on projects: Stores project information.\n  - read_write on tasks: Stores task records.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - members.get: def get_member(member_id: int) -> Optional[dict]:\n    Description: Retrieve a member by member_id\n  - members.list: def list_members(**filters) -> list[dict]:\n    Description: List members with optional filters (e.g., role, availability)\n  - members.create: def create_member(data: dict) -> dict:\n    Description: Create a new member with auto-generated member_id\n  - members.update: def update_member(member_id: int, data: dict) -> dict:\n    Description: Update an existing member with given fields\n  - members.delete: def delete_member(member_id: int) -> bool:\n    Description: Delete a member by member_id\n  - members.exists: def exists_member(member_id: int) -> bool:\n    Description: Check if a member exists by member_id\n  - projects.get: def get_project(project_id: int) -> Optional[dict]:\n    Description: Retrieve a project by project_id\n  - projects.list: def list_projects(**filters) -> list[dict]:\n    Description: List projects with optional filters (e.g., status, owner_id)\n  - projects.create: def create_project(data: dict) -> dict:\n    Description: Create a new project with auto-generated project_id\n  - projects.update: def update_project(project_id: int, data: dict) -> dict:\n    Description: Update an existing project with given fields\n  - projects.delete: def delete_project(project_id: int) -> bool:\n    Description: Delete a project by project_id\n  - projects.exists: def exists_project(project_id: int) -> bool:\n    Description: Check if a project exists by project_id\n  - tasks.get: def get_task(task_id: int) -> Optional[dict]:\n    Description: Retrieve a task by task_id\n  - tasks.list: def list_tasks(**filters) -> list[dict]:\n    Description: List tasks with optional filters (e.g., project_id, status, priority, assignee_id)\n  - tasks.create: def create_task(data: dict) -> dict:\n    Description: Create a new task with auto-generated task_id\n  - tasks.update: def update_task(task_id: int, data: dict) -> dict:\n    Description: Update an existing task with given fields\n  - tasks.delete: def delete_task(task_id: int) -> bool:\n    Description: Delete a task by task_id\n  - tasks.exists: def exists_task(task_id: int) -> bool:\n    Description: Check if a task exists by task_id\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "CommandRouter",
+        "purpose": "Parse input JSON, validate command, and route to appropriate command handler",
+        "inputs": [
+          {
+            "name": "input",
+            "type": "dict",
+            "description": "JSON object with command and project_data fields",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON response with success, message, and data fields",
+            "consumer": "parent_output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Command parsing",
+            "Command validation",
+            "Routing to handlers"
+          ],
+          "out_of_scope": [
+            "Business logic implementation",
+            "Data storage operations"
+          ]
+        },
+        "preconditions": [
+          "Input is valid JSON with command and project_data fields"
+        ],
+        "postconditions": [
+          "Returns appropriate response for the command"
+        ],
+        "behavior": "Parses input JSON, validates command field, routes to appropriate command handler based on command value, and returns standardized response format",
+        "signature": "def CommandRouter(input: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Command must be one of the predefined valid commands"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Routes valid commands to appropriate handlers",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004",
+            "FR-005",
+            "FR-006",
+            "FR-007",
+            "FR-008",
+            "FR-009",
+            "FR-010",
+            "FR-011",
+            "FR-012",
+            "FR-013"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "ProjectCommandHandler",
+        "purpose": "Handle project-related commands: create_project, update_project, delete_project",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Project command to execute",
+            "source": "CommandRouter"
+          },
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Project data for the command",
+            "source": "CommandRouter"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Command execution result",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Project creation",
+            "Project updates",
+            "Project deletion"
+          ],
+          "out_of_scope": [
+            "Task operations",
+            "Member operations"
+          ]
+        },
+        "preconditions": [
+          "Valid project command and data provided"
+        ],
+        "postconditions": [
+          "Project operation completed successfully or error returned"
+        ],
+        "behavior": "Routes to specific project operation based on command, validates inputs, executes operation, and returns result",
+        "signature": "def ProjectCommandHandler(command: str, project_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [
+          {
+            "source_name": "projects",
+            "operation_type": "read_write",
+            "description": "Read and write project data"
+          },
+          {
+            "source_name": "tasks",
+            "operation_type": "read_write",
+            "description": "Delete tasks when project is deleted"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Project must exist for update/delete operations"
+          },
+          {
+            "constraint_id": "C-003",
+            "description": "Owner must exist for project creation"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-002",
+            "description": "Create project with valid owner returns success",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-003",
+            "description": "Update project status to active sets deadline correctly",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-004",
+            "description": "Delete project removes project and all its tasks",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "projects",
+            "op": "read_write",
+            "description": "Read and write project data"
+          },
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "Delete tasks when project is deleted"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003"
+          ],
+          "derived_from": "CommandRouter"
+        },
+        "requested_capabilities": [
+          "projects.create",
+          "projects.update",
+          "projects.delete",
+          "projects.exists",
+          "projects.get",
+          "tasks.list",
+          "tasks.delete",
+          "members.exists"
+        ]
+      },
+      {
+        "name": "TaskCommandHandler",
+        "purpose": "Handle task-related commands: create_task, assign_task, update_task_status, complete_task, delete_task",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Task command to execute",
+            "source": "CommandRouter"
+          },
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Task data for the command",
+            "source": "CommandRouter"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Command execution result",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Task creation",
+            "Task assignment",
+            "Task status updates",
+            "Task completion",
+            "Task deletion"
+          ],
+          "out_of_scope": [
+            "Project operations",
+            "Member operations"
+          ]
+        },
+        "preconditions": [
+          "Valid task command and data provided"
+        ],
+        "postconditions": [
+          "Task operation completed successfully or error returned"
+        ],
+        "behavior": "Routes to specific task operation based on command, validates inputs, executes operation, and returns result",
+        "signature": "def TaskCommandHandler(command: str, project_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read_write",
+            "description": "Read and write task data"
+          },
+          {
+            "source_name": "projects",
+            "operation_type": "read",
+            "description": "Check project existence and status"
+          },
+          {
+            "source_name": "members",
+            "operation_type": "read_write",
+            "description": "Update member status when assigning/completing tasks"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "Project must exist and be in planning/active status for task creation"
+          },
+          {
+            "constraint_id": "C-005",
+            "description": "Task must exist for assignment/status updates"
+          },
+          {
+            "constraint_id": "C-006",
+            "description": "Member must exist and be available for task assignment"
+          },
+          {
+            "constraint_id": "C-007",
+            "description": "Status flow must be followed: todo->in_progress->review->done"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Create task in active project returns task with status todo",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-006",
+            "description": "Assign task to available member updates assignee and member status to busy",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-007",
+            "description": "Assign task to busy member returns failure",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-008",
+            "description": "Update task status from todo to in_progress succeeds",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-009",
+            "description": "Complete task from review sets status done and releases member",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-010",
+            "description": "Delete task releases member if assigned",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "Read and write task data"
+          },
+          {
+            "variable": "projects",
+            "op": "read",
+            "description": "Check project existence and status"
+          },
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "Update member status when assigning/completing tasks"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004",
+            "FR-005",
+            "FR-006",
+            "FR-007",
+            "FR-008"
+          ],
+          "derived_from": "CommandRouter"
+        },
+        "requested_capabilities": [
+          "tasks.create",
+          "tasks.update",
+          "tasks.delete",
+          "tasks.exists",
+          "tasks.get",
+          "projects.exists",
+          "projects.get",
+          "members.exists",
+          "members.get",
+          "members.update"
+        ]
+      },
+      {
+        "name": "QueryCommandHandler",
+        "purpose": "Handle query commands: list_project_tasks, get_member_tasks, get_project_progress",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Query command to execute",
+            "source": "CommandRouter"
+          },
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Query parameters",
+            "source": "CommandRouter"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Query result data",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Task listing",
+            "Member task queries",
+            "Project progress calculations"
+          ],
+          "out_of_scope": [
+            "Data modification operations"
+          ]
+        },
+        "preconditions": [
+          "Valid query command and parameters provided"
+        ],
+        "postconditions": [
+          "Query results returned successfully"
+        ],
+        "behavior": "Routes to specific query operation based on command, retrieves and processes data, returns formatted results",
+        "signature": "def QueryCommandHandler(command: str, project_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [
+          {
+            "source_name": "tasks",
+            "operation_type": "read",
+            "description": "Read task data for queries"
+          },
+          {
+            "source_name": "projects",
+            "operation_type": "read",
+            "description": "Read project data for progress calculations"
+          },
+          {
+            "source_name": "members",
+            "operation_type": "read",
+            "description": "Read member data for task assignments"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-008",
+            "description": "Project must exist for project-related queries"
+          },
+          {
+            "constraint_id": "C-009",
+            "description": "Member must exist for member-related queries"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-011",
+            "description": "List project tasks with status filter returns correct tasks",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-012",
+            "description": "Get member tasks returns current and completed tasks with total hours",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-013",
+            "description": "Get project progress returns correct completion rate and hours",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "tasks",
+            "op": "read",
+            "description": "Read task data for queries"
+          },
+          {
+            "variable": "projects",
+            "op": "read",
+            "description": "Read project data for progress calculations"
+          },
+          {
+            "variable": "members",
+            "op": "read",
+            "description": "Read member data for task assignments"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-009",
+            "FR-010",
+            "FR-011"
+          ],
+          "derived_from": "CommandRouter"
+        },
+        "requested_capabilities": [
+          "tasks.list",
+          "tasks.get",
+          "projects.exists",
+          "projects.get",
+          "members.exists",
+          "members.get"
+        ]
+      },
+      {
+        "name": "MemberCommandHandler",
+        "purpose": "Handle member-related commands: add_member, update_member_availability",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Member command to execute",
+            "source": "CommandRouter"
+          },
+          {
+            "name": "project_data",
+            "type": "dict",
+            "description": "Member data for the command",
+            "source": "CommandRouter"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Command execution result",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Member creation",
+            "Member availability updates"
+          ],
+          "out_of_scope": [
+            "Project operations",
+            "Task operations"
+          ]
+        },
+        "preconditions": [
+          "Valid member command and data provided"
+        ],
+        "postconditions": [
+          "Member operation completed successfully or error returned"
+        ],
+        "behavior": "Routes to specific member operation based on command, validates inputs, executes operation, and returns result",
+        "signature": "def MemberCommandHandler(command: str, project_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [
+          {
+            "source_name": "members",
+            "operation_type": "read_write",
+            "description": "Read and write member data"
+          },
+          {
+            "source_name": "tasks",
+            "operation_type": "read",
+            "description": "Check for active tasks when updating availability"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-010",
+            "description": "Member ID must be unique for creation"
+          },
+          {
+            "constraint_id": "C-011",
+            "description": "Cannot set member to offline if they have active tasks"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-014",
+            "description": "Add member with unique ID succeeds",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-015",
+            "description": "Update member availability to offline fails if member has active tasks",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "Read and write member data"
+          },
+          {
+            "variable": "tasks",
+            "op": "read",
+            "description": "Check for active tasks when updating availability"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-012",
+            "FR-013"
+          ],
+          "derived_from": "CommandRouter"
+        },
+        "requested_capabilities": [
+          "members.create",
+          "members.update",
+          "members.exists",
+          "members.get",
+          "tasks.list"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "members",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores team member information"
+      },
+      {
+        "name": "projects",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores project information"
+      },
+      {
+        "name": "tasks",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "list",
+        "description": "Stores task records"
+      }
+    ],
+    "decomposition_rationale": "The Project_Task_Manager is decomposed into a CommandRouter that parses input and routes to specialized command handlers. The CommandRouter validates the command field and delegates to one of four domain-specific handlers: ProjectCommandHandler (for project CRUD), TaskCommandHandler (for task lifecycle operations), QueryCommandHandler (for read-only queries), and MemberCommandHandler (for member management). Each handler implements its domain's business logic using the available data interfaces. The parent orchestrates by calling CommandRouter, which internally coordinates the handlers. This decomposition follows the command pattern, separating routing from domain logic, and groups related operations by entity type.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "CommandRouter"
+      },
+      "parent_outputs_produced_by": {
+        "output": "CommandRouter"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "CommandRouter",
+        "to_input": "input",
+        "note": "Parent passes raw input to CommandRouter for parsing"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "command",
+        "to_node": "ProjectCommandHandler",
+        "to_input": "command",
+        "note": "CommandRouter routes project commands to ProjectCommandHandler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "project_data",
+        "to_node": "ProjectCommandHandler",
+        "to_input": "project_data",
+        "note": "CommandRouter passes project data to ProjectCommandHandler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "command",
+        "to_node": "TaskCommandHandler",
+        "to_input": "command",
+        "note": "CommandRouter routes task commands to TaskCommandHandler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "project_data",
+        "to_node": "TaskCommandHandler",
+        "to_input": "project_data",
+        "note": "CommandRouter passes task data to TaskCommandHandler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "command",
+        "to_node": "QueryCommandHandler",
+        "to_input": "command",
+        "note": "CommandRouter routes query commands to QueryCommandHandler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "project_data",
+        "to_node": "QueryCommandHandler",
+        "to_input": "project_data",
+        "note": "CommandRouter passes query parameters to QueryCommandHandler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "command",
+        "to_node": "MemberCommandHandler",
+        "to_input": "command",
+        "note": "CommandRouter routes member commands to MemberCommandHandler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "project_data",
+        "to_node": "MemberCommandHandler",
+        "to_input": "project_data",
+        "note": "CommandRouter passes member data to MemberCommandHandler"
+      },
+      {
+        "from_node": "ProjectCommandHandler",
+        "from_output": "result",
+        "to_node": "CommandRouter",
+        "to_input": "result",
+        "note": "ProjectCommandHandler returns result to CommandRouter"
+      },
+      {
+        "from_node": "TaskCommandHandler",
+        "from_output": "result",
+        "to_node": "CommandRouter",
+        "to_input": "result",
+        "note": "TaskCommandHandler returns result to CommandRouter"
+      },
+      {
+        "from_node": "QueryCommandHandler",
+        "from_output": "result",
+        "to_node": "CommandRouter",
+        "to_input": "result",
+        "note": "QueryCommandHandler returns result to CommandRouter"
+      },
+      {
+        "from_node": "MemberCommandHandler",
+        "from_output": "result",
+        "to_node": "CommandRouter",
+        "to_input": "result",
+        "note": "MemberCommandHandler returns result to CommandRouter"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "CommandRouter returns final result to parent"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "CommandRouter",
+        "to": "ProjectCommandHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "CommandRouter",
+        "to": "TaskCommandHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "CommandRouter",
+        "to": "QueryCommandHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "CommandRouter",
+        "to": "MemberCommandHandler",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1070 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): 存储用户信息，以user_id为键\n    Data Type: dict\n  - products (memory, read_write): 存储商品信息，以product_id为键\n    Data Type: dict\n  - orders (memory, read_write): 存储订单记录，以order_id为键\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: 存储用户信息，以user_id为键\n  - read_write on products: 存储商品信息，以product_id为键\n  - read_write on orders: 存储订单记录，以order_id为键\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "InputParser",
+        "purpose": "Parse the raw system input into a structured command with type and parameters.",
+        "inputs": [
+          {
+            "name": "raw_input",
+            "type": "Any",
+            "description": "Raw system input from external caller",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "parsed_command",
+            "type": "dict",
+            "description": "Dictionary with 'type' (str) and 'params' (dict) representing the parsed command",
+            "consumer": "parent (for routing) and handler children (for params)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Parsing input string/object into command structure",
+            "Validating basic syntax of input"
+          ],
+          "out_of_scope": [
+            "Executing business logic",
+            "Accessing data stores"
+          ]
+        },
+        "preconditions": [
+          "Input is not None"
+        ],
+        "postconditions": [
+          "Output is a dict with keys 'type' and 'params'",
+          "'type' is one of the supported operation strings",
+          "'params' is a dict with operation-specific keys"
+        ],
+        "behavior": "Inspects the raw input (e.g., a JSON string or a dict) and extracts the command type and parameters. If input is invalid, returns a command with type 'error' and params containing error message.",
+        "signature": "def InputParser(raw_input: Any) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Pure function - mathematical transformation without side effects or I/O",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Input must parse to a valid command type"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Given a valid JSON input, returns correct command dict",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-002",
+            "description": "Given invalid input, returns error command",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "CreateOrderHandler",
+        "purpose": "Handle the creation of a new order: validate user and product, deduct balance and stock, and persist the order.",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing user_id, product_id, quantity",
+            "source": "parsed_command.params from InputParser"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order_result",
+            "type": "dict",
+            "description": "Dictionary with success flag, order_id if successful, and message",
+            "consumer": "OutputFormatter for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading user and product data using available interfaces",
+            "Validating user balance and product stock",
+            "Updating user balance and product stock",
+            "Creating order record"
+          ],
+          "out_of_scope": [
+            "Cancelling orders",
+            "Listing orders",
+            "User or product management outside of order creation"
+          ]
+        },
+        "preconditions": [
+          "User exists and has sufficient balance",
+          "Product exists and has sufficient stock",
+          "Quantity > 0"
+        ],
+        "postconditions": [
+          "If success: order created, user balance deducted, product stock reduced",
+          "If failure: no state changes (rollback not needed as updates are validated first)"
+        ],
+        "behavior": "Attempts to create an order by: 1) validating user existence and balance, 2) validating product existence and stock, 3) deducting user balance, 4) reducing product stock, 5) creating order record. Returns result dict.",
+        "signature": "def CreateOrderHandler(params: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations",
+        "node_type": "business_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Read user info and update balance"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Read product info and update stock"
+          },
+          {
+            "source_name": "orders",
+            "operation_type": "write",
+            "description": "Create new order"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "User balance must be >= product price * quantity"
+          },
+          {
+            "constraint_id": "C-003",
+            "description": "Product stock must be >= quantity"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Successful order creation returns valid order_id",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-004",
+            "description": "Insufficient balance returns error without state changes",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read user info and update balance"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read product info and update stock"
+          },
+          {
+            "variable": "orders",
+            "op": "write",
+            "description": "Create new order record"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-002"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.get",
+          "users.update",
+          "products.get",
+          "products.update",
+          "orders.create"
+        ]
+      },
+      {
+        "name": "CancelOrderHandler",
+        "purpose": "Handle cancellation of an existing order: validate order, refund user balance, restore product stock, and update order status.",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing order_id",
+            "source": "parsed_command.params from InputParser"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "cancel_result",
+            "type": "dict",
+            "description": "Dictionary with success flag and message",
+            "consumer": "OutputFormatter for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading order, user, and product data",
+            "Validating order status (must be cancellable)",
+            "Refunding user balance",
+            "Restoring product stock",
+            "Updating order status to cancelled"
+          ],
+          "out_of_scope": [
+            "Creating orders",
+            "Listing orders",
+            "Modifying orders other than cancellation"
+          ]
+        },
+        "preconditions": [
+          "Order exists and is in a cancellable state (e.g., pending)",
+          "User exists (same as order's user_id)",
+          "Product exists (same as order's product_id)"
+        ],
+        "postconditions": [
+          "If success: order status changed to 'cancelled', user balance increased by refund, product stock increased",
+          "If failure: no state changes"
+        ],
+        "behavior": "Attempts to cancel an order by: 1) reading order, 2) validating cancellable status, 3) reading user and product using order details, 4) refunding balance, 5) restoring stock, 6) updating order status. Returns result dict.",
+        "signature": "def CancelOrderHandler(params: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations",
+        "node_type": "business_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Read order and update status"
+          },
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Read user info and refund balance"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Read product info and restore stock"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "Order must be in a cancellable status (e.g., 'pending')"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Successful cancellation updates order status and refunds user",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-006",
+            "description": "Cancelling already-shipped order returns error",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read order and update status"
+          },
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read user info and refund balance"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read product info and restore stock"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-003"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.update",
+          "users.get",
+          "users.update",
+          "products.get",
+          "products.update"
+        ]
+      },
+      {
+        "name": "GetOrderStatusHandler",
+        "purpose": "Retrieve the status of a specific order by order_id.",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing order_id",
+            "source": "parsed_command.params from InputParser"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order_status",
+            "type": "dict",
+            "description": "Dictionary with order_id, status, and other relevant details",
+            "consumer": "OutputFormatter for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading order from data store"
+          ],
+          "out_of_scope": [
+            "Modifying orders",
+            "Reading other data stores"
+          ]
+        },
+        "preconditions": [
+          "Order exists"
+        ],
+        "postconditions": [
+          "No state change"
+        ],
+        "behavior": "Calls orders.get with the given order_id and returns the order dict (or error if not found).",
+        "signature": "def GetOrderStatusHandler(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - read from a single data source (orders)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "Read order by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "order_id must exist"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-007",
+            "description": "Returns order data when order exists",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-008",
+            "description": "Returns error when order does not exist",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "Read order by ID"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get"
+        ]
+      },
+      {
+        "name": "ListOrdersHandler",
+        "purpose": "List orders with optional filtering by user_id and/or status.",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters optionally containing user_id and/or status filter",
+            "source": "parsed_command.params from InputParser"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "orders_list",
+            "type": "list",
+            "description": "List of order dicts matching the filter criteria",
+            "consumer": "OutputFormatter for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading multiple orders from data store"
+          ],
+          "out_of_scope": [
+            "Modifying orders",
+            "Reading other data stores"
+          ]
+        },
+        "preconditions": [
+          "Filters provided are valid (user_id is int if provided, status is str if provided)"
+        ],
+        "postconditions": [
+          "No state change"
+        ],
+        "behavior": "Calls orders.list with optional user_id and status filters and returns the list of orders.",
+        "signature": "def ListOrdersHandler(params: dict) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - read from a single data source (orders)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "List orders with filters"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-006",
+            "description": "If user_id given, must be valid integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-009",
+            "description": "Returns correct list of orders for given filters",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "List orders with filters"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-005"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      },
+      {
+        "name": "GetProductInfoHandler",
+        "purpose": "Retrieve detailed information about a specific product.",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing product_id",
+            "source": "parsed_command.params from InputParser"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "product_info",
+            "type": "dict",
+            "description": "Dictionary with product details",
+            "consumer": "OutputFormatter for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading product from data store"
+          ],
+          "out_of_scope": [
+            "Modifying products",
+            "Reading other data stores"
+          ]
+        },
+        "preconditions": [
+          "Product exists"
+        ],
+        "postconditions": [
+          "No state change"
+        ],
+        "behavior": "Calls products.get with the given product_id and returns the product dict (or error if not found).",
+        "signature": "def GetProductInfoHandler(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - read from a single data source (products)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "Read product by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-007",
+            "description": "product_id must exist"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-010",
+            "description": "Returns product data when product exists",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-011",
+            "description": "Returns error when product does not exist",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "Read product by ID"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-006"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.get"
+        ]
+      },
+      {
+        "name": "ListProductsHandler",
+        "purpose": "List all products, optionally filtered by low stock threshold.",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters optionally containing low_stock_threshold",
+            "source": "parsed_command.params from InputParser"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "products_list",
+            "type": "list",
+            "description": "List of product dicts, possibly filtered by stock",
+            "consumer": "OutputFormatter for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading multiple products from data store"
+          ],
+          "out_of_scope": [
+            "Modifying products",
+            "Reading other data stores"
+          ]
+        },
+        "preconditions": [
+          "low_stock_threshold if provided is an integer >= 0"
+        ],
+        "postconditions": [
+          "No state change"
+        ],
+        "behavior": "Calls products.list with optional low_stock_threshold and returns the list of products.",
+        "signature": "def ListProductsHandler(params: dict) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - read from a single data source (products)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "List products with low stock filter"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-008",
+            "description": "low_stock_threshold must be non-negative if provided"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-012",
+            "description": "Returns all products when no threshold given",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-013",
+            "description": "Returns only low stock products when threshold given",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "List products with low stock filter"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-007"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.list"
+        ]
+      },
+      {
+        "name": "UpdateUserHandler",
+        "purpose": "Update user information (e.g., balance, name) for a given user_id.",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing user_id and the fields to update",
+            "source": "parsed_command.params from InputParser"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "update_result",
+            "type": "dict",
+            "description": "Dictionary with success flag and message",
+            "consumer": "OutputFormatter for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading user for existence",
+            "Updating user fields"
+          ],
+          "out_of_scope": [
+            "Creating users",
+            "Deleting users",
+            "Order management"
+          ]
+        },
+        "preconditions": [
+          "User exists"
+        ],
+        "postconditions": [
+          "User data updated with provided fields"
+        ],
+        "behavior": "Checks if user exists via users.exists, then applies updates via users.update. Returns result dict.",
+        "signature": "def UpdateUserHandler(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - read-modify-write on a single data source (users)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Read user existence and update fields"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-009",
+            "description": "user_id must exist"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-014",
+            "description": "Successfully updates user fields when user exists",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-015",
+            "description": "Returns error when user does not exist",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read user existence and update fields"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-008"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.exists",
+          "users.update"
+        ]
+      },
+      {
+        "name": "GetUserHandler",
+        "purpose": "Retrieve user information for a given user_id.",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing user_id",
+            "source": "parsed_command.params from InputParser"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "user_info",
+            "type": "dict",
+            "description": "Dictionary with user details",
+            "consumer": "OutputFormatter for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading user from data store"
+          ],
+          "out_of_scope": [
+            "Modifying users",
+            "Reading other data stores"
+          ]
+        },
+        "preconditions": [
+          "User exists"
+        ],
+        "postconditions": [
+          "No state change"
+        ],
+        "behavior": "Calls users.get with the given user_id and returns the user dict (or error if not found).",
+        "signature": "def GetUserHandler(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation - read from a single data source (users)",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read",
+            "description": "Read user by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-010",
+            "description": "user_id must exist"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-016",
+            "description": "Returns user data when user exists",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-017",
+            "description": "Returns error when user does not exist",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read",
+            "description": "Read user by ID"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-009"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.get"
+        ]
+      },
+      {
+        "name": "OutputFormatter",
+        "purpose": "Format the result from a handler into the final system output (Any).",
+        "inputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict from the invoked operation handler",
+            "source": "Invoked handler (one of CreateOrderHandler, CancelOrderHandler, etc.)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "formatted_output",
+            "type": "Any",
+            "description": "Final output to return to the caller",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Wrapping handler result into a consistent output format",
+            "Adding metadata (timestamp, status) if needed"
+          ],
+          "out_of_scope": [
+            "Business logic",
+            "Data store access"
+          ]
+        },
+        "preconditions": [
+          "result is a valid dict from a handler"
+        ],
+        "postconditions": [
+          "Output is a well-formed response (e.g., JSON serializable)"
+        ],
+        "behavior": "Takes the result dict from the operation handler and converts it to the standard output format (e.g., adding a top-level 'success' field and 'data' field). This ensures consistent output for all operations.",
+        "signature": "def OutputFormatter(result: dict) -> Any",
+        "stop_decompose": true,
+        "stop_reason": "Pure function - mathematical transformation without side effects or I/O",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-011",
+            "description": "Result must be a dict with at least 'success' key"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-018",
+            "description": "Returns a consistent output structure for any valid result dict",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-010"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Store user information keyed by user_id"
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Store product information keyed by product_id"
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Store order records keyed by order_id"
+      }
+    ],
+    "decomposition_rationale": "The Order Management System parent is decomposed into 10 children that collectively handle all order-related operations. The system receives an arbitrary input, which is first parsed by InputParser into a command type and parameters. Based on the command type, the parent (orchestrator) routes the parameters to the appropriate operation handler (CreateOrderHandler, CancelOrderHandler, GetOrderStatusHandler, ListOrdersHandler, GetProductInfoHandler, ListProductsHandler, UpdateUserHandler, GetUserHandler). Each handler performs its specific business logic, accessing the necessary data stores via declared capabilities. The result from the handler is then passed to OutputFormatter, which standardizes the output into a consistent format for the caller. This decomposition ensures separation of concerns: parsing, business operations, and output formatting are independent modules that can be developed and tested in isolation. All parent global variables (users, products, orders) are distributed across the handlers as shown in each child's global_vars field, with the union covering all read/write operations. Dataflow edges are defined from InputParser to handlers (for params), from handlers to OutputFormatter (for results), and from OutputFormatter to the parent output. No cross-calls exist between sibling children; the parent orchestrates all calls sequentially based on the parsed command.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "InputParser"
+      },
+      "parent_outputs_produced_by": {
+        "output": "OutputFormatter"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "InputParser",
+        "to_input": "raw_input",
+        "note": "Parent passes raw input to be parsed"
+      },
+      {
+        "from_node": "InputParser",
+        "from_output": "parsed_command",
+        "to_node": "CreateOrderHandler",
+        "to_input": "params",
+        "note": "Parent routes parsed params to appropriate handler based on command type"
+      },
+      {
+        "from_node": "InputParser",
+        "from_output": "parsed_command",
+        "to_node": "CancelOrderHandler",
+        "to_input": "params",
+        "note": "Parent routes parsed params to appropriate handler"
+      },
+      {
+        "from_node": "InputParser",
+        "from_output": "parsed_command",
+        "to_node": "GetOrderStatusHandler",
+        "to_input": "params",
+        "note": "Parent routes parsed params"
+      },
+      {
+        "from_node": "InputParser",
+        "from_output": "parsed_command",
+        "to_node": "ListOrdersHandler",
+        "to_input": "params",
+        "note": "Parent routes parsed params"
+      },
+      {
+        "from_node": "InputParser",
+        "from_output": "parsed_command",
+        "to_node": "GetProductInfoHandler",
+        "to_input": "params",
+        "note": "Parent routes parsed params"
+      },
+      {
+        "from_node": "InputParser",
+        "from_output": "parsed_command",
+        "to_node": "ListProductsHandler",
+        "to_input": "params",
+        "note": "Parent routes parsed params"
+      },
+      {
+        "from_node": "InputParser",
+        "from_output": "parsed_command",
+        "to_node": "UpdateUserHandler",
+        "to_input": "params",
+        "note": "Parent routes parsed params"
+      },
+      {
+        "from_node": "InputParser",
+        "from_output": "parsed_command",
+        "to_node": "GetUserHandler",
+        "to_input": "params",
+        "note": "Parent routes parsed params"
+      },
+      {
+        "from_node": "CreateOrderHandler",
+        "from_output": "order_result",
+        "to_node": "OutputFormatter",
+        "to_input": "result",
+        "note": "Handler result is formatted for output"
+      },
+      {
+        "from_node": "CancelOrderHandler",
+        "from_output": "cancel_result",
+        "to_node": "OutputFormatter",
+        "to_input": "result",
+        "note": "Handler result is formatted for output"
+      },
+      {
+        "from_node": "GetOrderStatusHandler",
+        "from_output": "order_status",
+        "to_node": "OutputFormatter",
+        "to_input": "result",
+        "note": "Handler result is formatted for output"
+      },
+      {
+        "from_node": "ListOrdersHandler",
+        "from_output": "orders_list",
+        "to_node": "OutputFormatter",
+        "to_input": "result",
+        "note": "Handler result is formatted for output"
+      },
+      {
+        "from_node": "GetProductInfoHandler",
+        "from_output": "product_info",
+        "to_node": "OutputFormatter",
+        "to_input": "result",
+        "note": "Handler result is formatted for output"
+      },
+      {
+        "from_node": "ListProductsHandler",
+        "from_output": "products_list",
+        "to_node": "OutputFormatter",
+        "to_input": "result",
+        "note": "Handler result is formatted for output"
+      },
+      {
+        "from_node": "UpdateUserHandler",
+        "from_output": "update_result",
+        "to_node": "OutputFormatter",
+        "to_input": "result",
+        "note": "Handler result is formatted for output"
+      },
+      {
+        "from_node": "GetUserHandler",
+        "from_output": "user_info",
+        "to_node": "OutputFormatter",
+        "to_input": "result",
+        "note": "Handler result is formatted for output"
+      },
+      {
+        "from_node": "OutputFormatter",
+        "from_output": "formatted_output",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Formatted output is returned to the caller"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "InputParser",
+        "to": "CreateOrderHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "InputParser",
+        "to": "CancelOrderHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "InputParser",
+        "to": "GetOrderStatusHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "InputParser",
+        "to": "ListOrdersHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "InputParser",
+        "to": "GetProductInfoHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "InputParser",
+        "to": "ListProductsHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "InputParser",
+        "to": "UpdateUserHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "InputParser",
+        "to": "GetUserHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "InputParser",
+        "to": "OutputFormatter",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

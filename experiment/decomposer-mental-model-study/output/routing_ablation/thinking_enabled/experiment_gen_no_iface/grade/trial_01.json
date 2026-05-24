@@ -1,0 +1,508 @@
+{
+  "experiment": {
+    "name": "gen_no_iface",
+    "purpose_routing": true,
+    "separated_command": true,
+    "format_examples": true,
+    "coordinator_allowed": true,
+    "data_interfaces": false,
+    "generic_input": true
+  },
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nYOU MUST DECOMPOSE. You are NOT allowed to return 0 children or refuse to decompose. Even if the node seems simple, you MUST break it into at least 2 child functions.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ]\n    }\n  ],\n  \"decomposition_rationale\": \"Explain HOW these children work together to implement the parent.\"\n}",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Student Grade System\nNode Purpose: Student Grade System. Routes commands to the appropriate handler.\n\nSubPRD Context:\n  Task Description:\n    Inputs: input: Any\n\n    Functional Requirements:\n    [FR-001] Record Grade: Teacher records a grade for a student in a course. Validates student existence, course existence, score range (0-100), and prevents duplicate records. Creates a new grade record.\n    [FR-002] Update Grade: Teacher updates an existing grade record. Validates grade record existence and updates score and recorded_at timestamp.\n    [FR-003] Delete Grade: Teacher deletes a grade record. Validates grade record existence and removes it.\n    [FR-004] Get Student Grades: Retrieve all grades for a student. Calculate average score, total credits, and GPA. Display each course grade with letter grade.\n    [FR-005] Get Course Grades: Retrieve all grades for a course. Calculate course average, max, min, and distribution of letter grades.\n    [FR-006] List Grades by Class: List grades for a specific class, optionally filtered by course. Calculate class average and rank students by score.\n    [FR-007] Get Grade Report: Generate a textual grade report for a student containing all course grades, average, GPA, and credit summary.\n    [FR-008] Get Course Statistics: Provide statistical data for a course: average, standard deviation, pass rate, and grade percentage distribution.\n    [FR-009] Add Student: Add a new student to the system. Validate that student_id is unique.\n    [FR-010] Add Course: Add a new course to the system. Validate that course_id is unique.\n\n  Acceptance Criteria:\n    - AC-001: Record grade: duplicate grade for same student and course should be rejected with appropriate message.\n    - AC-002: Record grade: score out of range (0-100) should be rejected.\n    - AC-003: Update grade: non-existent grade_id should be rejected.\n    - AC-004: Get student grades: GPA calculation should use weighted formula (grade point * credit) / total credits.\n    - AC-005: Get student grades: letter grade conversion should be correct (A: 90-100, B:80-89, C:70-79, D:60-69, F:<60).\n    - AC-006: Get course statistics: standard deviation and pass rate calculations must be accurate.\n    - AC-007: List grades by class: ranking should be in descending order of score.\n    - AC-008: Add student: student_id must be unique.\n    - AC-009: Add course: course_id must be unique.\n    - AC-010: Grade report should contain student info, each course grade with letter, average, GPA, and total credits.\n\n    INPUT FORMAT:\n      Format: json\n      Description: Input is passed via the manage_grade(command, grade_data) function. command is a string, grade_data is a JSON object containing relevant fields.\n      Schema:\n        command: string (enum: record_grade, update_grade, delete_grade, get_student_grades, get_course_grades, list_class_grades, get_grade_report, get_course_stats, add_student, add_course)\n        grade_data: {...}\n          student_id: integer (optional, depending on command)\n          course_id: integer (optional)\n          score: integer (0-100, optional)\n          grade_id: integer (optional)\n          class: string (optional)\n          name: string (optional, for add_student/add_course)\n          credit: integer (optional, for add_course)\n          teacher: string (optional, for add_course)\n          enrollment_year: integer (optional, for add_student)\n      Examples:\n        {\"command\": \"record_grade\", \"grade_data\": {\"student_id\": 1, \"course_id\": 2, \"score\": 85}}\n        {\"command\": \"get_student_grades\", \"grade_data\": {\"student_id\": 1}}\n\n    OUTPUT FORMAT:\n      Format: json\n      Description: Output is a JSON object with success, message, and data fields. Data contains command-specific results.\n      Examples:\n        {\"success\": true, \"message\": \"成绩记录成功\", \"data\": {\"grade_id\": 1, \"letter_grade\": \"A\"}}\n        {\"success\": true, \"data\": {\"grades\": [{\"course\": \"数学\", \"score\": 88, \"letter\": \"B\", \"credit\": 4}], \"average\": 88, \"total_credits\": 4, \"gpa\": 3.0}}\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on students: Stores student information with fields: student_id, name, class, enrollment_year. Pre-populated with 10 test students.\n  - read_write on courses: Stores course information with fields: course_id, name, credit, teacher. Pre-populated with 4 test courses.\n  - read_write on grades: Stores grade records with fields: grade_id, student_id, course_id, score, recorded_at. Initially empty.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "RecordGrade",
+        "purpose": "Record a new grade for a student in a course, validating student existence, course existence, score range (0-100), and preventing duplicate records.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing student_id, course_id, score",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, message, and data (grade_id, letter_grade)",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate student_id exists in students",
+            "validate course_id exists in courses",
+            "validate score between 0 and 100",
+            "check duplicate grade for same student and course",
+            "create new grade record with recorded_at timestamp",
+            "return grade_id and letter_grade"
+          ],
+          "out_of_scope": [
+            "update or delete grades",
+            "retrieve grades",
+            "add student or course"
+          ]
+        },
+        "behavior": "Given a grade_data dict with student_id, course_id, score, validate constraints. If valid, create a new grade record in the grades global variable with auto-incremented grade_id and current timestamp. Return success with grade_id and letter_grade. On failure, return error message.",
+        "signature": "def RecordGrade(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "read student existence and details"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "read course existence and details"
+          },
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "read for duplicate check, write new grade"
+          }
+        ]
+      },
+      {
+        "name": "UpdateGrade",
+        "purpose": "Update an existing grade record's score and timestamp, validating grade record existence.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing grade_id and new score",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, message, and updated grade info",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate grade_id exists in grades",
+            "update score and recorded_at timestamp",
+            "return success message with updated grade"
+          ],
+          "out_of_scope": [
+            "record or delete grades",
+            "validate student or course"
+          ]
+        },
+        "behavior": "Given grade_data dict with grade_id and score (optional, if not provided maybe keep old? but spec says update score and timestamp); assume score required. Validate grade_id exists. Update the grade record's score and set recorded_at to current timestamp. Return success message and updated grade info.",
+        "signature": "def UpdateGrade(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "read for existence, write updated grade"
+          }
+        ]
+      },
+      {
+        "name": "DeleteGrade",
+        "purpose": "Delete a grade record by grade_id, validating existence.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing grade_id",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, message, and deleted grade info",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate grade_id exists in grades",
+            "remove the grade record",
+            "return success message"
+          ],
+          "out_of_scope": [
+            "record or update grades",
+            "validate student or course"
+          ]
+        },
+        "behavior": "Given grade_data dict with grade_id, validate existence. If found, delete the grade record from grades list/dict. Return success message and deleted grade info.",
+        "signature": "def DeleteGrade(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "read for existence, delete grade"
+          }
+        ]
+      },
+      {
+        "name": "GetStudentGrades",
+        "purpose": "Retrieve all grades for a student, calculate average, total credits, GPA, and letter grades.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing student_id",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, data including grades list, average, total_credits, gpa",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate student_id exists",
+            "retrieve all grades for student",
+            "join with course info to get course name and credit",
+            "compute letter grade per score (A:90-100, B:80-89, C:70-79, D:60-69, F:<60)",
+            "compute average score",
+            "compute total credits (sum of course credits for graded courses)",
+            "compute GPA using weighted formula: sum(grade_point * credit)/total_credits (grade_point: A=4.0, B=3.0, C=2.0, D=1.0, F=0.0)",
+            "return grades list with course, score, letter, credit and also overall average, total_credits, gpa"
+          ],
+          "out_of_scope": [
+            "grades for course or class",
+            "grade report formatting"
+          ]
+        },
+        "behavior": "Given student_id, validate student exists in students. Query all grade records for that student. For each grade, find course from courses to get name and credit. Compute letter grade based on score. Compute average, total credits, and GPA. Return structured data.",
+        "signature": "def GetStudentGrades(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "read student existence"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "read course name and credit"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "read all grades for student"
+          }
+        ]
+      },
+      {
+        "name": "GetCourseGrades",
+        "purpose": "Retrieve all grades for a course, compute course average, max, min, and distribution of letter grades.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing course_id",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, data including grades list, average, max, min, distribution",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate course_id exists",
+            "retrieve all grades for course",
+            "join with student info to get student name? (spec says 'each course grade' maybe just score and student_id)",
+            "compute course average, max, min",
+            "compute distribution of letter grades (count per letter)",
+            "return grades list with score and possibly student info"
+          ],
+          "out_of_scope": [
+            "student-specific calculations",
+            "class filtering"
+          ]
+        },
+        "behavior": "Given course_id, validate course exists. Query all grades for that course. Compute average, maximum, minimum scores. Convert each score to letter grade and count distribution. Return list of grades (student_id, score, letter) and statistics.",
+        "signature": "def GetCourseGrades(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "read course existence"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "read all grades for course"
+          }
+        ]
+      },
+      {
+        "name": "ListClassGrades",
+        "purpose": "List grades for a specific class, optionally filtered by course, compute class average and rank students by score descending.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing class (string) and optional course_id",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, data including grades list (ranked), class average",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate class string exists? (class can be any string; if no students in class, return empty)",
+            "find all students in that class",
+            "retrieve grades for those students",
+            "if course_id provided, filter grades by that course",
+            "compute class average (average score of all grades in set)",
+            "rank students by score descending (for each student, maybe they have multiple courses; need to aggregate? Spec unclear: 'List grades for a specific class... rank students by score.' Probably each grade entry is listed and ranked by score. Or aggregate per student? Since it says 'rank students by score', likely aggregate per student: each student's best score or average? But typical interpretation: show all grade records for the class, sorted by score. We'll assume each grade record is listed and sorted by score descending. Provide class average over all listed grades."
+          ],
+          "out_of_scope": [
+            "grade report",
+            "course statistics beyond average"
+          ]
+        },
+        "behavior": "Given class and optional course_id, get all students with that class. Then get all grade records for those students. If course_id given, filter by course. Sort grades by score descending. Compute average of all scores in the list. Return list of grade details with student name, course name, score, letter, and rank (position in sorted list).",
+        "signature": "def ListClassGrades(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "read students by class"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "read course names"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "read grades"
+          }
+        ]
+      },
+      {
+        "name": "GetGradeReport",
+        "purpose": "Generate a textual grade report for a student containing all course grades, average, GPA, and credit summary.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing student_id",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, data containing formatted report string",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate student exists",
+            "retrieve all grades for student",
+            "compute same metrics as GetStudentGrades",
+            "format into a textual report containing student info, each course with score and letter, average, GPA, total credits",
+            "return report string"
+          ],
+          "out_of_scope": [
+            "modifying data",
+            "course statistics"
+          ]
+        },
+        "behavior": "Similar to GetStudentGrades but produces a formatted text report. Use student info (name, class, enrollment_year) from students. For each grade, include course name, score, letter grade, credits. Then report average score, GPA, total credits. Return as a string in the 'data' field.",
+        "signature": "def GetGradeReport(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "read student info"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "read course info"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "read grades"
+          }
+        ]
+      },
+      {
+        "name": "GetCourseStats",
+        "purpose": "Provide statistical data for a course: average, standard deviation, pass rate, and grade percentage distribution.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing course_id",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, data including average, standard deviation, pass rate, distribution",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate course exists",
+            "retrieve all scores for course",
+            "compute average, standard deviation (population or sample? assume population), pass rate (score >= 60), grade percentage distribution (percentage of each letter grade)",
+            "return statistics"
+          ],
+          "out_of_scope": [
+            "individual grade details",
+            "student info"
+          ]
+        },
+        "behavior": "Given course_id, get all scores. Compute average, standard deviation (using population formula with ddof=0), pass rate (count of scores >=60 divided by total), and letter grade distribution percentages. Return as numbers.",
+        "signature": "def GetCourseStats(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "read course existence"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "read grades for course"
+          }
+        ]
+      },
+      {
+        "name": "AddStudent",
+        "purpose": "Add a new student to the system with unique student_id.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing student_id, name, class, enrollment_year",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, message, and student info",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate student_id is unique in students",
+            "create new student record with provided fields",
+            "return success message and student info"
+          ],
+          "out_of_scope": [
+            "courses or grades"
+          ]
+        },
+        "behavior": "Given data with student_id, name, class, enrollment_year. Check if student_id already exists in students. If not, add new student dict to students variable. Return success.",
+        "signature": "def AddStudent(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read_write",
+            "description": "read for uniqueness check, write new student"
+          }
+        ]
+      },
+      {
+        "name": "AddCourse",
+        "purpose": "Add a new course to the system with unique course_id.",
+        "inputs": [
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "grade_data containing course_id, name, credit, teacher",
+            "source": "parent from input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "output",
+            "type": "dict",
+            "description": "JSON with success, message, and course info",
+            "consumer": "parent for final response"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "validate course_id is unique in courses",
+            "create new course record with provided fields",
+            "return success message and course info"
+          ],
+          "out_of_scope": [
+            "students or grades"
+          ]
+        },
+        "behavior": "Given data with course_id, name, credit, teacher. Check if course_id already exists. If not, add new course dict. Return success.",
+        "signature": "def AddCourse(data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read_write",
+            "description": "read for uniqueness check, write new course"
+          }
+        ]
+      }
+    ],
+    "decomposition_rationale": "The parent Student Grade System is a command router. It has 10 distinct operations, each with its own validation and logic. Thus, we decompose into 10 child functions, one per command. Each child directly accesses the needed global variables (students, courses, grades) for read or write. The parent inspects the 'command' field of the input and calls the corresponding child with the grade_data, then returns the child's output. This ensures no cross-calls between children and a tree structure."
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

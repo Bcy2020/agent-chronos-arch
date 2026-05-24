@@ -1,0 +1,738 @@
+{
+  "experiment": {
+    "name": "no_boundary",
+    "ablation": "no_boundary"
+  },
+  "ablation": "no_boundary",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Student_Grade_System\nNode Purpose: Student Grade System\n\nSubPRD Context:\n  Task Description:\n    INPUT FORMAT:\n      Format: json\n      Description: Input is provided via the function manage_grade(command, grade_data) where command is a string and grade_data is a JSON object.\n      Schema:\n        command: string (one of: record_grade, update_grade, delete_grade, get_student_grades, get_course_grades, list_class_grades, get_grade_report, get_course_stats, add_student, add_course)\n        grade_data: {'student_id': 'int (optional)', 'course_id': 'int (optional)', 'score': 'int (0-100, optional)', 'grade_id': 'int (optional)', 'class': 'string (optional)', 'name': 'string (optional, for add_student/add_course)', 'credit': 'int (optional, for add_course)', 'teacher': 'string (optional, for add_course)', 'enrollment_year': 'int (optional, for add_student)'}\n      Examples:\n        {\"command\": \"record_grade\", \"grade_data\": {\"student_id\": 1, \"course_id\": 1, \"score\": 92}}\n        {\"command\": \"update_grade\", \"grade_data\": {\"grade_id\": 1, \"score\": 88}}\n        {\"command\": \"get_student_grades\", \"grade_data\": {\"student_id\": 1}}\n    \n    OUTPUT FORMAT:\n      Format: json\n      Description: Output is a JSON object with success flag, message, and data payload.\n      Schema:\n        success: boolean\n        message: string\n        data: object (varies by command)\n      Examples:\n        {\"success\": true, \"message\": \"\\u6210\\u7ee9\\u8bb0\\u5f55\\u6210\\u529f\", \"data\": {\"grade_id\": 1, \"letter_grade\": \"A\"}}\n        {\"success\": false, \"message\": \"\\u8be5\\u5b66\\u751f\\u6b64\\u8bfe\\u7a0b\\u5df2\\u6709\\u6210\\u7ee9\\u8bb0\\u5f55\", \"data\": {\"existing_grade_id\": 1}}\n        {\"success\": true, \"data\": {\"grades\": [{\"course\": \"\\u6570\\u5b66\", \"score\": 88, \"letter\": \"B\", \"credit\": 4}], \"average\": 88, \"total_credits\": 4, \"gpa\": 3.0}}\n    \n    Functional Requirements:\n    [FR-001] Record Grade: Teacher records a grade for a student in a course. Validates student existence, course existence, score range (0-100), and no duplicate grade for the same student-course pair.\n    [FR-002] Update Grade: Teacher updates an existing grade record. Validates grade record existence and updates score and recorded_at timestamp.\n    [FR-003] Delete Grade: Teacher deletes a grade record. Validates grade record existence and removes it.\n    [FR-004] Get Student Grades: Retrieve all grades for a student, compute average score, total credits, and GPA. Display grades with course name, score, and letter grade.\n    [FR-005] Get Course Grades: Retrieve all grades for a course, compute average, max, min scores, and distribution of letter grades.\n    [FR-006] List Grades by Class: List grades for students in a specific class, optionally filtered by course. Compute class average and rank students by score.\n    [FR-007] Get Grade Report: Generate a textual report for a student including all subject grades, average, GPA, and credit summary.\n    [FR-008] Get Course Statistics: Compute statistics for a course: average, standard deviation, pass rate, and grade distribution percentages.\n    [FR-009] Add Student: Add a new student to the system. Validates that student_id is unique.\n    [FR-010] Add Course: Add a new course to the system. Validates that course_id is unique.\n  Constraints:\n    - TC-STORAGE: Storage: memory - Three independent in-memory data sources: students, courses, grades.\n    - TC-CONCURRENCY: Concurrency: single-user, auth_required: False\n    - TC-UI: UI: api\n    - TC-LANGUAGE: Language: Python\n  Acceptance Criteria:\n    - AC-001: Record grade: valid input creates grade record with correct grade_id and letter grade.\n    - AC-002: Record grade: duplicate student-course returns error with existing grade_id.\n    - AC-003: Update grade: valid update changes score and returns new letter grade.\n    - AC-004: Delete grade: valid deletion removes record and returns success.\n    - AC-005: Get student grades: returns correct average, total credits, GPA, and grade details.\n    - AC-006: Get course grades: returns correct average, max, min, and distribution.\n    - AC-007: List grades by class: returns students with scores and ranks, class average correct.\n    - AC-008: Get grade report: generates text report with all required fields.\n    - AC-009: Get course statistics: computes average, std_dev, pass_rate, grade distribution correctly.\n    - AC-010: Add student: new student added successfully, duplicate student_id rejected.\n    - AC-011: Add course: new course added successfully, duplicate course_id rejected.\n  Traces to: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\n\n\nData Sources (AVAILABLE DATA STORES):\n  - students (memory, read_write): Stores student information keyed by student_id.\n    Data Type: dict\n  - courses (memory, read_write): Stores course information keyed by course_id.\n    Data Type: dict\n  - grades (memory, read_write): Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on students: Stores student information keyed by student_id.\n  - read_write on courses: Stores course information keyed by course_id.\n  - read_write on grades: Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - students.get: def get_student(student_id: int) -> dict | None:\n    Description: Retrieve a student by student_id\n  - students.list: def list_students(filter_class: str | None = None) -> list[dict]:\n    Description: List all students, optionally filtered by class\n  - students.create: def create_student(student: dict) -> dict:\n    Description: Create a new student record\n  - students.exists: def student_exists(student_id: int) -> bool:\n    Description: Check if a student with given student_id exists\n  - courses.get: def get_course(course_id: int) -> dict | None:\n    Description: Retrieve a course by course_id\n  - courses.list: def list_courses(filter_teacher: str | None = None) -> list[dict]:\n    Description: List all courses, optionally filtered by teacher\n  - courses.create: def create_course(course: dict) -> dict:\n    Description: Create a new course record\n  - courses.exists: def course_exists(course_id: int) -> bool:\n    Description: Check if a course with given course_id exists\n  - grades.get: def get_grade(grade_id: int) -> dict | None:\n    Description: Retrieve a grade by grade_id\n  - grades.list: def list_grades(student_id: int | None = None, course_id: int | None = None) -> list[dict]:\n    Description: List grades, optionally filtered by student_id and/or course_id\n  - grades.create: def create_grade(grade: dict) -> dict:\n    Description: Create a new grade record\n  - grades.update: def update_grade(grade_id: int, updates: dict) -> dict:\n    Description: Update an existing grade's score and/or recorded_at\n  - grades.delete: def delete_grade(grade_id: int) -> None:\n    Description: Delete a grade by grade_id\n  - grades.exists: def grade_exists(grade_id: int) -> bool:\n    Description: Check if a grade with given grade_id exists\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "CommandRouter",
+        "purpose": "Routes incoming commands to appropriate handler functions based on command type and validates command format",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Command type string",
+            "source": "parent_input"
+          },
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON data payload for the command",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Command execution result with success, message, and data",
+            "consumer": "parent_output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Command validation",
+            "Command routing",
+            "Result formatting"
+          ],
+          "out_of_scope": [
+            "Business logic implementation",
+            "Data storage operations"
+          ]
+        },
+        "preconditions": [
+          "command is a valid string",
+          "grade_data is a valid dictionary"
+        ],
+        "postconditions": [
+          "Returns formatted result dictionary"
+        ],
+        "behavior": "Validates command string against allowed commands, routes to appropriate handler function, and formats the result into standard output format",
+        "signature": "def CommandRouter(command: str, grade_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Command must be one of the allowed command strings"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Valid command routes to correct handler",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-002",
+            "description": "Invalid command returns error message",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004",
+            "FR-005",
+            "FR-006",
+            "FR-007",
+            "FR-008",
+            "FR-009",
+            "FR-010"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "GradeRecordHandler",
+        "purpose": "Handles grade recording, updating, and deletion operations with validation",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Command type (record_grade, update_grade, delete_grade)",
+            "source": "parent_input"
+          },
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "Grade data payload",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Operation result with success, message, and data",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Grade CRUD operations",
+            "Validation of student/course existence",
+            "Score validation",
+            "Duplicate prevention"
+          ],
+          "out_of_scope": [
+            "Grade retrieval operations",
+            "Statistics calculations",
+            "Student/Course management"
+          ]
+        },
+        "preconditions": [
+          "Valid command and grade_data provided"
+        ],
+        "postconditions": [
+          "Grade operation completed or error returned"
+        ],
+        "behavior": "For record_grade: validates student and course existence, checks score range, prevents duplicate student-course pairs, creates grade record. For update_grade: validates grade existence, updates score and timestamp. For delete_grade: validates grade existence, removes record.",
+        "signature": "def GradeRecordHandler(command: str, grade_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Score must be between 0 and 100"
+          },
+          {
+            "constraint_id": "C-003",
+            "description": "Student and course must exist for grade recording"
+          },
+          {
+            "constraint_id": "C-004",
+            "description": "Cannot create duplicate grade for same student-course pair"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Record grade creates valid grade record",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-004",
+            "description": "Duplicate grade returns error with existing grade_id",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-005",
+            "description": "Update grade changes score correctly",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-006",
+            "description": "Delete grade removes record successfully",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Check student existence"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Check course existence"
+          },
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Create, update, or delete grade records"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "students.exists",
+          "courses.exists",
+          "grades.create",
+          "grades.update",
+          "grades.delete",
+          "grades.exists",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "GradeRetrievalHandler",
+        "purpose": "Handles grade retrieval operations for students, courses, and classes",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Command type (get_student_grades, get_course_grades, list_class_grades)",
+            "source": "parent_input"
+          },
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "Filter criteria for retrieval",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Retrieved grades with computed statistics",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Grade retrieval",
+            "Statistics computation",
+            "Filtering by student/course/class"
+          ],
+          "out_of_scope": [
+            "Grade modification",
+            "Student/Course management",
+            "Report generation"
+          ]
+        },
+        "preconditions": [
+          "Valid command and filter criteria provided"
+        ],
+        "postconditions": [
+          "Returns filtered grades with computed statistics"
+        ],
+        "behavior": "For get_student_grades: retrieves all grades for a student, computes average, total credits, GPA. For get_course_grades: retrieves all grades for a course, computes average, max, min, distribution. For list_class_grades: retrieves grades for students in a class, optionally filtered by course, computes class average and ranks students.",
+        "signature": "def GradeRetrievalHandler(command: str, grade_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "Student must exist for get_student_grades"
+          },
+          {
+            "constraint_id": "C-006",
+            "description": "Course must exist for get_course_grades"
+          },
+          {
+            "constraint_id": "C-007",
+            "description": "Class must be specified for list_class_grades"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-007",
+            "description": "Get student grades returns correct average, credits, GPA",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-008",
+            "description": "Get course grades returns correct statistics",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-009",
+            "description": "List class grades returns ranked students with class average",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Retrieve student information"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Retrieve course information"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "Retrieve grade records"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004",
+            "FR-005",
+            "FR-006"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "students.get",
+          "students.list",
+          "courses.get",
+          "courses.list",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "ReportGenerator",
+        "purpose": "Generates textual grade reports for students",
+        "inputs": [
+          {
+            "name": "student_id",
+            "type": "int",
+            "description": "ID of student to generate report for",
+            "source": "grade_data"
+          },
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "Additional parameters if needed",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Generated report with success, message, and report text",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Report generation",
+            "Text formatting",
+            "Grade summary compilation"
+          ],
+          "out_of_scope": [
+            "Grade retrieval",
+            "Statistics computation",
+            "Data modification"
+          ]
+        },
+        "preconditions": [
+          "Valid student_id provided",
+          "Student exists in system"
+        ],
+        "postconditions": [
+          "Returns formatted text report"
+        ],
+        "behavior": "Retrieves all grades for the specified student, compiles subject grades, computes average, GPA, and credit summary, formats into readable text report",
+        "signature": "def ReportGenerator(student_id: int, grade_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-008",
+            "description": "Student must exist to generate report"
+          },
+          {
+            "constraint_id": "C-009",
+            "description": "Report must include all required fields"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-010",
+            "description": "Report includes all subject grades, average, GPA, and credit summary",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Retrieve student information"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Retrieve course information for grade details"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "Retrieve student grades"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-007"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "students.get",
+          "courses.get",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "CourseStatisticsHandler",
+        "purpose": "Computes detailed statistics for courses including average, standard deviation, pass rate, and grade distribution",
+        "inputs": [
+          {
+            "name": "course_id",
+            "type": "int",
+            "description": "ID of course to compute statistics for",
+            "source": "grade_data"
+          },
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "Additional parameters if needed",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Course statistics with success, message, and statistics data",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Statistics computation",
+            "Grade distribution analysis",
+            "Pass rate calculation"
+          ],
+          "out_of_scope": [
+            "Grade retrieval",
+            "Report generation",
+            "Data modification"
+          ]
+        },
+        "preconditions": [
+          "Valid course_id provided",
+          "Course exists in system"
+        ],
+        "postconditions": [
+          "Returns computed statistics"
+        ],
+        "behavior": "Retrieves all grades for the specified course, computes average score, standard deviation, pass rate (score >= 60), and grade distribution percentages (A, B, C, D, F)",
+        "signature": "def CourseStatisticsHandler(course_id: int, grade_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-010",
+            "description": "Course must exist to compute statistics"
+          },
+          {
+            "constraint_id": "C-011",
+            "description": "Statistics must include all required metrics"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-011",
+            "description": "Statistics include average, std_dev, pass_rate, and grade distribution",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Verify course existence"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "Retrieve course grades for statistics"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-008"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "courses.exists",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "StudentCourseManager",
+        "purpose": "Manages student and course entity creation with validation",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Command type (add_student, add_course)",
+            "source": "parent_input"
+          },
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "Student or course data payload",
+            "source": "parent_input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Operation result with success, message, and created entity data",
+            "consumer": "CommandRouter"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Student creation",
+            "Course creation",
+            "Uniqueness validation"
+          ],
+          "out_of_scope": [
+            "Grade operations",
+            "Statistics computation",
+            "Report generation"
+          ]
+        },
+        "preconditions": [
+          "Valid command and entity data provided"
+        ],
+        "postconditions": [
+          "New entity created or error returned"
+        ],
+        "behavior": "For add_student: validates student_id uniqueness, creates student record with provided details. For add_course: validates course_id uniqueness, creates course record with provided details.",
+        "signature": "def StudentCourseManager(command: str, grade_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-012",
+            "description": "Student ID must be unique"
+          },
+          {
+            "constraint_id": "C-013",
+            "description": "Course ID must be unique"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-012",
+            "description": "Add student creates new student record",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-013",
+            "description": "Duplicate student_id returns error",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-014",
+            "description": "Add course creates new course record",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-015",
+            "description": "Duplicate course_id returns error",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read_write",
+            "description": "Create new student records"
+          },
+          {
+            "variable": "courses",
+            "op": "read_write",
+            "description": "Create new course records"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-009",
+            "FR-010"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "students.exists",
+          "students.create",
+          "courses.exists",
+          "courses.create"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "students",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores student information keyed by student_id"
+      },
+      {
+        "name": "courses",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores course information keyed by course_id"
+      },
+      {
+        "name": "grades",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores grade records keyed by grade_id with uniqueness enforcement"
+      }
+    ],
+    "decomposition_rationale": "The Student_Grade_System is decomposed into six specialized handler functions that collectively implement all ten functional requirements. The CommandRouter serves as the entry point, validating commands and routing to appropriate handlers. GradeRecordHandler manages grade CRUD operations (FR-001, FR-002, FR-003). GradeRetrievalHandler handles grade queries and statistics (FR-004, FR-005, FR-006). ReportGenerator creates textual reports (FR-007). CourseStatisticsHandler computes detailed course statistics (FR-008). StudentCourseManager handles entity creation (FR-009, FR-010). Each handler declares its required data operations and capabilities, ensuring proper separation of concerns while maintaining the parent's external interface.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "CommandRouter"
+      },
+      "parent_outputs_produced_by": {
+        "output": "CommandRouter"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "CommandRouter",
+        "to_input": "command, grade_data",
+        "note": "Parent passes command and grade_data to router"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Router returns formatted result to parent"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "command, grade_data",
+        "to_node": "GradeRecordHandler",
+        "to_input": "command, grade_data",
+        "note": "Router routes grade CRUD commands to handler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "command, grade_data",
+        "to_node": "GradeRetrievalHandler",
+        "to_input": "command, grade_data",
+        "note": "Router routes grade retrieval commands to handler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "grade_data",
+        "to_node": "ReportGenerator",
+        "to_input": "student_id, grade_data",
+        "note": "Router routes report generation command to handler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "grade_data",
+        "to_node": "CourseStatisticsHandler",
+        "to_input": "course_id, grade_data",
+        "note": "Router routes statistics command to handler"
+      },
+      {
+        "from_node": "CommandRouter",
+        "from_output": "command, grade_data",
+        "to_node": "StudentCourseManager",
+        "to_input": "command, grade_data",
+        "note": "Router routes entity creation commands to handler"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "CommandRouter",
+        "to": "GradeRecordHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "CommandRouter",
+        "to": "GradeRetrievalHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "CommandRouter",
+        "to": "ReportGenerator",
+        "method": "structural_router"
+      },
+      {
+        "from": "CommandRouter",
+        "to": "CourseStatisticsHandler",
+        "method": "structural_router"
+      },
+      {
+        "from": "CommandRouter",
+        "to": "StudentCourseManager",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

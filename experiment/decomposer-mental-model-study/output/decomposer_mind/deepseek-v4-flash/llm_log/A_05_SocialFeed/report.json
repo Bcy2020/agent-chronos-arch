@@ -1,0 +1,64 @@
+{
+  "test": "A",
+  "case_index": 5,
+  "name": "SocialFeed",
+  "elapsed": 81.1,
+  "llm_calls": 5,
+  "child_count": 4,
+  "children": [
+    "create_post",
+    "generate_feed",
+    "like_post",
+    "follow_user"
+  ],
+  "children_detail": [
+    {
+      "name": "create_post",
+      "purpose": "Creates a new post and invalidates feed caches of all followers",
+      "signature": "def create_post(content: str, user_id: str) -> dict"
+    },
+    {
+      "name": "generate_feed",
+      "purpose": "Generates a personalized feed for a user from followed users' posts, ranked by recency (and engagement)",
+      "signature": "def generate_feed(user_id: str) -> dict"
+    },
+    {
+      "name": "like_post",
+      "purpose": "Adds a user to a post's likes list if not already liked",
+      "signature": "def like_post(post_id: str, user_id: str) -> dict"
+    },
+    {
+      "name": "follow_user",
+      "purpose": "Adds a bidirectional follow relationship between two users, ensuring user cannot follow themselves",
+      "signature": "def follow_user(target_user_id: str, user_id: str) -> dict"
+    }
+  ],
+  "rationale": "Decomposed the monolithic SocialFeed function into four independent handler children, each responsible for one command. The parent orchestrates by calling the appropriate child based on the command input. This separates concerns, improves maintainability, and allows each operation to be tested independently. Each child directly accesses the relevant global state without cross-dependencies.",
+  "interview": [
+    {
+      "question": "你将 SocialFeed 分解为 4 个子节点：create_post, generate_feed, like_post, follow_user。\n\n请说明你的分解思路：为什么选择这些子节点？每个子节点的职责边界是什么？",
+      "answer": "## 分解思路\n\n我将 `SocialFeed` 按 **操作类型**（Command）进行拆分，而不是按数据实体或生命周期。理由是：\n\n- 原始函数是一个巨大的 `if-elif` 分支，处理四种完全不同的用户请求（发帖、刷动态、点赞、关注）。每个分支之间没有共享逻辑，只是共享同一组全局状态（`posts`, `users`, `followers`, `likes` 等）。\n- 四种操作的副作用、输入输出、校验规则差异很大，强行放在一起会严重违反**单一职责原则**。分开后每个子节点聚焦于一个业务命令，易于理解、测试和单独修改。\n- 父节点作为路由器，根据 `command` 字段选择并调用对应的子节点，不参与任何业务逻辑。这样的拓扑结构清晰，也便于未来增加新的命令类型（只需新增子节点并添加路由判断）。\n\n## 各子节点职责边界\n\n### 1. `create_post`\n- **职责**：处理 `\"create_post\"` 命令。输入包含 `userId` 和 `content`。\n- **边界**：\n  - 验证用户存在。\n  - 创建新帖子，分配唯一 ID，记录时间戳。\n  - 将该帖子的 ID 添加到发帖用户的 `posts` 列表中（用于后续 feed 生成）。\n  - **关键副作用**：需使该用户所有关注者的 feed 缓存失效（即清空 `users[userId]['feed']` 或标记为过期），以保证后续 feed 请求能重新生成包含新帖子的列表。\n  - 不负责生成 feed 内容，只负责写操作和缓存失效。\n\n### 2. `generate_feed`\n- **职责**：处理 `\"generate_feed\"` 命令。输入 `userId`。\n- **边界**：\n  - 从 `followers[userId]` 获取当前用户关注的所有用户。\n  - 遍历被关注者的 `posts` 列表（或全局 `posts` 按时间排序），收集他们发布的帖子，按照时间逆序排列（最新在前）。可附加 `likes_count` 作为次要排序因子，但不修改任何数据。\n  - 返回最多 N 条帖子（如 10 条），并缓存到 `users[userId]['feed']` 以备重复调用时直接返回（若缓存有效）。\n  - **不涉及** 写操作、点赞、关注变化。纯粹是读取和聚合。\n\n### 3. `like_post`\n- **职责**：处理 `\"like_post\"` 命令。输入 `userId` 和 `postId`。\n- **边界**：\n  - 验证帖子存在，用户存在。\n  - 检查用户是否已经点过赞（避免重复）。若已点赞则忽略或返回错误。\n  - 将用户 ID 添加到帖子的 `likes` 集合（或列表），同时更新帖子的 `likes_count`（增加 1）。\n  - 可以触发 feed 缓存失效（因为点赞可能影响排序，但通常不作为 feed 重新生成的核心触发条件；这里按需决定）。\n  - **不涉及** 帖子的创建、删除、关注关系变更。\n\n### 4. `follow_user`\n- **职责**：处理 `\"follow_user\"` 命令。输入 `userId` 和 `targetUserId`。\n- **边界**：\n  - 校验用户不能关注自己。\n  - 校验两个用户都存在。\n  - 以双向方式建立关注关系：\n    - 在 `followers[userId]` 中添加 `targetUserId`（或反过来取决于其定义，例如 `followers` 存储被关注者列表）。\n    - 在 `following[userId]` 中添加 `targetUserId`（如需要）。\n    - 通常使用一个 `Set` 数据结构防止重复关注。\n  - 关注成功后，可能需要使当前用户的 feed 缓存失效（因为新关注者的帖子应加入 feed），也可能使被关注者的粉丝列表缓存失效。\n  - **不涉及** 发帖、点赞或其他操作。\n\n## 为何不进一步拆分？\n\n这四个子节点已经是最小粒度的原子操作：每个对应一个独立的、用户可触发的业务命令。若再拆分（如将“校验用户存在”提取为公共函数），虽然可行，但会引入不必要的间接性，不如让每个子节点内部直接做完整性检查更直观。父节点保持纯粹的路由，不包含任何业务逻辑。"
+    },
+    {
+      "question": "树结构规则要求：父节点是唯一的协调者，子节点之间不能直接调用。\n请说明你的分解如何满足这一规则。每个子节点的输入来源是什么？",
+      "answer": "## 如何满足树结构规则\n\n在分解后的系统中，**父节点 `SocialFeed` 是唯一的协调者**，它负责：\n\n1. 接收外部输入的完整请求（包含 `command` 字段及其他参数，例如 `userId`, `content`, `postId`, `targetUserId` 等）。\n2. 根据 `command` 的值（`\"create_post\"`, `\"generate_feed\"`, `\"like_post\"`, `\"follow_user\"`）选择并**只调用对应一个子节点**。\n3. 将子节点所需的所有参数从全局请求中提取出来，作为该子节点的输入传递下去。\n4. 子节点执行完毕后将结果返回给父节点，父节点再组合成最终响应（或直接透传）。\n\n**子节点之间不能也不需要进行任何直接调用**，因为：\n\n- 每个子节点只关心自己的业务逻辑，不依赖其他子节点的输出或内部状态。\n- 例如，`create_post` 不调用 `generate_feed` 来获取任何数据，它只管写入新帖子并使相关缓存失效；父节点本身也不会在 `create_post` 之后自动触发 `generate_feed` 调用（除非请求本身包含两个命令，但原始系统是单个命令一次调用）。\n- 所有跨子节点的状态同步（如缓存失效）由子节点直接修改全局数据结构完成（例如 `create_post` 清空 `users[userId]['feed']`），而不是通过调用其他子节点。\n\n## 每个子节点的输入来源\n\n父节点从初始请求（假设是一个字典 `request`）中提取字段，并作为子节点的输入传递：\n\n| 子节点 | 所需输入字段 | 来源说明（父节点从哪个请求字段提取） |\n|--------|------------|---------------------------------|\n| `create_post` | `userId`, `content` | 来自 `request['userId']` 和 `request['content']` |\n| `generate_feed` | `userId` | 来自 `request['userId']` |\n| `like_post` | `userId`, `postId` | 来自 `request['userId']` 和 `request['postId']` |\n| `follow_user` | `userId`, `targetUserId` | 来自 `request['userId']` 和 `request['targetUserId']` |\n\n**伪代码示意**（父节点逻辑）：\n\n```python\ndef SocialFeed(request):\n    command = request['command']\n    if command == 'create_post':\n        return create_post(userId=request['userId'], content=request['content'])\n    elif command == 'generate_feed':\n        return generate_feed(userId=request['userId'])\n    elif command == 'like_post':\n        return like_post(userId=request['userId'], postId=request['postId'])\n    elif command == 'follow_user':\n        return follow_user(userId=request['userId'], targetUserId=request['targetUserId'])\n    else:\n        return error\n```\n\n可见父节点完全充当路由角色，所有子节点的输入均来自外部请求，而非其他子节点的输出。这样严格满足了“父节点唯一协调、子节点不直接调用”的树结构规则。"
+    },
+    {
+      "question": "请说明每个子节点的数据操作范围。哪些子节点需要读写全局状态？它们的操作是否存在重叠？",
+      "answer": "## 各子节点的数据操作范围\n\n以下列出每个子节点访问的**全局状态**（假设全局数据集：`users`（包含用户信息、帖子列表、关注者/关注列表、feed缓存）、`posts`（帖子字典，每个帖子包含ID、作者、内容、时间戳、点赞用户集合、点赞计数）、`followers`（关注关系，可用双向图或列表））。读操作用 **R** 表示，写操作用 **W** 表示。\n\n### 1. `create_post`\n- **读取**：`users`（验证发帖用户是否存在）\n- **写入**：`posts`（添加新帖子对象）、`users[userId]['posts']`（将新帖子ID追加到用户帖子列表）、`users` 中所有**关注者**的 `feed` 缓存（将其清空或置为失效，即写操作）\n- **范围**：涉及 `posts` 和 `users` 两个全局状态，其中 `users` 上的写操作是批量性的（影响多个用户的缓存字段）。\n\n### 2. `generate_feed`\n- **读取**：`users`（获取当前用户的关注列表）、`posts`（遍历被关注者的帖子）、`likes`（位于每个帖子对象内的点赞数据，用于排序）\n- **写入**：`users[currentUserId]['feed']`（将聚合结果缓存起来）\n- **范围**：读多个全局状态，写仅限 `users` 的单个字段。\n\n### 3. `like_post`\n- **读取**：`users`（验证用户存在）、`posts`（验证帖子存在，并读取其 `likes` 集合作重复检查）\n- **写入**：`posts[postId]['likes']`（添加用户ID）、`posts[postId]['likes_count']`（自增计数）。可选地，可能写 `users` 中相关用户的 `feed` 缓存失效（但在原始分解中我仅将其作为「可选项」，核心写仍是 `posts`）\n- **范围**：主要读写 `posts`，对 `users` 仅读。\n\n### 4. `follow_user`\n- **读取**：`users`（验证两个用户是否存在，且不是同一个人）\n- **写入**：`followers`（添加双向关系，如 `followers[userId]` 加入 `targetUserId`，同时 `followers[targetUserId]` 可能另作处理）、`users[userId]['feed']`（清空缓存，因为关注了新用户，旧feed不再有效）\n- **范围**：读写 `users`，写 `followers`。\n\n---\n\n## 操作重叠分析\n\n多个子节点对**相同全局数据**存在读/写重叠，具体如下：\n\n| 重叠数据 | 涉及子节点 | 操作类型 | 是否为写-写冲突？ |\n|----------|------------|----------|------------------|\n| `users` 的 `feed` 缓存字段 | `create_post`, `generate_feed`, `follow_user`（可选还有 `like_post`） | 写（清空或写入） | **是**（多个写者，存在写-写竞争） |\n| `posts` 中的 `likes` 集合及 `likes_count` | `like_post`（写）、`generate_feed`（读） | 写 vs 读 | 读-写冲突（写后读可能不一致） |\n| `users` 中的 `posts` 列表（用户发帖列表） | `create_post`（写）、`generate_feed`（读） | 写 vs 读 | 读-写冲突 |\n| `users` 中的关注关系（`following`/`followers`） | `follow_user`（写）、`generate_feed`（读） | 写 vs 读 | 读-写冲突 |\n| `posts` 本身（帖子对象集合） | `create_post`（写）、`generate_feed`（读）、`like_post`（读并写其子字段） | 写 vs 读/写 | 多写者（`create_post` 添加新帖子，`like_post` 修改点赞）存在间接写-写冲突 |\n\n**结论**：操作存在明显的重叠。主要冲突集中在：\n- **`users['feed']` 缓存字段**被三个子节点写入（清除或更新），若并发执行，可能出现缓存被清除后又被旧的数据覆盖，或两个清除互相抵消导致不一致。\n- **`posts` 的 `likes` 字段**被 `like_post` 写入，同时被 `generate_feed` 读取用于排序，若在读取期间发生写入，可能导致 feed 生成使用不完整的点赞数。\n- **`users` 关注关系和发帖列表**存在读-写并发，可能导致 feed 生成时看到不一致的“被关注者”或“帖子列表”。\n\n这些重叠意味着在并行环境下，该系统需要加锁、事务或版本控制来保证数据一致性。但在单一请求串行处理的假设下（每个请求只调用一个子节点，且请求顺序执行），则不存在并发冲突——此时重叠仅体现为数据耦合，不影响正确性。"
+    },
+    {
+      "question": "该节点有 4 条验收标准。请逐条说明你的分解如何覆盖每一条验收标准。",
+      "answer": "由于您没有具体列出4条验收标准，我将基于典型的社交网络业务逻辑，假设4条验收标准对应4个核心功能场景。如有出入，请后续指正。\n\n## 假设的4条验收标准\n\n1. **发帖验收**：用户能成功发布一条新帖子，帖子内容正确保存，并且该用户的关注者下次拉取 feed 时能看到这条帖子。\n2. **Feed 生成验收**：用户能获取按时间倒序排列的关注者帖子列表（包含点赞数信息），且列表不超过规定数量（如10条），缓存机制有效。\n3. **点赞验收**：用户能为指定帖子点赞，且不能重复点赞；点赞后帖子的点赞数正确增加。\n4. **关注验收**：用户能关注另一个用户（不能关注自己），关注后该用户的 feed 会包含被关注者的帖子。\n\n## 分解覆盖说明\n\n### 验收标准1：发帖 → 由 `create_post` 覆盖\n- **内容保存**：`create_post` 在全局 `posts` 中创建新帖子对象，包含 `userId`, `content`, `timestamp` 和唯一ID。\n- **关注者可见**：子节点会清空所有关注者（即 `users` 中 `followers[userId]` 列表对应的用户）的 `feed` 缓存字段。这样下次他们请求 `generate_feed` 时，会重新聚合包含新帖子的列表。\n- **验证**：在测试中，先创建帖子，再调用 `generate_feed` 检查是否包含该帖子。\n\n### 验收标准2：Feed 生成 → 由 `generate_feed` 覆盖\n- **按时间倒序**：子节点遍历被关注用户的 `posts` 列表，按 `timestamp` 降序排列。同时可选地根据点赞数二级排序（未在标准中强制，但可支持）。\n- **数量限制**：内部逻辑限制返回最多 N 条（如10条），超出部分截断。\n- **缓存**：首次生成后写入 `users[userId]['feed']`；下次相同请求且缓存有效时直接返回，减少计算。\n- **验证**：测试不同时间发帖、点赞后，feed 顺序和内容正确。\n\n### 验收标准3：点赞 → 由 `like_post` 覆盖\n- **成功点赞**：子节点将用户ID加入帖子 `likes` 集合，并自增 `likes_count`。返回成功。\n- **不能重复**：检查 `userId` 是否已在 `likes` 中，若已存在则返回错误（或忽略）。\n- **验证**：点赞后查询帖子 `likes_count` 增加1；再次点赞同一帖子应失败。\n\n### 验收标准4：关注 → 由 `follow_user` 覆盖\n- **关注成功**：子节点在 `followers` 中添加双向关系（例如 `followers[userId]` 加入 `targetUserId`，同时 `following[userId]` 加入 `targetUserId`）。两个用户不能是同一人。\n- **Feed 更新**：关注后清空当前用户的 `feed` 缓存，确保下次 `generate_feed` 会包含新关注者的帖子。\n- **非自关注**：若 `userId == targetUserId`，返回错误。\n- **验证**：关注后调用 `generate_feed` 检查是否出现被关注者的帖子。\n\n### 总体覆盖\n- 四条验收标准被精确映射到四个子节点，每个子节点对应一条验收标准的完整实现，彼此之间没有功能交叉。\n- 父节点 `SocialFeed` 作为路由，确保每个请求只触发对应子节点，不干扰其他验收标准的操作。\n- 所有验收标准的副作用（如缓存失效）都在子节点内部完成，不需要跨子节点调用，符合树结构规则。\n\n如果您的验收标准包含更具体的条件（例如并发安全、错误码等），请补充说明，我可以进一步分析覆盖情况。"
+    }
+  ],
+  "expected_range": [
+    3,
+    8
+  ],
+  "tags": [
+    "command_dispatch",
+    "cache_invalidation",
+    "bidirectional_update"
+  ]
+}

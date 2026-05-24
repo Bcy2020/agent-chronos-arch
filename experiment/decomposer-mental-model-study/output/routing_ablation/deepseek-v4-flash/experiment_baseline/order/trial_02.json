@@ -1,0 +1,1046 @@
+{
+  "experiment": {
+    "name": "baseline",
+    "ablation": "baseline"
+  },
+  "ablation": "baseline",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\nSubPRD Context:\n  Task Description:\n    INPUT FORMAT:\n      Format: json\n      Description: 通过 manage_order函数接收命令和订单数据\n      Schema:\n        command: string (create_order|pay_order|ship_order|complete_order|cancel_order|list_orders|get_user_orders|list_products)\n        order_data: object (包含user_id, order_id, items, status_filter, user_filter, low_stock等字段，根据命令不同)\n      Examples:\n        {\"command\": \"create_order\", \"order_data\": {\"user_id\": 1, \"items\": [{\"product_id\": 2, \"quantity\": 2}]}}\n        {\"command\": \"pay_order\", \"order_data\": {\"order_id\": 1}}\n    \n    OUTPUT FORMAT:\n      Format: json\n      Description: 返回操作结果，包含成功标志、消息和数据\n      Schema:\n        success: boolean\n        message: string\n        data: object (包含订单详情、用户余额等，具体取决于命令)\n      Examples:\n        {\"success\": true, \"message\": \"\\u8ba2\\u5355\\u521b\\u5efa\\u6210\\u529f\", \"data\": {\"order_id\": 1, \"total_price\": 199.8}}\n        {\"success\": false, \"message\": \"\\u5546\\u54c1\\u5e93\\u5b58\\u4e0d\\u8db3\", \"data\": {\"product_id\": 1, \"available\": 10, \"requested\": 15}}\n    \n    Functional Requirements:\n    [FR-001] Create Order: 创建订单：用户指定商品列表和用户ID，检查用户存在、库存充足，计算总价，扣减库存，创建状态为pending的订单。\n    [FR-002] Pay Order: 支付订单：检查订单存在且状态为pending，用户余额充足，扣减余额，更新订单状态为paid。\n    [FR-003] Ship Order: 订单发货：检查订单存在且状态为paid，更新状态为shipped。\n    [FR-004] Complete Order: 订单完成：检查订单存在且状态为shipped，更新状态为completed。\n    [FR-005] Cancel Order: 取消订单：检查订单存在且状态为pending或paid，恢复商品库存，若已支付退还余额，更新状态为cancelled。\n    [FR-006] List Orders: 列出所有订单，支持按用户和状态筛选，显示订单详情。\n    [FR-007] Get User Orders: 获取指定用户的所有订单，计算订单总额及各种状态订单数量。\n    [FR-008] List Products: 列出所有商品，显示信息和库存，可筛选库存不足的商品。\n  Constraints:\n    - TC-STORAGE: Storage: memory - 三个独立内存字典存储users, products, orders\n    - TC-CONCURRENCY: Concurrency: single-user, auth_required: False\n    - TC-UI: UI: api\n    - TC-LANGUAGE: Language: Python\n  Acceptance Criteria:\n    - AC-001: 创建订单成功后，库存正确扣减，订单状态为pending。\n    - AC-002: 支付订单成功后，用户余额正确扣减，订单状态变为paid。\n    - AC-003: 取消订单后，库存和余额恢复，订单状态变为cancelled。\n    - AC-004: 订单状态流转正确：pending→paid→shipped→completed。\n    - AC-005: 库存不足时创建订单返回失败信息。\n    - AC-006: 余额不足时支付订单返回失败信息。\n  Traces to: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): 存储用户信息，以user_id为键\n    Data Type: dict\n  - products (memory, read_write): 存储商品信息，以product_id为键\n    Data Type: dict\n  - orders (memory, read_write): 存储订单记录，以order_id为键\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: 存储用户信息，以user_id为键\n  - read_write on products: 存储商品信息，以product_id为键\n  - read_write on orders: 存储订单记录，以order_id为键\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "ParseInput",
+        "purpose": "Parse the raw JSON input to extract the command string and order_data dictionary.",
+        "inputs": [
+          {
+            "name": "raw_input",
+            "type": "dict",
+            "description": "Raw input dictionary containing 'command' and 'order_data' keys.",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Extracted command string (e.g., 'create_order', 'pay_order').",
+            "consumer": "parent dispatches to appropriate command handler"
+          },
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Extracted order data dictionary containing command-specific fields.",
+            "consumer": "command handlers"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Parsing input JSON into command and order_data"
+          ],
+          "out_of_scope": [
+            "Validating command values",
+            "Accessing global stores"
+          ]
+        },
+        "preconditions": [
+          "Input is a dict with keys 'command' and 'order_data'"
+        ],
+        "postconditions": [
+          "Command returned is a string",
+          "Order_data returned is a dict"
+        ],
+        "behavior": "Takes the raw input dict and returns the values for command and order_data. No side effects, no data store access.",
+        "signature": "def ParseInput(raw_input: dict) -> tuple[str, dict]",
+        "stop_decompose": true,
+        "stop_reason": "Pure function: only transforms input without I/O or state.",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-PARSE-001",
+            "description": "Returns command as string",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-PARSE-002",
+            "description": "Returns order_data as dict",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004",
+            "FR-005",
+            "FR-006",
+            "FR-007",
+            "FR-008"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "CreateOrder",
+        "purpose": "Create a new order: validate user existence, check stock, calculate total, deduct stock, create order with pending status.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Order data containing user_id and items list.",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict with success, message, and data.",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "User existence check",
+            "Stock availability check",
+            "Total price calculation",
+            "Stock deduction",
+            "Order creation"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Payment processing"
+          ]
+        },
+        "preconditions": [
+          "order_data contains 'user_id' and 'items'",
+          "User exists",
+          "All items have sufficient stock"
+        ],
+        "postconditions": [
+          "New order created with status 'pending'",
+          "Stock reduced for each item"
+        ],
+        "behavior": "Validates user exists via users.exists, checks stock via products.get for each item, calculates total price, updates product stock via products.update, creates order via orders.create, returns success result with order_id and total_price.",
+        "signature": "def CreateOrder(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains multiple operations and business logic; not atomic or pure.",
+        "node_type": "",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read",
+            "description": "Check user existence"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Read stock and update"
+          },
+          {
+            "source_name": "orders",
+            "operation_type": "write",
+            "description": "Create new order"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-CREATE-001",
+            "description": "Stock must be sufficient for all items"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-CREATE-001",
+            "description": "Order created with status pending after successful stock deduction",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-CREATE-002",
+            "description": "Returns failure if user does not exist",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-CREATE-003",
+            "description": "Returns failure if stock insufficient",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read",
+            "description": "Check user existence"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read and update product stock"
+          },
+          {
+            "variable": "orders",
+            "op": "write",
+            "description": "Create order"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "users.exists",
+          "users.get",
+          "products.get",
+          "products.update",
+          "orders.create"
+        ]
+      },
+      {
+        "name": "PayOrder",
+        "purpose": "Process payment for an order: validate order exists and is pending, check user balance, deduct balance, update order status to paid.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Order data containing order_id.",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict with success, message, data.",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order existence check",
+            "Order status check",
+            "User balance check",
+            "Balance deduction",
+            "Order status update"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Stock management"
+          ]
+        },
+        "preconditions": [
+          "order_data contains 'order_id'",
+          "Order exists with status 'pending'",
+          "User has sufficient balance"
+        ],
+        "postconditions": [
+          "User balance reduced by total_price",
+          "Order status updated to 'paid'"
+        ],
+        "behavior": "Validates order exists and is pending via orders.get, retrieves user balance via users.get, checks if balance >= total_price, deducts balance via users.update, updates order status via orders.update, returns success result.",
+        "signature": "def PayOrder(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains multiple operations and business logic; not atomic or pure.",
+        "node_type": "",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Read order and update status"
+          },
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Read and update user balance"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-PAY-001",
+            "description": "User must have sufficient balance"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-PAY-001",
+            "description": "Order status updated to paid after successful deduction",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-PAY-002",
+            "description": "Returns failure if balance insufficient",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-PAY-003",
+            "description": "Returns failure if order not pending",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read order and update status"
+          },
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read and update user balance"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-002"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.exists",
+          "orders.update",
+          "users.get",
+          "users.update"
+        ]
+      },
+      {
+        "name": "ShipOrder",
+        "purpose": "Ship an order: validate order exists and is paid, update order status to shipped.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Order data containing order_id.",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict with success, message, data.",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order existence check",
+            "Order status check",
+            "Status update to shipped"
+          ],
+          "out_of_scope": [
+            "Other commands",
+            "Payment"
+          ]
+        },
+        "preconditions": [
+          "order_data contains 'order_id'",
+          "Order exists with status 'paid'"
+        ],
+        "postconditions": [
+          "Order status updated to 'shipped'"
+        ],
+        "behavior": "Validates order exists and is paid via orders.get, updates order status to shipped via orders.update, returns success result.",
+        "signature": "def ShipOrder(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: read-modify-write on a single data source (orders).",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Read order and update status"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-SHIP-001",
+            "description": "Order must be in paid status"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-SHIP-001",
+            "description": "Order status updated to shipped",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-SHIP-002",
+            "description": "Returns failure if order not paid",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read and update order"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-003"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.exists",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "CompleteOrder",
+        "purpose": "Complete an order: validate order exists and is shipped, update order status to completed.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Order data containing order_id.",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict with success, message, data.",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order existence check",
+            "Order status check",
+            "Status update to completed"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "order_data contains 'order_id'",
+          "Order exists with status 'shipped'"
+        ],
+        "postconditions": [
+          "Order status updated to 'completed'"
+        ],
+        "behavior": "Validates order exists and is shipped via orders.get, updates order status to completed via orders.update, returns success result.",
+        "signature": "def CompleteOrder(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: read-modify-write on a single data source (orders).",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Read order and update status"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-COMP-001",
+            "description": "Order must be in shipped status"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-COMP-001",
+            "description": "Order status updated to completed",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-COMP-002",
+            "description": "Returns failure if order not shipped",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read and update order"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-004"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.exists",
+          "orders.update"
+        ]
+      },
+      {
+        "name": "CancelOrder",
+        "purpose": "Cancel an order: validate order exists and is pending or paid; restore stock; refund balance if paid; update status to cancelled.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Order data containing order_id.",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict with success, message, data.",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Order existence check",
+            "Status validation (pending or paid)",
+            "Stock restoration",
+            "Balance refund (if paid)",
+            "Status update to cancelled"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "order_data contains 'order_id'",
+          "Order exists with status 'pending' or 'paid'"
+        ],
+        "postconditions": [
+          "Order status updated to 'cancelled'",
+          "Stock restored for each item in order",
+          "If status was 'paid', user balance refunded"
+        ],
+        "behavior": "Validates order exists and status is pending or paid via orders.get. If paid, retrieves user and refunds balance via users.update. Retrieves product info for each item and restores stock via products.update. Updates order status to cancelled via orders.update. Returns success result.",
+        "signature": "def CancelOrder(order_data: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains multiple operations and business logic; not atomic or pure.",
+        "node_type": "",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read_write",
+            "description": "Read order, update status"
+          },
+          {
+            "source_name": "users",
+            "operation_type": "read_write",
+            "description": "Read and update user balance (if paid)"
+          },
+          {
+            "source_name": "products",
+            "operation_type": "read_write",
+            "description": "Read product and restore stock"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-CANCEL-001",
+            "description": "Order must be pending or paid"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-CANCEL-001",
+            "description": "Order status updated to cancelled",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-CANCEL-002",
+            "description": "Stock restored if order was pending or paid",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-CANCEL-003",
+            "description": "Balance refunded if order was paid",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read order and update status"
+          },
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Refund balance if paid"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Restore stock"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-005"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.get",
+          "orders.exists",
+          "orders.update",
+          "users.get",
+          "users.update",
+          "products.get",
+          "products.update"
+        ]
+      },
+      {
+        "name": "ListOrders",
+        "purpose": "List all orders with optional filtering by user and/or status, return order details.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "May contain 'user_filter' and/or 'status_filter'.",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict with success and data containing list of orders.",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading orders from store",
+            "Filtering by user and status",
+            "Returning list"
+          ],
+          "out_of_scope": [
+            "Writing orders",
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "none"
+        ],
+        "postconditions": [
+          "Returns list of orders matching filters"
+        ],
+        "behavior": "Extracts user_filter and status_filter from order_data (if present), calls orders.list with those filters, constructs result dict with success true and data as list.",
+        "signature": "def ListOrders(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: single read from orders data source.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "List orders with optional filters"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-LISTO-001",
+            "description": "Returns list of orders",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-LISTO-002",
+            "description": "Filters applied correctly",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "List orders"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-006"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      },
+      {
+        "name": "GetUserOrders",
+        "purpose": "Get all orders for a specific user, compute total amount and count per status.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "Contains 'user_filter' (user_id) to filter orders.",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict with success, data containing orders, total_amount, and status_counts.",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading orders for a user",
+            "Computing total amount",
+            "Counting orders by status"
+          ],
+          "out_of_scope": [
+            "Writing",
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "order_data contains 'user_filter' (int)"
+        ],
+        "postconditions": [
+          "Returns aggregated order information"
+        ],
+        "behavior": "Extracts user_id from order_data, calls orders.list with user_id to get user's orders, iterates over orders to compute sum of total_price and count by status, constructs result dict.",
+        "signature": "def GetUserOrders(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: single read from orders data source, with in-memory computation.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "List orders for user"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-GETUO-001",
+            "description": "Returns user's orders",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-GETUO-002",
+            "description": "Total amount computed correctly",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-GETUO-003",
+            "description": "Status counts accurate",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "orders",
+            "op": "read",
+            "description": "List orders for user"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-007"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      },
+      {
+        "name": "ListProducts",
+        "purpose": "List all products, optionally filtered by low stock threshold.",
+        "inputs": [
+          {
+            "name": "order_data",
+            "type": "dict",
+            "description": "May contain 'low_stock' threshold (int).",
+            "source": "ParseInput output"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Result dict with success and data containing list of products.",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Reading products from store",
+            "Filtering by low stock",
+            "Returning list"
+          ],
+          "out_of_scope": [
+            "Writing products",
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "none"
+        ],
+        "postconditions": [
+          "Returns list of products, optionally filtered"
+        ],
+        "behavior": "Extracts low_stock_threshold from order_data (if present), calls products.list with that threshold, constructs result dict with success true and data as list.",
+        "signature": "def ListProducts(order_data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: single read from products data source.",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "List products with optional low stock filter"
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-LISTP-001",
+            "description": "Returns list of products",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-LISTP-002",
+            "description": "Low stock filter applied if provided",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "products",
+            "op": "read",
+            "description": "List products"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-008"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "products.list"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "In-memory dictionary storing user data keyed by user_id."
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "In-memory dictionary storing product data keyed by product_id."
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "In-memory dictionary storing order records keyed by order_id."
+      }
+    ],
+    "decomposition_rationale": "The Order_Management_System parent receives a raw JSON input and returns a JSON output. It is decomposed into one parsing child and eight command-specific children. ParseInput extracts the command and order_data from the raw input. The parent then uses the command to conditionally call one of the command handlers (CreateOrder, PayOrder, ShipOrder, CompleteOrder, CancelOrder, ListOrders, GetUserOrders, ListProducts), passing the order_data dict. Each command handler performs its specific business logic and returns a result dict which becomes the parent's output. This decomposition ensures each child has a single responsibility, follows the command pattern, and covers all functional requirements. Data access is distributed: each command handler declares its needed global_vars and requested_capabilities exactly corresponding to the operations it performs. ParseInput is a pure function and can be considered a leaf. Several command handlers (ShipOrder, CompleteOrder, ListOrders, GetUserOrders, ListProducts) are atomic operations on a single data source and can also be leaves. The remaining handlers (CreateOrder, PayOrder, CancelOrder) are composite and require further decomposition.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "ParseInput.raw_input"
+      },
+      "parent_outputs_produced_by": {
+        "output": "Command handler result (e.g., CreateOrder.result, PayOrder.result, etc.)"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "ParseInput",
+        "to_input": "raw_input",
+        "note": "Parent's raw input is parsed by ParseInput."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "command",
+        "to_node": "parent",
+        "to_input": "command (internal dispatch)",
+        "note": "Parent uses command to decide which handler to call."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "order_data",
+        "to_node": "CreateOrder",
+        "to_input": "order_data",
+        "note": "Order data passed to create order handler."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "order_data",
+        "to_node": "PayOrder",
+        "to_input": "order_data",
+        "note": "Order data passed to pay order handler."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "order_data",
+        "to_node": "ShipOrder",
+        "to_input": "order_data",
+        "note": "Order data passed to ship order handler."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "order_data",
+        "to_node": "CompleteOrder",
+        "to_input": "order_data",
+        "note": "Order data passed to complete order handler."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "order_data",
+        "to_node": "CancelOrder",
+        "to_input": "order_data",
+        "note": "Order data passed to cancel order handler."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "order_data",
+        "to_node": "ListOrders",
+        "to_input": "order_data",
+        "note": "Order data (with filters) passed to list orders handler."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "order_data",
+        "to_node": "GetUserOrders",
+        "to_input": "order_data",
+        "note": "Order data (with user_filter) passed to get user orders handler."
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "order_data",
+        "to_node": "ListProducts",
+        "to_input": "order_data",
+        "note": "Order data (with low_stock) passed to list products handler."
+      },
+      {
+        "from_node": "CreateOrder",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result becomes parent's output."
+      },
+      {
+        "from_node": "PayOrder",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result becomes parent's output."
+      },
+      {
+        "from_node": "ShipOrder",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result becomes parent's output."
+      },
+      {
+        "from_node": "CompleteOrder",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result becomes parent's output."
+      },
+      {
+        "from_node": "CancelOrder",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result becomes parent's output."
+      },
+      {
+        "from_node": "ListOrders",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result becomes parent's output."
+      },
+      {
+        "from_node": "GetUserOrders",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result becomes parent's output."
+      },
+      {
+        "from_node": "ListProducts",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Handler result becomes parent's output."
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "ParseInput",
+        "to": "CreateOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "PayOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "ShipOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "CompleteOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "CancelOrder",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "ListOrders",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "GetUserOrders",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "ListProducts",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

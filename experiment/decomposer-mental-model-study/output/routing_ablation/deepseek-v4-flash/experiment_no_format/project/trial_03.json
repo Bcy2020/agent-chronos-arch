@@ -1,0 +1,227 @@
+{
+  "experiment": {
+    "name": "no_format",
+    "purpose_routing": true,
+    "separated_command": true,
+    "format_examples": false,
+    "coordinator_allowed": true,
+    "data_interfaces": true
+  },
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nYOU MUST DECOMPOSE. You are NOT allowed to return 0 children or refuse to decompose. Even if the node seems simple, you MUST break it into at least 2 child functions.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ]\n    }\n  ],\n  \"decomposition_rationale\": \"Explain HOW these children work together to implement the parent.\"\n}",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Project Task Manager\nNode Purpose: Project Task Manager. Routes commands to the appropriate handler.\n\nSubPRD Context:\n  Task Description:\n    Inputs: command: str, data: dict\n\n    Functional Requirements:\n    [FR-001] Create Project: Create a new project with name, description, and owner. Check that owner exists. Default status 'planning'. Record creation time.\n    [FR-002] Update Project: Update project info: description, owner, status, deadline. Check project exists.\n    [FR-003] Delete Project: Delete project and all its tasks. Check project exists.\n    [FR-004] Create Task: Create a task under a project with title, description, priority, estimated hours. Check project exists and status is planning or active. Default status 'todo'. No assignee.\n    [FR-005] Assign Task: Assign a task to a team member. Check task exists and unassigned or reassignable. Check member exists and available. Optionally check skills. Update assignee_id. Set member status to busy.\n    [FR-006] Update Task Status: Update task status. Check task exists. Status flow: todo->in_progress->review->done. Blocked can be set anytime. Record actual hours when done.\n    [FR-007] Complete Task: Complete a task. Check status is 'review'. Update status to 'done'. Record actual hours. Release member (set available).\n    [FR-008] Delete Task: Delete a task. Check task exists. If assigned, release member.\n    [FR-009] List Project Tasks: List tasks of a project with optional filters: status, priority, assignee. Show task details and progress.\n    [FR-010] Get Member Tasks: Get all tasks for a member, current and historical. Calculate total hours.\n    [FR-011] Get Project Progress: Get project progress: total tasks, completion rate, status counts, estimated vs actual hours, estimated completion time.\n    [FR-012] Add Member: Add a team member with ID, name, role, skills, availability. Check member ID is unique.\n    [FR-013] Update Member Availability: Update member availability. Check that member has no ongoing task before setting offline.\n\n  Constraints:\n    - NFR-001: Data must be consistent across the three in-memory data sources (members, projects, tasks) during operations like assignment, status updates, and deletions.\n    - NFR-002: Error handling must cover invalid project/task/member, status conflicts, and state violations with appropriate error messages.\n\n  Acceptance Criteria:\n    - AC-001: Create project: owner must exist; project_id auto-generated; status defaults to 'planning'; creation time recorded.\n    - AC-002: Update project: only existing projects can be updated; owner assignment checks existence; status changes are recorded.\n    - AC-003: Delete project: project must exist; all associated tasks are deleted; if tasks were assigned, members are released.\n    - AC-004: Create task: project must exist and be in 'planning' or 'active' status; task defaults to 'todo' and no assignee.\n    - AC-005: Assign task: task must exist and be unassigned; member must exist and be 'available'; skill match is optional; assignee_id set; member status becomes 'busy'.\n    - AC-006: Update task status: task must exist; status transitions follow the prescribed flow (todo->in_progress->review->done); blocked can be set anytime; actual hours recorded on done.\n    - AC-007: Complete task: task must be in 'review' status; status changes to 'done'; actual hours recorded; assignee's availability set to 'available'.\n    - AC-008: Delete task: task must exist; if assigned, member is released.\n    - AC-009: List project tasks: returns tasks filtered by status, priority, assignee if provided; shows task details.\n    - AC-010: Get member tasks: returns current and completed tasks for member; total hours computed correctly.\n    - AC-011: Get project progress: returns total tasks, completion rate (completed/total), status counts, estimated vs actual hours, and estimated completion time.\n    - AC-012: Add member: new member must have unique member_id; fields as specified.\n    - AC-013: Update member availability: member must exist; cannot set offline if member has ongoing tasks.\n\nInputs:\n  - command: str - Command to execute\n  - data: dict - Data for the command\n\nOutputs:\n  - result: dict - JSON with success, message, data\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on members: Stores team member information. Pre-populated with 6 members.\n  - read_write on projects: Stores project information. Initially empty.\n  - read_write on tasks: Stores task records. Initially empty.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - members.get: def get_member(member_id: int) -> Optional[dict]:\n    Description: Retrieve a member by member_id\n  - members.list: def list_members(**filters) -> list[dict]:\n    Description: List members with optional filters (e.g., role, availability)\n  - members.create: def create_member(data: dict) -> dict:\n    Description: Create a new member with auto-generated member_id\n  - members.update: def update_member(member_id: int, data: dict) -> dict:\n    Description: Update an existing member with given fields\n  - members.delete: def delete_member(member_id: int) -> bool:\n    Description: Delete a member by member_id\n  - members.exists: def exists_member(member_id: int) -> bool:\n    Description: Check if a member exists by member_id\n  - projects.get: def get_project(project_id: int) -> Optional[dict]:\n    Description: Retrieve a project by project_id\n  - projects.list: def list_projects(**filters) -> list[dict]:\n    Description: List projects with optional filters (e.g., status, owner_id)\n  - projects.create: def create_project(data: dict) -> dict:\n    Description: Create a new project with auto-generated project_id\n  - projects.update: def update_project(project_id: int, data: dict) -> dict:\n    Description: Update an existing project with given fields\n  - projects.delete: def delete_project(project_id: int) -> bool:\n    Description: Delete a project by project_id\n  - projects.exists: def exists_project(project_id: int) -> bool:\n    Description: Check if a project exists by project_id\n  - tasks.get: def get_task(task_id: int) -> Optional[dict]:\n    Description: Retrieve a task by task_id\n  - tasks.list: def list_tasks(**filters) -> list[dict]:\n    Description: List tasks with optional filters (e.g., project_id, status, priority, assignee_id)\n  - tasks.create: def create_task(data: dict) -> dict:\n    Description: Create a new task with auto-generated task_id\n  - tasks.update: def update_task(task_id: int, data: dict) -> dict:\n    Description: Update an existing task with given fields\n  - tasks.delete: def delete_task(task_id: int) -> bool:\n    Description: Delete a task by task_id\n  - tasks.exists: def exists_task(task_id: int) -> bool:\n    Description: Check if a task exists by task_id\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "ProjectHandler",
+        "purpose": "Handles all project-related commands: create, update, delete, and get progress.",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Command to execute (one of: create_project, update_project, delete_project, get_project_progress)",
+            "source": "parent input"
+          },
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "Data for the command, containing fields like name, description, owner, status, deadline, project_id",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON response with success, message, and data",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating, updating, deleting projects",
+            "Checking owner existence",
+            "Deleting associated tasks on project deletion",
+            "Computing project progress"
+          ],
+          "out_of_scope": [
+            "Task creation, assignment, status updates",
+            "Member management"
+          ]
+        },
+        "behavior": "Parses the command to determine the operation. For create_project: validates owner exists via members.get, creates project with auto-generated ID, default status 'planning', and records creation time. For update_project: checks project exists via projects.get, updates allowed fields. For delete_project: checks project exists, deletes all tasks via tasks.list and tasks.delete, then deletes project. For get_project_progress: uses tasks.list to compute completion rate, status counts, estimated vs actual hours, and estimated completion time.",
+        "signature": "def ProjectHandler(command: str, data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Decomposition to handler level sufficient; further decomposition would break into single-command functions if needed.",
+        "global_vars": [
+          {
+            "variable": "members",
+            "op": "read",
+            "description": "Used to check owner existence via members.get"
+          },
+          {
+            "variable": "projects",
+            "op": "read_write",
+            "description": "CRUD operations on projects store"
+          },
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "List and delete tasks on project deletion"
+          }
+        ],
+        "requested_capabilities": [
+          "members.get",
+          "members.exists",
+          "projects.get",
+          "projects.exists",
+          "projects.create",
+          "projects.update",
+          "projects.delete",
+          "tasks.list",
+          "tasks.delete"
+        ]
+      },
+      {
+        "name": "TaskHandler",
+        "purpose": "Handles all task-related commands: create, assign, update status, complete, delete, and list project tasks.",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Command to execute (one of: create_task, assign_task, update_task_status, complete_task, delete_task, list_project_tasks)",
+            "source": "parent input"
+          },
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "Data for the command, containing fields like task_id, project_id, title, description, priority, estimated_hours, assignee_id, status, actual_hours",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON response with success, message, and data",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Creating tasks under valid projects",
+            "Assigning tasks to available members",
+            "Updating task status following flow",
+            "Completing tasks and releasing members",
+            "Deleting tasks and releasing assignees",
+            "Listing tasks with filters"
+          ],
+          "out_of_scope": [
+            "Project creation/update/deletion",
+            "Member creation/availability updates"
+          ]
+        },
+        "behavior": "Parses the command to determine operation. For create_task: checks project exists and status is planning/active via projects.get, creates task with auto-generated ID, default status 'todo', no assignee. For assign_task: checks task exists and unassigned via tasks.get, checks member exists and available via members.get, optionally checks skills, updates task assignee_id and member status to 'busy'. For update_task_status: checks task exists, validates status transition (todo->in_progress->review->done, blocked any time), updates status, provides actual_hours when done. For complete_task: checks task status is 'review', sets to 'done', records actual_hours, updates member availability to 'available'. For delete_task: checks task exists, if assigned releases member, deletes task. For list_project_tasks: uses tasks.list with filters (status, priority, assignee), returns task details.",
+        "signature": "def TaskHandler(command: str, data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Decomposition to handler level sufficient; further decomposition would break into single-command functions if needed.",
+        "global_vars": [
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "Read member info and update availability"
+          },
+          {
+            "variable": "projects",
+            "op": "read",
+            "description": "Check project existence and status"
+          },
+          {
+            "variable": "tasks",
+            "op": "read_write",
+            "description": "CRUD operations on tasks"
+          }
+        ],
+        "requested_capabilities": [
+          "members.get",
+          "members.exists",
+          "members.update",
+          "projects.get",
+          "projects.exists",
+          "tasks.get",
+          "tasks.exists",
+          "tasks.create",
+          "tasks.update",
+          "tasks.delete",
+          "tasks.list"
+        ]
+      },
+      {
+        "name": "MemberHandler",
+        "purpose": "Handles all member-related commands: add member, update availability, and get member tasks.",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Command to execute (one of: add_member, update_member_availability, get_member_tasks)",
+            "source": "parent input"
+          },
+          {
+            "name": "data",
+            "type": "dict",
+            "description": "Data for the command, containing fields like member_id, name, role, skills, availability, status",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON response with success, message, and data",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Adding new members with unique ID",
+            "Updating member availability with constraint",
+            "Retrieving member tasks and calculating total hours"
+          ],
+          "out_of_scope": [
+            "Project operations",
+            "Task creation/assignment/status"
+          ]
+        },
+        "behavior": "Parses the command to determine operation. For add_member: checks member_id uniqueness via members.get, creates member with provided fields. For update_member_availability: checks member exists, if setting to offline checks no ongoing task via tasks.list with assignee_id and status not in done/blocked? (check ongoing task: status not in ['done', 'blocked', 'cancelled']), then updates member availability. For get_member_tasks: uses tasks.list with assignee_id to get current and historical tasks, calculates total hours from actual_hours and estimated_hours.",
+        "signature": "def MemberHandler(command: str, data: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Decomposition to handler level sufficient; further decomposition would break into single-command functions if needed.",
+        "global_vars": [
+          {
+            "variable": "members",
+            "op": "read_write",
+            "description": "CRUD operations on members"
+          },
+          {
+            "variable": "tasks",
+            "op": "read",
+            "description": "List tasks to check ongoing tasks and retrieve member tasks"
+          }
+        ],
+        "requested_capabilities": [
+          "members.get",
+          "members.exists",
+          "members.create",
+          "members.update",
+          "members.delete",
+          "tasks.get",
+          "tasks.list"
+        ]
+      }
+    ],
+    "decomposition_rationale": "The Project Task Manager is decomposed into three handler functions that each handle a subset of commands: ProjectHandler for project CRUD and progress, TaskHandler for task CRUD and assignments, MemberHandler for member management and task queries. This grouping keeps each child at a consistent abstraction level (all are command handlers) and minimizes overlap. The parent routes commands to the appropriate child by inspecting the command string, preserving the parent's external interface."
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

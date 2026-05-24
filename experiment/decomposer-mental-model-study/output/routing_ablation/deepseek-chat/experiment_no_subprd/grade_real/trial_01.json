@@ -1,0 +1,1220 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Student_Grade_System\nNode Purpose: Student Grade System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - students (memory, read_write): Stores student information keyed by student_id.\n    Data Type: dict\n  - courses (memory, read_write): Stores course information keyed by course_id.\n    Data Type: dict\n  - grades (memory, read_write): Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness.\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on students: Stores student information keyed by student_id.\n  - read_write on courses: Stores course information keyed by course_id.\n  - read_write on grades: Stores grade records keyed by grade_id. Also maintains a set of (student_id, course_id) pairs to enforce uniqueness.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - students.get: def get_student(student_id: int) -> dict | None:\n    Description: Retrieve a student by student_id\n  - students.list: def list_students(filter_class: str | None = None) -> list[dict]:\n    Description: List all students, optionally filtered by class\n  - students.create: def create_student(student: dict) -> dict:\n    Description: Create a new student record\n  - students.exists: def student_exists(student_id: int) -> bool:\n    Description: Check if a student with given student_id exists\n  - courses.get: def get_course(course_id: int) -> dict | None:\n    Description: Retrieve a course by course_id\n  - courses.list: def list_courses(filter_teacher: str | None = None) -> list[dict]:\n    Description: List all courses, optionally filtered by teacher\n  - courses.create: def create_course(course: dict) -> dict:\n    Description: Create a new course record\n  - courses.exists: def course_exists(course_id: int) -> bool:\n    Description: Check if a course with given course_id exists\n  - grades.get: def get_grade(grade_id: int) -> dict | None:\n    Description: Retrieve a grade by grade_id\n  - grades.list: def list_grades(student_id: int | None = None, course_id: int | None = None) -> list[dict]:\n    Description: List grades, optionally filtered by student_id and/or course_id\n  - grades.create: def create_grade(grade: dict) -> dict:\n    Description: Create a new grade record\n  - grades.update: def update_grade(grade_id: int, updates: dict) -> dict:\n    Description: Update an existing grade's score and/or recorded_at\n  - grades.delete: def delete_grade(grade_id: int) -> None:\n    Description: Delete a grade by grade_id\n  - grades.exists: def grade_exists(grade_id: int) -> bool:\n    Description: Check if a grade with given grade_id exists\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "ParseInput",
+        "purpose": "Parse the raw system input into a structured command and parameters",
+        "inputs": [
+          {
+            "name": "input",
+            "type": "Any",
+            "description": "Raw system input",
+            "source": "parent input"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Parsed command name",
+            "consumer": "RouteCommand"
+          },
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parsed parameters for the command",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Parsing input into command and parameters"
+          ],
+          "out_of_scope": [
+            "Executing any business logic"
+          ]
+        },
+        "preconditions": [
+          "Input is provided"
+        ],
+        "postconditions": [
+          "Command and parameters are extracted"
+        ],
+        "behavior": "Parses the raw input (e.g., JSON string or dict) to extract a command string and a parameters dictionary. Returns both.",
+        "signature": "def ParseInput(input: Any) -> Tuple[str, dict]",
+        "stop_decompose": true,
+        "stop_reason": "Pure function: mathematical transformation of input to structured data",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "Input must be parseable into command and params"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Parses valid input correctly",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "RouteCommand",
+        "purpose": "Route the parsed command to the appropriate handler based on command type",
+        "inputs": [
+          {
+            "name": "command",
+            "type": "str",
+            "description": "Parsed command name",
+            "source": "ParseInput"
+          },
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parsed parameters",
+            "source": "ParseInput"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "Any",
+            "description": "Result of executing the command",
+            "consumer": "parent output"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Routing commands to handlers: add_student, add_course, add_grade, get_student, get_course, get_grade, list_students, list_courses, list_grades, update_grade, delete_grade"
+          ],
+          "out_of_scope": [
+            "Parsing input",
+            "Direct data operations"
+          ]
+        },
+        "preconditions": [
+          "Command is a recognized string"
+        ],
+        "postconditions": [
+          "Result is produced from the appropriate handler"
+        ],
+        "behavior": "Uses a dictionary mapping command strings to handler functions. Calls the appropriate handler with params, returns the result. If command unknown, returns error.",
+        "signature": "def RouteCommand(command: str, params: dict) -> Any",
+        "stop_decompose": false,
+        "stop_reason": "Contains branching logic to route to multiple handlers",
+        "node_type": "pure_function",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "Must handle all defined commands"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-002",
+            "description": "Routes each command to correct handler",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "HandleAddStudent",
+        "purpose": "Handle the add_student command by creating a new student record",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing student_id, name, class",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Created student record or error",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating student data",
+            "Checking uniqueness",
+            "Creating student record"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params contains student_id, name, class"
+        ],
+        "postconditions": [
+          "Student record is created if valid"
+        ],
+        "behavior": "Validates that student_id is unique (using students.exists), then creates student via students.create. Returns created record or error.",
+        "signature": "def HandleAddStudent(params: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read",
+            "description": "Check if student exists"
+          },
+          {
+            "source_name": "students",
+            "operation_type": "write",
+            "description": "Create new student"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "student_id must be unique"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Creates student with valid data",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read_write",
+            "description": "Check existence and create student"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "students.exists",
+          "students.create"
+        ]
+      },
+      {
+        "name": "HandleAddCourse",
+        "purpose": "Handle the add_course command by creating a new course record",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing course_id, name, teacher",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Created course record or error",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating course data",
+            "Checking uniqueness",
+            "Creating course record"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params contains course_id, name, teacher"
+        ],
+        "postconditions": [
+          "Course record is created if valid"
+        ],
+        "behavior": "Validates that course_id is unique (using courses.exists), then creates course via courses.create. Returns created record or error.",
+        "signature": "def HandleAddCourse(params: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "courses",
+            "operation_type": "read",
+            "description": "Check if course exists"
+          },
+          {
+            "source_name": "courses",
+            "operation_type": "write",
+            "description": "Create new course"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "course_id must be unique"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-004",
+            "description": "Creates course with valid data",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read_write",
+            "description": "Check existence and create course"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "courses.exists",
+          "courses.create"
+        ]
+      },
+      {
+        "name": "HandleAddGrade",
+        "purpose": "Handle the add_grade command by creating a new grade record",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing student_id, course_id, score",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Created grade record or error",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating student and course exist",
+            "Checking uniqueness of (student_id, course_id)",
+            "Creating grade record"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params contains student_id, course_id, score"
+        ],
+        "postconditions": [
+          "Grade record is created if valid"
+        ],
+        "behavior": "Validates student exists (students.exists), course exists (courses.exists), and grade uniqueness (grades.list with filters). Then creates grade via grades.create. Returns created record or error.",
+        "signature": "def HandleAddGrade(params: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read",
+            "description": "Check student exists"
+          },
+          {
+            "source_name": "courses",
+            "operation_type": "read",
+            "description": "Check course exists"
+          },
+          {
+            "source_name": "grades",
+            "operation_type": "read",
+            "description": "Check uniqueness of (student_id, course_id)"
+          },
+          {
+            "source_name": "grades",
+            "operation_type": "write",
+            "description": "Create new grade"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "student_id and course_id must exist, (student_id, course_id) must be unique"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Creates grade with valid data",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Check student exists"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Check course exists"
+          },
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Check uniqueness and create grade"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "students.exists",
+          "courses.exists",
+          "grades.list",
+          "grades.create"
+        ]
+      },
+      {
+        "name": "HandleGetStudent",
+        "purpose": "Handle the get_student command by retrieving a student record",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing student_id",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Student record or error",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Retrieving student by ID"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params contains student_id"
+        ],
+        "postconditions": [
+          "Student record is returned if exists"
+        ],
+        "behavior": "Calls students.get with student_id from params. Returns the record or an error message if not found.",
+        "signature": "def HandleGetStudent(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: read from single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read",
+            "description": "Retrieve student by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-006",
+            "description": "student_id must be provided"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-006",
+            "description": "Returns student if exists",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Retrieve student"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "students.get"
+        ]
+      },
+      {
+        "name": "HandleGetCourse",
+        "purpose": "Handle the get_course command by retrieving a course record",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing course_id",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Course record or error",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Retrieving course by ID"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params contains course_id"
+        ],
+        "postconditions": [
+          "Course record is returned if exists"
+        ],
+        "behavior": "Calls courses.get with course_id from params. Returns the record or an error message if not found.",
+        "signature": "def HandleGetCourse(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: read from single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "courses",
+            "operation_type": "read",
+            "description": "Retrieve course by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-007",
+            "description": "course_id must be provided"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-007",
+            "description": "Returns course if exists",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Retrieve course"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "courses.get"
+        ]
+      },
+      {
+        "name": "HandleGetGrade",
+        "purpose": "Handle the get_grade command by retrieving a grade record",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing grade_id",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Grade record or error",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Retrieving grade by ID"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params contains grade_id"
+        ],
+        "postconditions": [
+          "Grade record is returned if exists"
+        ],
+        "behavior": "Calls grades.get with grade_id from params. Returns the record or an error message if not found.",
+        "signature": "def HandleGetGrade(params: dict) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: read from single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "read",
+            "description": "Retrieve grade by ID"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-008",
+            "description": "grade_id must be provided"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-008",
+            "description": "Returns grade if exists",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "Retrieve grade"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "grades.get"
+        ]
+      },
+      {
+        "name": "HandleListStudents",
+        "purpose": "Handle the list_students command by listing all students",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters optionally containing filter_class",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "list",
+            "description": "List of student records",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Listing students with optional class filter"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params may contain filter_class"
+        ],
+        "postconditions": [
+          "List of students is returned"
+        ],
+        "behavior": "Calls students.list with optional filter_class from params. Returns the list.",
+        "signature": "def HandleListStudents(params: dict) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: read from single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "students",
+            "operation_type": "read",
+            "description": "List students with optional filter"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-009",
+            "description": "filter_class is optional"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-009",
+            "description": "Returns list of students",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "List students"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "students.list"
+        ]
+      },
+      {
+        "name": "HandleListCourses",
+        "purpose": "Handle the list_courses command by listing all courses",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters optionally containing filter_teacher",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "list",
+            "description": "List of course records",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Listing courses with optional teacher filter"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params may contain filter_teacher"
+        ],
+        "postconditions": [
+          "List of courses is returned"
+        ],
+        "behavior": "Calls courses.list with optional filter_teacher from params. Returns the list.",
+        "signature": "def HandleListCourses(params: dict) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: read from single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "courses",
+            "operation_type": "read",
+            "description": "List courses with optional filter"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-010",
+            "description": "filter_teacher is optional"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-010",
+            "description": "Returns list of courses",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "List courses"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "courses.list"
+        ]
+      },
+      {
+        "name": "HandleListGrades",
+        "purpose": "Handle the list_grades command by listing grades with optional filters",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters optionally containing student_id and/or course_id",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "list",
+            "description": "List of grade records",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Listing grades with optional student_id and/or course_id filters"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params may contain student_id and/or course_id"
+        ],
+        "postconditions": [
+          "List of grades is returned"
+        ],
+        "behavior": "Calls grades.list with optional student_id and course_id from params. Returns the list.",
+        "signature": "def HandleListGrades(params: dict) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic operation: read from single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "read",
+            "description": "List grades with optional filters"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-011",
+            "description": "student_id and course_id are optional"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-011",
+            "description": "Returns list of grades",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "List grades"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "grades.list"
+        ]
+      },
+      {
+        "name": "HandleUpdateGrade",
+        "purpose": "Handle the update_grade command by updating a grade record",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing grade_id and updates (score, recorded_at)",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Updated grade record or error",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating grade exists",
+            "Updating grade fields"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params contains grade_id and updates dict"
+        ],
+        "postconditions": [
+          "Grade record is updated if exists"
+        ],
+        "behavior": "Validates grade exists via grades.exists, then calls grades.update with grade_id and updates. Returns updated record or error.",
+        "signature": "def HandleUpdateGrade(params: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "read",
+            "description": "Check grade exists"
+          },
+          {
+            "source_name": "grades",
+            "operation_type": "write",
+            "description": "Update grade"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-012",
+            "description": "grade_id must exist"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-012",
+            "description": "Updates grade if exists",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Check existence and update grade"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "grades.exists",
+          "grades.update"
+        ]
+      },
+      {
+        "name": "HandleDeleteGrade",
+        "purpose": "Handle the delete_grade command by deleting a grade record",
+        "inputs": [
+          {
+            "name": "params",
+            "type": "dict",
+            "description": "Parameters containing grade_id",
+            "source": "RouteCommand"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "Success message or error",
+            "consumer": "RouteCommand"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validating grade exists",
+            "Deleting grade record"
+          ],
+          "out_of_scope": [
+            "Other commands"
+          ]
+        },
+        "preconditions": [
+          "params contains grade_id"
+        ],
+        "postconditions": [
+          "Grade record is deleted if exists"
+        ],
+        "behavior": "Validates grade exists via grades.exists, then calls grades.delete with grade_id. Returns success message or error.",
+        "signature": "def HandleDeleteGrade(params: dict) -> dict",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "grades",
+            "operation_type": "read",
+            "description": "Check grade exists"
+          },
+          {
+            "source_name": "grades",
+            "operation_type": "write",
+            "description": "Delete grade"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-013",
+            "description": "grade_id must exist"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-013",
+            "description": "Deletes grade if exists",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Check existence and delete grade"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "root"
+        },
+        "requested_capabilities": [
+          "grades.exists",
+          "grades.delete"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "students",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores student information keyed by student_id"
+      },
+      {
+        "name": "courses",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores course information keyed by course_id"
+      },
+      {
+        "name": "grades",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "Stores grade records keyed by grade_id"
+      }
+    ],
+    "decomposition_rationale": "The parent Student_Grade_System is decomposed into a pipeline: ParseInput extracts command and params from raw input; RouteCommand uses a dispatcher pattern to route to specific handler children (HandleAddStudent, HandleAddCourse, HandleAddGrade, HandleGetStudent, HandleGetCourse, HandleGetGrade, HandleListStudents, HandleListCourses, HandleListGrades, HandleUpdateGrade, HandleDeleteGrade). Each handler performs its own business logic and data operations using the available data interfaces. The parent orchestrates by calling ParseInput first, then RouteCommand, which internally calls the appropriate handler. This covers all parent responsibilities: parsing, routing, and executing CRUD operations on students, courses, and grades.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "ParseInput"
+      },
+      "parent_outputs_produced_by": {
+        "output": "RouteCommand"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input",
+        "to_node": "ParseInput",
+        "to_input": "input",
+        "note": "Raw input is parsed"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "command",
+        "to_node": "RouteCommand",
+        "to_input": "command",
+        "note": "Parsed command is routed"
+      },
+      {
+        "from_node": "ParseInput",
+        "from_output": "params",
+        "to_node": "RouteCommand",
+        "to_input": "params",
+        "note": "Parsed parameters are routed"
+      },
+      {
+        "from_node": "RouteCommand",
+        "from_output": "result",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Result is returned as system output"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": true,
+    "sibling_calls": [
+      {
+        "from": "ParseInput",
+        "to": "RouteCommand",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleAddStudent",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleAddCourse",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleAddGrade",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleGetStudent",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleGetCourse",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleGetGrade",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleListStudents",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleListCourses",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleListGrades",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleUpdateGrade",
+        "method": "structural_router"
+      },
+      {
+        "from": "ParseInput",
+        "to": "HandleDeleteGrade",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "ParseInput",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleAddStudent",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleAddCourse",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleAddGrade",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleGetStudent",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleGetCourse",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleGetGrade",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleListStudents",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleListCourses",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleListGrades",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleUpdateGrade",
+        "method": "structural_router"
+      },
+      {
+        "from": "RouteCommand",
+        "to": "HandleDeleteGrade",
+        "method": "structural_router"
+      }
+    ]
+  }
+}

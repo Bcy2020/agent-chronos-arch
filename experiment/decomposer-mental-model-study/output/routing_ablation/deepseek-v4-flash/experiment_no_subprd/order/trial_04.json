@@ -1,0 +1,936 @@
+{
+  "experiment": {
+    "name": "no_subprd",
+    "ablation": "no_subprd"
+  },
+  "ablation": "no_subprd",
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nSIGNATURE LOCKING - CHILD INTERFACES ARE BINDING CONTRACTS:\n- Each child's declared inputs/outputs become a LOCKED signature that code generators MUST follow exactly\n- Use precise Python types: str, int, float, bool, dict, list, Optional[dict], List[str], Dict[int, str], Tuple[str, int], Any, None\n- Do NOT invent unnecessary parameters - a child should only receive what it needs to do its job\n- Do NOT use generic \"Any\" when a specific type is known - precision enables signature validation\n- Example CORRECT: inputs=[{\"name\": \"task_id\", \"type\": \"int\", \"description\": \"ID of the task to validate\"}]\n- Example WRONG:   inputs=[{\"name\": \"task_id\", \"type\": \"Any\", \"description\": \"the task id\"}]\n- The verifier will reject code that does not match the declared signature exactly\n\nSEMANTIC STOP CONDITIONS - Use these instead of line-count estimation:\nSTOP DECOMPOSITION when the node is ONE of the following types:\n\n1. PURE FUNCTION: The node performs only mathematical transformations with no:\n   - Global/state variable dependencies (except parameters)\n   - I/O operations (file, network, database)\n   - Side effects or state modifications\n   Example: calculate_totals(prices, tax_rate) -> total\n\n2. ATOMIC OPERATION: The node performs exactly one operation on exactly one data source:\n   - Read from a single data source (database, cache, file)\n   - Write to a single data source\n   - Read-modify-write on a single data source\n   Example: reserve_inventory(product_id, quantity) -> bool\n\n3. MAXIMUM DEPTH REACHED: Tree has reached the configured maximum depth\n\nDO NOT STOP if the node:\n- Contains business logic, branching, or loops\n- Coordinates multiple child operations\n- Transforms data between multiple sources\n- Contains conditional validation logic\n\nDATAFLOW CLOSURE RULES:\n1. Every child input must have an explicit source.\n2. A child input source must be one of:\n   - a parent input,\n   - an output of an earlier sibling child,\n   - a local constant/config value explicitly described,\n   - data obtained inside that same leaf through requested_capabilities.\n3. If a child needs data that no previous child outputs and no parent input provides, add a child before it to produce that data, or move the data access inside that child as a leaf capability.\n4. Do not create child signatures with dangling parameters such as products_data unless a previous child outputs products_data.\n5. Parent must not directly access global state or data interfaces — all data operations must go through child function calls.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"preconditions\": [\"...\"],\n      \"postconditions\": [\"...\"],\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"node_type\": \"pure_function|atomic_operation\",\n      \"data_operations\": [\n        {\"source_name\": \"data_source_name\", \"operation_type\": \"read|write|read_write\", \"description\": \"what operation is performed\"}\n      ],\n      \"constraints\": [{\"constraint_id\": \"C-001\", \"description\": \"constraint description\"}],\n      \"acceptance_criteria\": [{\"ac_id\": \"AC-001\", \"description\": \"criterion description\", \"verification_method\": \"automated_test\"}],\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ],\n      \"traceability\": {\"parent_requirement_ids\": [\"FR-001\"], \"derived_from\": \"root\"},\n      \"requested_capabilities\": [\"resource.operation\", \"resource.operation\"]\n    }\n  ],\n  \"data_sources\": [\n    {\"name\": \"source_name\", \"category\": \"database|file|cache|external|memory\", \"access\": \"read|write|read_write\", \"data_type\": \"dict|list|object\", \"description\": \"description\"}\n  ],\n  \"decomposition_rationale\": \"CRITICAL: Explain HOW these children work together to implement the parent. Describe the interaction flow, data transformation, and how they collectively cover ALL parent responsibilities. This is required for the code generator to understand how to compose these functions.\",\n  \"interface_preservation\": {\n    \"parent_inputs_covered_by\": {\"input_name\": \"child_name\"},\n    \"parent_outputs_produced_by\": {\"output_name\": \"child_name\"}\n  },\n  \"dataflow_edges\": [\n    {\n      \"from_node\": \"parent | ChildName\",\n      \"from_output\": \"parent_input_or_child_output_name\",\n      \"to_node\": \"ChildName | parent\",\n      \"to_input\": \"child_input_or_parent_output_name\",\n      \"note\": \"why this dataflow exists\"\n    }\n  ]\n}\n\nCRITICAL GLOBAL VARIABLES DISTRIBUTION RULE:\nThe parent's \"global_vars\" declares which data variables the subtree operates on and what operations are needed (read/write/read_write).\nYou MUST distribute these global_vars among children based on their responsibilities:\n- A child that performs read/write on a variable declares the corresponding \"global_vars\"\n- Each child's global_vars MUST be a subset of the parent's global_vars\n- The union of all children's global_vars MUST cover all of the parent's declared operations on each variable",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Order_Management_System\nNode Purpose: Order Management System\n\n\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\nBoundary:\n  In Scope: All functionality described in the input\n  Out of Scope: Functionality not described in the input\n\nData Sources (AVAILABLE DATA STORES):\n  - users (memory, read_write): 存储用户信息，以user_id为键\n    Data Type: dict\n  - products (memory, read_write): 存储商品信息，以product_id为键\n    Data Type: dict\n  - orders (memory, read_write): 存储订单记录，以order_id为键\n    Data Type: dict\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on users: 存储用户信息，以user_id为键\n  - read_write on products: 存储商品信息，以product_id为键\n  - read_write on orders: 存储订单记录，以order_id为键\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - users.get: def get_user(user_id: int) -> dict:\n    Description: 根据user_id获取用户信息\n  - users.update: def update_user(user_id: int, updates: dict) -> None:\n    Description: 更新指定用户的字段（如balance）\n  - users.exists: def user_exists(user_id: int) -> bool:\n    Description: 检查指定user_id的用户是否存在\n  - products.get: def get_product(product_id: int) -> dict:\n    Description: 根据product_id获取商品信息\n  - products.update: def update_product(product_id: int, updates: dict) -> None:\n    Description: 更新指定商品的字段（如stock）\n  - products.list: def list_products(low_stock_threshold: Optional[int] = None) -> list:\n    Description: 列出所有商品，可选按库存不足阈值过滤\n  - orders.get: def get_order(order_id: int) -> dict:\n    Description: 根据order_id获取订单信息\n  - orders.create: def create_order(order: dict) -> int:\n    Description: 创建一个新订单，返回新订单的order_id\n  - orders.update: def update_order(order_id: int, updates: dict) -> None:\n    Description: 更新指定订单的字段（如status）\n  - orders.list: def list_orders(user_id: Optional[int] = None, status: Optional[str] = None) -> list:\n    Description: 列出所有订单，可选按用户ID和/或状态过滤\n  - orders.exists: def order_exists(order_id: int) -> bool:\n    Description: 检查指定order_id的订单是否存在\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n  >>> A leaf that uses 'requested_capabilities' will NOT declare global_vars. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "GetUser",
+        "purpose": "Retrieve user information by user ID from the users data store.",
+        "inputs": [
+          {
+            "name": "user_id",
+            "type": "int",
+            "description": "ID of the user to retrieve",
+            "source": "parent input (extracted from user_id field)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "user",
+            "type": "Optional[dict]",
+            "description": "User data dictionary if found, else None",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Read user record from users data store",
+            "Return user data or None if not found"
+          ],
+          "out_of_scope": [
+            "Writing to users data store",
+            "Any product or order operations"
+          ]
+        },
+        "preconditions": [
+          "users data store is accessible"
+        ],
+        "postconditions": [
+          "No changes to data stores"
+        ],
+        "behavior": "Calls users.get(user_id) and returns the user dictionary if found, otherwise returns None.",
+        "signature": "def GetUser(user_id: int) -> Optional[dict]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic read operation on a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "read",
+            "description": "Read user data by user_id"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-001",
+            "description": "user_id must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-001",
+            "description": "Returns correct user data given existing user_id",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-002",
+            "description": "Returns None given non-existing user_id",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": [
+          "users.get"
+        ]
+      },
+      {
+        "name": "UpdateUser",
+        "purpose": "Update fields (e.g., balance) of an existing user in the users data store.",
+        "inputs": [
+          {
+            "name": "user_id",
+            "type": "int",
+            "description": "ID of the user to update",
+            "source": "parent input (extracted from user_id field)"
+          },
+          {
+            "name": "updates",
+            "type": "dict",
+            "description": "Dictionary of fields to update (e.g., {\"balance\": 100})",
+            "source": "parent input (extracted from updates field)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "success",
+            "type": "bool",
+            "description": "True if update succeeded, False otherwise",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate user existence (optional, can rely on interface)",
+            "Update specified fields in user record"
+          ],
+          "out_of_scope": [
+            "Creating new users",
+            "Product or order operations"
+          ]
+        },
+        "preconditions": [
+          "User with user_id exists in users data store",
+          "updates dictionary contains valid field names"
+        ],
+        "postconditions": [
+          "If successful, the user record is updated with the provided fields"
+        ],
+        "behavior": "Calls users.update(user_id, updates) to apply the updates. Returns True if the call succeeds (no exception), False otherwise.",
+        "signature": "def UpdateUser(user_id: int, updates: dict) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic write operation on a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "users",
+            "operation_type": "write",
+            "description": "Update user fields by user_id"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-002",
+            "description": "updates must not contain keys that are not user fields"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-003",
+            "description": "Updates user balance correctly and returns True",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-004",
+            "description": "Returns False if user does not exist",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": [
+          "users.update"
+        ]
+      },
+      {
+        "name": "GetProduct",
+        "purpose": "Retrieve product information by product ID from the products data store.",
+        "inputs": [
+          {
+            "name": "product_id",
+            "type": "int",
+            "description": "ID of the product to retrieve",
+            "source": "parent input (extracted from product_id field)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "product",
+            "type": "Optional[dict]",
+            "description": "Product data dictionary if found, else None",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Read product record from products data store",
+            "Return product data or None if not found"
+          ],
+          "out_of_scope": [
+            "Writing to products data store",
+            "User or order operations"
+          ]
+        },
+        "preconditions": [
+          "products data store is accessible"
+        ],
+        "postconditions": [
+          "No changes to data stores"
+        ],
+        "behavior": "Calls products.get(product_id) and returns the product dictionary if found, otherwise returns None.",
+        "signature": "def GetProduct(product_id: int) -> Optional[dict]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic read operation on a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "Read product data by product_id"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-003",
+            "description": "product_id must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-005",
+            "description": "Returns correct product data given existing product_id",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-006",
+            "description": "Returns None given non-existing product_id",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": [
+          "products.get"
+        ]
+      },
+      {
+        "name": "UpdateProduct",
+        "purpose": "Update fields (e.g., stock) of an existing product in the products data store.",
+        "inputs": [
+          {
+            "name": "product_id",
+            "type": "int",
+            "description": "ID of the product to update",
+            "source": "parent input (extracted from product_id field)"
+          },
+          {
+            "name": "updates",
+            "type": "dict",
+            "description": "Dictionary of fields to update (e.g., {\"stock\": 50})",
+            "source": "parent input (extracted from updates field)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "success",
+            "type": "bool",
+            "description": "True if update succeeded, False otherwise",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate product existence (optional)",
+            "Update specified fields in product record"
+          ],
+          "out_of_scope": [
+            "Creating new products",
+            "User or order operations"
+          ]
+        },
+        "preconditions": [
+          "Product with product_id exists in products data store",
+          "updates dictionary contains valid field names"
+        ],
+        "postconditions": [
+          "If successful, the product record is updated with the provided fields"
+        ],
+        "behavior": "Calls products.update(product_id, updates) to apply the updates. Returns True if the call succeeds, False otherwise.",
+        "signature": "def UpdateProduct(product_id: int, updates: dict) -> bool",
+        "stop_decompose": true,
+        "stop_reason": "Atomic write operation on a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "write",
+            "description": "Update product fields by product_id"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-004",
+            "description": "updates must not contain keys that are not product fields"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-007",
+            "description": "Updates product stock correctly and returns True",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-008",
+            "description": "Returns False if product does not exist",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": [
+          "products.update"
+        ]
+      },
+      {
+        "name": "ListProducts",
+        "purpose": "List all products, optionally filtered by low stock threshold.",
+        "inputs": [
+          {
+            "name": "low_stock_threshold",
+            "type": "Optional[int]",
+            "description": "If provided, only return products with stock less than this threshold",
+            "source": "parent input (extracted from low_stock_threshold field, may be null)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "product_list",
+            "type": "list",
+            "description": "List of product dictionaries",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Read all products or filter by low stock threshold",
+            "Return list of product dictionaries"
+          ],
+          "out_of_scope": [
+            "Writing to products",
+            "User or order operations"
+          ]
+        },
+        "preconditions": [
+          "products data store is accessible"
+        ],
+        "postconditions": [
+          "No changes to data stores"
+        ],
+        "behavior": "Calls products.list(low_stock_threshold) and returns the resulting list of product dictionaries.",
+        "signature": "def ListProducts(low_stock_threshold: Optional[int] = None) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic read operation on a single data source with optional filter",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "products",
+            "operation_type": "read",
+            "description": "List products, optionally filtered by low stock"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-005",
+            "description": "low_stock_threshold must be non-negative if provided"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-009",
+            "description": "Returns all products when threshold is None",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-010",
+            "description": "Returns only products with stock < threshold when threshold is set",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": [
+          "products.list"
+        ]
+      },
+      {
+        "name": "PlaceOrder",
+        "purpose": "Place an order: validate user and product, deduct balance and stock, create order record.",
+        "inputs": [
+          {
+            "name": "user_id",
+            "type": "int",
+            "description": "ID of the user placing the order",
+            "source": "parent input (extracted from user_id field)"
+          },
+          {
+            "name": "product_id",
+            "type": "int",
+            "description": "ID of the product to order",
+            "source": "parent input (extracted from product_id field)"
+          },
+          {
+            "name": "quantity",
+            "type": "int",
+            "description": "Quantity of product to order",
+            "source": "parent input (extracted from quantity field)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order_id",
+            "type": "int",
+            "description": "ID of the created order, or -1 on failure",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate user existence and sufficient balance",
+            "Validate product existence and sufficient stock",
+            "Calculate total cost",
+            "Deduct user balance",
+            "Reduce product stock",
+            "Create order record with status 'placed'"
+          ],
+          "out_of_scope": [
+            "Payment processing",
+            "Shipping or fulfillment logic",
+            "Cancelling orders"
+          ]
+        },
+        "preconditions": [
+          "User exists and has enough balance (balance >= product.price * quantity)",
+          "Product exists and has enough stock (stock >= quantity)"
+        ],
+        "postconditions": [
+          "New order created with status 'placed' and returned order_id",
+          "User balance decreased by total cost",
+          "Product stock decreased by quantity"
+        ],
+        "behavior": "1. Retrieve user data via GetUser (or direct call to users.get). 2. Retrieve product data via GetProduct. 3. Validate conditions. 4. Compute total cost = product.price * quantity. 5. Update user balance (balance - total cost). 6. Update product stock (stock - quantity). 7. Create order record with user_id, product_id, quantity, total_cost, status='placed'. 8. Return new order_id. If any step fails, rollback? The current data interfaces do not provide transactional support; for simplicity, assume sequential operations and no rollback. In case of failure before order creation, return -1.",
+        "signature": "def PlaceOrder(user_id: int, product_id: int, quantity: int) -> int",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations; to be decomposed further",
+        "node_type": "",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-006",
+            "description": "quantity must be a positive integer"
+          },
+          {
+            "constraint_id": "C-007",
+            "description": "User balance and product stock must be sufficient"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-011",
+            "description": "Successfully creates order and updates balance/stock with valid inputs",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-012",
+            "description": "Returns -1 if user does not exist or insufficient balance",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-013",
+            "description": "Returns -1 if product does not exist or insufficient stock",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read user balance, write updated balance after deduction"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read product stock, write updated stock after deduction"
+          },
+          {
+            "variable": "orders",
+            "op": "write",
+            "description": "Create new order record"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "CancelOrder",
+        "purpose": "Cancel an existing order, restore user balance and product stock, update order status.",
+        "inputs": [
+          {
+            "name": "order_id",
+            "type": "int",
+            "description": "ID of the order to cancel",
+            "source": "parent input (extracted from order_id field)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "success",
+            "type": "bool",
+            "description": "True if cancellation succeeded, False otherwise",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate order exists and is not already cancelled",
+            "Retrieve order details (user_id, product_id, quantity, total_cost)",
+            "Restore user balance (add back total_cost)",
+            "Restore product stock (add back quantity)",
+            "Update order status to 'cancelled'"
+          ],
+          "out_of_scope": [
+            "Refund processing",
+            "Handling partially cancelled orders",
+            "Creating new orders"
+          ]
+        },
+        "preconditions": [
+          "Order exists and its status is not 'cancelled'"
+        ],
+        "postconditions": [
+          "Order status set to 'cancelled'",
+          "User balance increased by total_cost",
+          "Product stock increased by quantity"
+        ],
+        "behavior": "1. Retrieve order details via GetOrder (or direct calls). 2. Validate order exists and is cancellable. 3. Retrieve user and product data. 4. Update user balance (+total_cost). 5. Update product stock (+quantity). 6. Update order status to 'cancelled'. 7. Return True. If any step fails, return False.",
+        "signature": "def CancelOrder(order_id: int) -> bool",
+        "stop_decompose": false,
+        "stop_reason": "Contains business logic and multiple data operations; to be decomposed further",
+        "node_type": "",
+        "data_operations": [],
+        "constraints": [
+          {
+            "constraint_id": "C-008",
+            "description": "order_id must refer to an existing non-cancelled order"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-014",
+            "description": "Successfully cancels order and restores balance/stock with valid inputs",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-015",
+            "description": "Returns False if order does not exist or already cancelled",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [
+          {
+            "variable": "users",
+            "op": "read_write",
+            "description": "Read user balance, write updated balance after refund"
+          },
+          {
+            "variable": "products",
+            "op": "read_write",
+            "description": "Read product stock, write updated stock after restoration"
+          },
+          {
+            "variable": "orders",
+            "op": "read_write",
+            "description": "Read order details, write updated status"
+          }
+        ],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": []
+      },
+      {
+        "name": "GetOrder",
+        "purpose": "Retrieve order information by order ID from the orders data store.",
+        "inputs": [
+          {
+            "name": "order_id",
+            "type": "int",
+            "description": "ID of the order to retrieve",
+            "source": "parent input (extracted from order_id field)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order",
+            "type": "Optional[dict]",
+            "description": "Order data dictionary if found, else None",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Read order record from orders data store",
+            "Return order data or None if not found"
+          ],
+          "out_of_scope": [
+            "Writing to orders",
+            "User or product operations"
+          ]
+        },
+        "preconditions": [
+          "orders data store is accessible"
+        ],
+        "postconditions": [
+          "No changes to data stores"
+        ],
+        "behavior": "Calls orders.get(order_id) and returns the order dictionary if found, otherwise returns None.",
+        "signature": "def GetOrder(order_id: int) -> Optional[dict]",
+        "stop_decompose": true,
+        "stop_reason": "Atomic read operation on a single data source",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "Read order data by order_id"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-009",
+            "description": "order_id must be a positive integer"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-016",
+            "description": "Returns correct order data given existing order_id",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-017",
+            "description": "Returns None given non-existing order_id",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": [
+          "orders.get"
+        ]
+      },
+      {
+        "name": "ListOrders",
+        "purpose": "List all orders, optionally filtered by user ID and/or status.",
+        "inputs": [
+          {
+            "name": "user_id",
+            "type": "Optional[int]",
+            "description": "If provided, only return orders for this user",
+            "source": "parent input (extracted from user_id field, may be null)"
+          },
+          {
+            "name": "status",
+            "type": "Optional[str]",
+            "description": "If provided, only return orders with this status (e.g., 'placed', 'cancelled')",
+            "source": "parent input (extracted from status field, may be null)"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "order_list",
+            "type": "list",
+            "description": "List of order dictionaries",
+            "consumer": "parent (returned as part of system output)"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Read orders data store with optional filters",
+            "Return list of order dictionaries"
+          ],
+          "out_of_scope": [
+            "Writing to orders",
+            "User or product operations"
+          ]
+        },
+        "preconditions": [
+          "orders data store is accessible"
+        ],
+        "postconditions": [
+          "No changes to data stores"
+        ],
+        "behavior": "Calls orders.list(user_id, status) and returns the resulting list of order dictionaries.",
+        "signature": "def ListOrders(user_id: Optional[int] = None, status: Optional[str] = None) -> list",
+        "stop_decompose": true,
+        "stop_reason": "Atomic read operation on a single data source with optional filters",
+        "node_type": "atomic_operation",
+        "data_operations": [
+          {
+            "source_name": "orders",
+            "operation_type": "read",
+            "description": "List orders, optionally filtered by user and status"
+          }
+        ],
+        "constraints": [
+          {
+            "constraint_id": "C-010",
+            "description": "If user_id provided, it must be a positive integer"
+          },
+          {
+            "constraint_id": "C-011",
+            "description": "If status provided, it must be a valid order status string"
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "ac_id": "AC-018",
+            "description": "Returns all orders when no filters are provided",
+            "verification_method": "automated_test"
+          },
+          {
+            "ac_id": "AC-019",
+            "description": "Returns only orders matching given user_id and/or status when filters are applied",
+            "verification_method": "automated_test"
+          }
+        ],
+        "global_vars": [],
+        "traceability": {
+          "parent_requirement_ids": [
+            "FR-001"
+          ],
+          "derived_from": "Order_Management_System"
+        },
+        "requested_capabilities": [
+          "orders.list"
+        ]
+      }
+    ],
+    "data_sources": [
+      {
+        "name": "users",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "用户信息存储，以user_id为键"
+      },
+      {
+        "name": "products",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "商品信息存储，以product_id为键"
+      },
+      {
+        "name": "orders",
+        "category": "memory",
+        "access": "read_write",
+        "data_type": "dict",
+        "description": "订单记录，以order_id为键"
+      }
+    ],
+    "decomposition_rationale": "The Order_Management_System is decomposed into nine functional children that cover the core operations: user retrieval and update, product retrieval and update, product listing, order placement and cancellation, and order retrieval and listing. The parent orchestrates by parsing the generic input to determine the action, extracts necessary parameters, calls the appropriate child function, and returns its output as the system output. PlaceOrder and CancelOrder are composite operations that will be further decomposed to handle multi-step business logic involving multiple data stores. The other children are atomic operations that directly access the data stores through their capabilities. This decomposition preserves the parent's external interface (Any input, Any output) and distributes global variable access among children as required.",
+    "interface_preservation": {
+      "parent_inputs_covered_by": {
+        "input": "All children (parent extracts relevant parameters from input and calls the appropriate child)"
+      },
+      "parent_outputs_produced_by": {
+        "output": "The child function called for the specific command (e.g., PlaceOrder produces order_id, GetUser produces user dict)"
+      }
+    },
+    "dataflow_edges": [
+      {
+        "from_node": "parent",
+        "from_output": "input (user_id field)",
+        "to_node": "GetUser",
+        "to_input": "user_id",
+        "note": "Parent extracts user_id from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input (user_id and updates fields)",
+        "to_node": "UpdateUser",
+        "to_input": "user_id, updates",
+        "note": "Parent extracts user_id and updates dict from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input (product_id field)",
+        "to_node": "GetProduct",
+        "to_input": "product_id",
+        "note": "Parent extracts product_id from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input (product_id and updates fields)",
+        "to_node": "UpdateProduct",
+        "to_input": "product_id, updates",
+        "note": "Parent extracts product_id and updates dict from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input (low_stock_threshold field)",
+        "to_node": "ListProducts",
+        "to_input": "low_stock_threshold",
+        "note": "Optional threshold from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input (user_id, product_id, quantity fields)",
+        "to_node": "PlaceOrder",
+        "to_input": "user_id, product_id, quantity",
+        "note": "Parent extracts order parameters from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input (order_id field)",
+        "to_node": "CancelOrder",
+        "to_input": "order_id",
+        "note": "Parent extracts order_id from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input (order_id field)",
+        "to_node": "GetOrder",
+        "to_input": "order_id",
+        "note": "Parent extracts order_id from input"
+      },
+      {
+        "from_node": "parent",
+        "from_output": "input (user_id, status fields)",
+        "to_node": "ListOrders",
+        "to_input": "user_id, status",
+        "note": "Optional filters from input"
+      },
+      {
+        "from_node": "GetUser",
+        "from_output": "user",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return user data as system output"
+      },
+      {
+        "from_node": "UpdateUser",
+        "from_output": "success",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return success boolean as system output"
+      },
+      {
+        "from_node": "GetProduct",
+        "from_output": "product",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return product data as system output"
+      },
+      {
+        "from_node": "UpdateProduct",
+        "from_output": "success",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return success boolean as system output"
+      },
+      {
+        "from_node": "ListProducts",
+        "from_output": "product_list",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return product list as system output"
+      },
+      {
+        "from_node": "PlaceOrder",
+        "from_output": "order_id",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return order_id as system output"
+      },
+      {
+        "from_node": "CancelOrder",
+        "from_output": "success",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return success boolean as system output"
+      },
+      {
+        "from_node": "GetOrder",
+        "from_output": "order",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return order data as system output"
+      },
+      {
+        "from_node": "ListOrders",
+        "from_output": "order_list",
+        "to_node": "parent",
+        "to_input": "output",
+        "note": "Return order list as system output"
+      }
+    ]
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}

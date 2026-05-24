@@ -1,0 +1,659 @@
+{
+  "experiment": {
+    "name": "gen_no_purpose",
+    "purpose_routing": false,
+    "separated_command": true,
+    "format_examples": true,
+    "coordinator_allowed": true,
+    "data_interfaces": true,
+    "generic_input": true
+  },
+  "system_prompt": "You are a software system decomposition agent. Your task is to decompose a function block into smaller child function blocks.\n\nCRITICAL RULES - ENFORCED:\n1. EVERY CHILD MUST BE A FUNCTION, NOT A CLASS. Never generate class definitions for child blocks.\n2. Each child must have explicit: name, purpose, inputs, outputs, and boundary\n3. Preserve the parent's external interface - children's composition must match parent's inputs/outputs\n4. TREE STRUCTURE (not graph): The decomposition forms a tree, not a graph. Children MUST NOT call each other (no cross-calls between siblings). The parent MUST explicitly and directly invoke all its children. A coordinator child node is ALLOWED, as long as it only coordinates work within its own subtree and never calls sibling nodes.\n5. Do NOT add extra external inputs or outputs beyond what the parent has\n6. Children should be at the same abstraction level and minimally overlapping\n\nYOU MUST DECOMPOSE. You are NOT allowed to return 0 children or refuse to decompose. Even if the node seems simple, you MUST break it into at least 2 child functions.\n\nOUTPUT FORMAT - You MUST return valid JSON with this exact structure:\n{\n  \"children\": [\n    {\n      \"name\": \"ChildName\",\n      \"purpose\": \"Clear description of what this child function does\",\n      \"inputs\": [{\"name\": \"param\", \"type\": \"str\", \"description\": \"desc\", \"source\": \"where data comes from\"}],\n      \"outputs\": [{\"name\": \"result\", \"type\": \"int\", \"description\": \"desc\", \"consumer\": \"who uses this output\"}],\n      \"boundary\": {\"in_scope\": [\"...\"], \"out_of_scope\": [\"...\"]},\n      \"behavior\": \"Detailed description of expected behavior - how this function transforms inputs to outputs\",\n      \"signature\": \"def ChildName(param1: type1, param2: type2) -> return_type\",\n      \"stop_decompose\": false,\n      \"stop_reason\": \"\",\n      \"global_vars\": [\n        {\"variable\": \"data_store_name\", \"op\": \"read|write|read_write\", \"description\": \"what operation is needed\"}\n      ]\n    }\n  ],\n  \"decomposition_rationale\": \"Explain HOW these children work together to implement the parent.\"\n}",
+  "user_prompt": "Decompose the following function block:\n\nNode Name: Student Grade System\nNode Purpose: Student Grade System\n\nSubPRD Context:\n  Task Description:\n    Inputs: input: Any\n\n    Functional Requirements:\n    [FR-001] Record Grade: Teacher records a grade for a student in a course. Validates student existence, course existence, score range (0-100), and prevents duplicate records. Creates a new grade record.\n    [FR-002] Update Grade: Teacher updates an existing grade record. Validates grade record existence and updates score and recorded_at timestamp.\n    [FR-003] Delete Grade: Teacher deletes a grade record. Validates grade record existence and removes it.\n    [FR-004] Get Student Grades: Retrieve all grades for a student. Calculate average score, total credits, and GPA. Display each course grade with letter grade.\n    [FR-005] Get Course Grades: Retrieve all grades for a course. Calculate course average, max, min, and distribution of letter grades.\n    [FR-006] List Grades by Class: List grades for a specific class, optionally filtered by course. Calculate class average and rank students by score.\n    [FR-007] Get Grade Report: Generate a textual grade report for a student containing all course grades, average, GPA, and credit summary.\n    [FR-008] Get Course Statistics: Provide statistical data for a course: average, standard deviation, pass rate, and grade percentage distribution.\n    [FR-009] Add Student: Add a new student to the system. Validate that student_id is unique.\n    [FR-010] Add Course: Add a new course to the system. Validate that course_id is unique.\n\n  Acceptance Criteria:\n    - AC-001: Record grade: duplicate grade for same student and course should be rejected with appropriate message.\n    - AC-002: Record grade: score out of range (0-100) should be rejected.\n    - AC-003: Update grade: non-existent grade_id should be rejected.\n    - AC-004: Get student grades: GPA calculation should use weighted formula (grade point * credit) / total credits.\n    - AC-005: Get student grades: letter grade conversion should be correct (A: 90-100, B:80-89, C:70-79, D:60-69, F:<60).\n    - AC-006: Get course statistics: standard deviation and pass rate calculations must be accurate.\n    - AC-007: List grades by class: ranking should be in descending order of score.\n    - AC-008: Add student: student_id must be unique.\n    - AC-009: Add course: course_id must be unique.\n    - AC-010: Grade report should contain student info, each course grade with letter, average, GPA, and total credits.\n\n    INPUT FORMAT:\n      Format: json\n      Description: Input is passed via the manage_grade(command, grade_data) function. command is a string, grade_data is a JSON object containing relevant fields.\n      Schema:\n        command: string (enum: record_grade, update_grade, delete_grade, get_student_grades, get_course_grades, list_class_grades, get_grade_report, get_course_stats, add_student, add_course)\n        grade_data: {...}\n          student_id: integer (optional, depending on command)\n          course_id: integer (optional)\n          score: integer (0-100, optional)\n          grade_id: integer (optional)\n          class: string (optional)\n          name: string (optional, for add_student/add_course)\n          credit: integer (optional, for add_course)\n          teacher: string (optional, for add_course)\n          enrollment_year: integer (optional, for add_student)\n      Examples:\n        {\"command\": \"record_grade\", \"grade_data\": {\"student_id\": 1, \"course_id\": 2, \"score\": 85}}\n        {\"command\": \"get_student_grades\", \"grade_data\": {\"student_id\": 1}}\n\n    OUTPUT FORMAT:\n      Format: json\n      Description: Output is a JSON object with success, message, and data fields. Data contains command-specific results.\n      Examples:\n        {\"success\": true, \"message\": \"成绩记录成功\", \"data\": {\"grade_id\": 1, \"letter_grade\": \"A\"}}\n        {\"success\": true, \"data\": {\"grades\": [{\"course\": \"数学\", \"score\": 88, \"letter\": \"B\", \"credit\": 4}], \"average\": 88, \"total_credits\": 4, \"gpa\": 3.0}}\n\nInputs:\n  - input: Any - System input\nOutputs:\n  - output: Any - System output\n\nGlobal Variables (MUST be DISTRIBUTED to children):\n  - read_write on students: Stores student information with fields: student_id, name, class, enrollment_year. Pre-populated with 10 test students.\n  - read_write on courses: Stores course information with fields: course_id, name, credit, teacher. Pre-populated with 4 test courses.\n  - read_write on grades: Stores grade records with fields: grade_id, student_id, course_id, score, recorded_at. Initially empty.\n\n  >>> Each child must declare a SUBSET of these global_vars in the 'global_vars' field. <<<\n  >>> Children perform actual data operations; parent orchestrates by calling children. <<<\n\nAvailable Data Interfaces (children should declare which they need in 'requested_capabilities'):\n  - students.get: def get_student(student_id: int) -> dict | None:\n    Description: Retrieve a student by student_id\n  - students.list: def list_students(filter_class: str | None = None) -> list[dict]:\n    Description: List all students, optionally filtered by class\n  - students.create: def create_student(student: dict) -> dict:\n    Description: Create a new student record\n  - students.exists: def student_exists(student_id: int) -> bool:\n    Description: Check if a student with given student_id exists\n  - courses.get: def get_course(course_id: int) -> dict | None:\n    Description: Retrieve a course by course_id\n  - courses.list: def list_courses(filter_teacher: str | None = None) -> list[dict]:\n    Description: List all courses, optionally filtered by teacher\n  - courses.create: def create_course(course: dict) -> dict:\n    Description: Create a new course record\n  - courses.exists: def course_exists(course_id: int) -> bool:\n    Description: Check if a course with given course_id exists\n  - grades.get: def get_grade(grade_id: int) -> dict | None:\n    Description: Retrieve a grade by grade_id\n  - grades.list: def list_grades(student_id: int | None = None, course_id: int | None = None) -> list[dict]:\n    Description: List grades, optionally filtered by student_id and/or course_id\n  - grades.create: def create_grade(grade: dict) -> dict:\n    Description: Create a new grade record\n  - grades.update: def update_grade(grade_id: int, updates: dict) -> dict:\n    Description: Update an existing grade's score and/or recorded_at\n  - grades.delete: def delete_grade(grade_id: int) -> None:\n    Description: Delete a grade by grade_id\n  - grades.exists: def grade_exists(grade_id: int) -> bool:\n    Description: Check if a grade with given grade_id exists\n\n  >>> Each child that needs data access MUST list the required interfaces in 'requested_capabilities'. <<<\n\nMaximum children allowed: 10\nMaximum depth: 3\nReturn ONLY the JSON response.",
+  "response": {
+    "children": [
+      {
+        "name": "RecordGrade",
+        "purpose": "Record a new grade for a student in a course after validation.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing student_id, course_id, score",
+            "source": "parent input"
+          },
+          {
+            "name": "students_store",
+            "type": "Any",
+            "description": "Global students data store",
+            "source": "global"
+          },
+          {
+            "name": "courses_store",
+            "type": "Any",
+            "description": "Global courses data store",
+            "source": "global"
+          },
+          {
+            "name": "grades_store",
+            "type": "Any",
+            "description": "Global grades data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with success, message, and data",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate student existence",
+            "Validate course existence",
+            "Validate score 0-100",
+            "Check for duplicate grade",
+            "Create grade record",
+            "Return grade_id and letter_grade"
+          ],
+          "out_of_scope": [
+            "Update",
+            "Delete",
+            "Other commands"
+          ]
+        },
+        "behavior": "Takes grade_data, validates each condition, creates grade record, and returns success with grade_id and letter grade.",
+        "signature": "def RecordGrade(grade_data: dict, students_store, courses_store, grades_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Function is simple enough.",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Check student existence"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Check course existence"
+          },
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Create grade record"
+          }
+        ],
+        "requested_capabilities": [
+          "students.get",
+          "courses.get",
+          "grades.list",
+          "grades.create"
+        ]
+      },
+      {
+        "name": "UpdateGrade",
+        "purpose": "Update an existing grade's score and timestamp.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing grade_id and optionally score",
+            "source": "parent input"
+          },
+          {
+            "name": "grades_store",
+            "type": "Any",
+            "description": "Global grades data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with success, message, and data",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate grade existence",
+            "Update score and recorded_at",
+            "Return success"
+          ],
+          "out_of_scope": [
+            "Create",
+            "Delete",
+            "Other commands"
+          ]
+        },
+        "behavior": "Checks grade exists, updates score if provided, sets recorded_at to now, returns success.",
+        "signature": "def UpdateGrade(grade_data: dict, grades_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Simple update operation.",
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Get and update grade"
+          }
+        ],
+        "requested_capabilities": [
+          "grades.get",
+          "grades.update"
+        ]
+      },
+      {
+        "name": "DeleteGrade",
+        "purpose": "Delete a grade record by grade_id.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing grade_id",
+            "source": "parent input"
+          },
+          {
+            "name": "grades_store",
+            "type": "Any",
+            "description": "Global grades data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with success, message, and data",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate grade existence",
+            "Delete grade",
+            "Return success"
+          ],
+          "out_of_scope": [
+            "Create",
+            "Update",
+            "Other commands"
+          ]
+        },
+        "behavior": "Checks grade exists, deletes it, returns success.",
+        "signature": "def DeleteGrade(grade_data: dict, grades_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Simple delete.",
+        "global_vars": [
+          {
+            "variable": "grades",
+            "op": "read_write",
+            "description": "Delete grade"
+          }
+        ],
+        "requested_capabilities": [
+          "grades.exists",
+          "grades.delete"
+        ]
+      },
+      {
+        "name": "GetStudentGrades",
+        "purpose": "Retrieve all grades for a student with average, GPA, letter grades.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing student_id",
+            "source": "parent input"
+          },
+          {
+            "name": "students_store",
+            "type": "Any",
+            "description": "Global students data store",
+            "source": "global"
+          },
+          {
+            "name": "courses_store",
+            "type": "Any",
+            "description": "Global courses data store",
+            "source": "global"
+          },
+          {
+            "name": "grades_store",
+            "type": "Any",
+            "description": "Global grades data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with grades list, average, total_credits, gpa",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Get all grades for student",
+            "Fetch course info",
+            "Calculate average, total credits, GPA",
+            "Assign letter grades"
+          ],
+          "out_of_scope": [
+            "Course statistics",
+            "Class listing"
+          ]
+        },
+        "behavior": "Lists grades for student, enriches with course names and credits, computes average (sum of scores / count) or weighted? The requirements say GPA uses weighted formula: (grade point * credit) / total credits. So we need to convert score to grade point (A=4.0, B=3.0, C=2.0, D=1.0, F=0). Compute total credits and weighted GPA. Return list with letter grades.",
+        "signature": "def GetStudentGrades(grade_data: dict, students_store, courses_store, grades_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Consolidated logic for student grades.",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Validate student existence"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Get course details"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "List grades for student"
+          }
+        ],
+        "requested_capabilities": [
+          "students.exists",
+          "courses.get",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "GetCourseGrades",
+        "purpose": "Retrieve all grades for a course with statistics like average, max, min, letter grade distribution.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing course_id",
+            "source": "parent input"
+          },
+          {
+            "name": "courses_store",
+            "type": "Any",
+            "description": "Global courses data store",
+            "source": "global"
+          },
+          {
+            "name": "grades_store",
+            "type": "Any",
+            "description": "Global grades data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with grades list, average, max, min, letter distribution",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Get all grades for course",
+            "Calculate average, max, min",
+            "Compute letter grade distribution"
+          ],
+          "out_of_scope": [
+            "Student-specific",
+            "Class-specific"
+          ]
+        },
+        "behavior": "Lists grades for course, computes statistics, returns.",
+        "signature": "def GetCourseGrades(grade_data: dict, courses_store, grades_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Straightforward statistics.",
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Validate course existence"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "List grades for course"
+          }
+        ],
+        "requested_capabilities": [
+          "courses.exists",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "ListClassGrades",
+        "purpose": "List grades for a specific class, optionally filtered by course, with class average and ranking.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing class and optionally course_id",
+            "source": "parent input"
+          },
+          {
+            "name": "students_store",
+            "type": "Any",
+            "description": "Global students data store",
+            "source": "global"
+          },
+          {
+            "name": "courses_store",
+            "type": "Any",
+            "description": "Global courses data store",
+            "source": "global"
+          },
+          {
+            "name": "grades_store",
+            "type": "Any",
+            "description": "Global grades data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with list of student grades, class average, ranking",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Get students in class",
+            "Get grades for those students (optionally filtered by course)",
+            "Compute class average",
+            "Rank students by score descending"
+          ],
+          "out_of_scope": [
+            "Other statistics"
+          ]
+        },
+        "behavior": "Finds students in given class, retrieves their grades, optionally filters by course, computes average of all scores or per course? The requirement says 'class average and rank students by score'. Assumes we need average of scores for the class in the given course or overall? Likely for a specific course if provided. Compute average, sort students by score descending.",
+        "signature": "def ListClassGrades(grade_data: dict, students_store, courses_store, grades_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Complex but can be done in one function.",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "List students by class"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Get course info if needed"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "List grades for students"
+          }
+        ],
+        "requested_capabilities": [
+          "students.list",
+          "courses.get",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "GetGradeReport",
+        "purpose": "Generate a textual grade report for a student with all grades, average, GPA, credit summary.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing student_id",
+            "source": "parent input"
+          },
+          {
+            "name": "students_store",
+            "type": "Any",
+            "description": "Global students data store",
+            "source": "global"
+          },
+          {
+            "name": "courses_store",
+            "type": "Any",
+            "description": "Global courses data store",
+            "source": "global"
+          },
+          {
+            "name": "grades_store",
+            "type": "Any",
+            "description": "Global grades data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with report text",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Get student info",
+            "Get all grades with courses",
+            "Calculate average, GPA, total credits",
+            "Format as text"
+          ],
+          "out_of_scope": [
+            "Other reports"
+          ]
+        },
+        "behavior": "Similar to GetStudentGrades but returns a formatted text string (or JSON with text). Compute as per student grades. Output should be a JSON with a 'data' field containing the report string.",
+        "signature": "def GetGradeReport(grade_data: dict, students_store, courses_store, grades_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Combines student grades and report formatting.",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read",
+            "description": "Get student info"
+          },
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Get course details"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "List grades for student"
+          }
+        ],
+        "requested_capabilities": [
+          "students.get",
+          "courses.get",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "GetCourseStats",
+        "purpose": "Provide statistical data for a course: average, standard deviation, pass rate, grade percentage distribution.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing course_id",
+            "source": "parent input"
+          },
+          {
+            "name": "courses_store",
+            "type": "Any",
+            "description": "Global courses data store",
+            "source": "global"
+          },
+          {
+            "name": "grades_store",
+            "type": "Any",
+            "description": "Global grades data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with stats",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Get grades for course",
+            "Compute average, standard deviation, pass rate (score>=60)",
+            "Compute grade percentages (A,B,C,D,F)"
+          ],
+          "out_of_scope": [
+            "Student-specific"
+          ]
+        },
+        "behavior": "List grades for course, compute statistics, return.",
+        "signature": "def GetCourseStats(grade_data: dict, courses_store, grades_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Statistics computation.",
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read",
+            "description": "Validate course existence"
+          },
+          {
+            "variable": "grades",
+            "op": "read",
+            "description": "List grades for course"
+          }
+        ],
+        "requested_capabilities": [
+          "courses.exists",
+          "grades.list"
+        ]
+      },
+      {
+        "name": "AddStudent",
+        "purpose": "Add a new student with unique student_id.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing student_id, name, class, enrollment_year",
+            "source": "parent input"
+          },
+          {
+            "name": "students_store",
+            "type": "Any",
+            "description": "Global students data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with success/message",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate unique student_id",
+            "Create student record"
+          ],
+          "out_of_scope": [
+            "Other entities"
+          ]
+        },
+        "behavior": "Check if student_id exists; if not, create student.",
+        "signature": "def AddStudent(grade_data: dict, students_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Simple creation.",
+        "global_vars": [
+          {
+            "variable": "students",
+            "op": "read_write",
+            "description": "Check and create student"
+          }
+        ],
+        "requested_capabilities": [
+          "students.exists",
+          "students.create"
+        ]
+      },
+      {
+        "name": "AddCourse",
+        "purpose": "Add a new course with unique course_id.",
+        "inputs": [
+          {
+            "name": "grade_data",
+            "type": "dict",
+            "description": "JSON object containing course_id, name, credit, teacher",
+            "source": "parent input"
+          },
+          {
+            "name": "courses_store",
+            "type": "Any",
+            "description": "Global courses data store",
+            "source": "global"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "result",
+            "type": "dict",
+            "description": "JSON with success/message",
+            "consumer": "parent"
+          }
+        ],
+        "boundary": {
+          "in_scope": [
+            "Validate unique course_id",
+            "Create course record"
+          ],
+          "out_of_scope": [
+            "Other entities"
+          ]
+        },
+        "behavior": "Check if course_id exists; if not, create course.",
+        "signature": "def AddCourse(grade_data: dict, courses_store) -> dict",
+        "stop_decompose": true,
+        "stop_reason": "Simple creation.",
+        "global_vars": [
+          {
+            "variable": "courses",
+            "op": "read_write",
+            "description": "Check and create course"
+          }
+        ],
+        "requested_capabilities": [
+          "courses.exists",
+          "courses.create"
+        ]
+      }
+    ],
+    "decomposition_rationale": "The parent receives a command and grade_data, then dispatches to the appropriate child function. Each child handles a single command, with all validation and data operations contained within. No cross-calls between children; parent orchestrates. Global stores are distributed only to children that need them. Data interfaces are specified per child."
+  },
+  "routing": {
+    "has_routing": false,
+    "sibling_calls": []
+  }
+}
