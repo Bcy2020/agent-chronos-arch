@@ -1,0 +1,253 @@
+{
+  "children": [
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build record and start the build process",
+      "behavior": "Validate that no build is running for the same repo+branch, create a new build record with status 'running', run compile, test, and package steps sequentially, update status to 'completed' or 'failed'",
+      "inputs": [
+        "build_request: dict",
+        "builds_db: Database"
+      ],
+      "outputs": [
+        "build_result: dict"
+      ],
+      "signature": "def TriggerBuild(build_request: dict, builds_db: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read_write",
+          "description": "Read existing builds to check for duplicates, write new build records and update status/logs"
+        },
+        {
+          "variable": "artifacts",
+          "op": "write",
+          "description": "Write artifact metadata when build completes successfully"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read_write",
+          "description": "Read to check for running builds, write to create/update build records"
+        },
+        {
+          "source_name": "artifacts",
+          "operation_type": "write",
+          "description": "Write artifact metadata after successful build"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read",
+        "builds.write",
+        "artifacts.write",
+        "process.execute"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must not trigger a build if a build with same repo+branch is already running"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Build steps (compile, test, package) must execute sequentially"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "New build record created with status 'running'"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Build status updated to 'completed' or 'failed' after steps"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Artifacts stored if build succeeded"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001",
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Return the current status and logs of a specific build",
+      "behavior": "Look up the build by build_id in the builds database, return its status and logs",
+      "inputs": [
+        "build_request: dict",
+        "builds_db: Database"
+      ],
+      "outputs": [
+        "build_result: dict"
+      ],
+      "signature": "def CheckBuildStatus(build_request: dict, builds_db: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read",
+          "description": "Read build record by build_id"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Read build record to retrieve status and logs"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "Must return error if build_id does not exist"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-004",
+          "description": "Returns current status and logs for existing build_id"
+        },
+        {
+          "ac_id": "AC-005",
+          "description": "Returns error for non-existent build_id"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ListBuildHistory",
+      "purpose": "Return all builds filtered by optional repo, branch, or status",
+      "behavior": "Query the builds database with optional filters (repo, branch, status) and return matching build records",
+      "inputs": [
+        "build_request: dict",
+        "builds_db: Database"
+      ],
+      "outputs": [
+        "build_result: dict"
+      ],
+      "signature": "def ListBuildHistory(build_request: dict, builds_db: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read",
+          "description": "Read all builds and apply filters"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Read builds collection and filter by provided criteria"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-004",
+          "description": "Filters (repo, branch, status) are optional; if none provided, return all builds"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-006",
+          "description": "Returns list of builds matching provided filters"
+        },
+        {
+          "ac_id": "AC-007",
+          "description": "Returns all builds if no filters provided"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Stop a running build and update its status to cancelled",
+      "behavior": "Check if build is running, if so stop it and update status to 'cancelled'; if already completed, no-op",
+      "inputs": [
+        "build_request: dict",
+        "builds_db: Database"
+      ],
+      "outputs": [
+        "build_result: dict"
+      ],
+      "signature": "def CancelBuild(build_request: dict, builds_db: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read_write",
+          "description": "Read build status, write updated status to 'cancelled'"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read_write",
+          "description": "Read build record to check status, write updated status if running"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read",
+        "builds.write",
+        "process.terminate"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-005",
+          "description": "Only running builds can be cancelled; completed/failed builds are no-op"
+        },
+        {
+          "constraint_id": "C-006",
+          "description": "Must terminate underlying build process if running"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-008",
+          "description": "Running build status updated to 'cancelled'"
+        },
+        {
+          "ac_id": "AC-009",
+          "description": "Completed/failed build remains unchanged"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Error returned for non-existent build_id"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-005"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children inherit parent's global_vars but only use subsets as specified. TriggerBuild and CancelBuild require write access to builds; CheckBuildStatus and ListBuildHistory require only read access. Artifacts write is only needed by TriggerBuild on successful completion. Process execution/termination capabilities are requested only by TriggerBuild and CancelBuild respectively."
+}

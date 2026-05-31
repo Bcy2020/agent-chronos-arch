@@ -1,0 +1,276 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read raw data from source, parse records, store in raw_data, and log ingestion",
+      "behavior": "Based on source type (csv/json/api), read and parse records, store in raw_data, log step with counts",
+      "inputs": [
+        "pipeline_request"
+      ],
+      "outputs": [
+        "ingest_result"
+      ],
+      "signature": "def IngestData(pipeline_request: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "raw_data",
+          "op": "write",
+          "description": "Write parsed records to raw_data store"
+        },
+        {
+          "variable": "pipeline_log",
+          "op": "write",
+          "description": "Log ingestion step with timestamp, records_in, records_out, errors"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "raw_data",
+          "operation_type": "write",
+          "description": "Store parsed records"
+        },
+        {
+          "source_name": "pipeline_log",
+          "operation_type": "write",
+          "description": "Append ingestion log entry"
+        }
+      ],
+      "requested_capabilities": [
+        "database.write",
+        "database.append"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must parse all records without exception; malformed records logged as errors"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "raw_data contains all parsed records after execution"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "pipeline_log contains an ingest entry with correct counts"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformation rules to raw_data, store in processed_data, skip malformed records",
+      "behavior": "Read raw_data, apply each rule to each record, skip and log malformed records, store result in processed_data",
+      "inputs": [
+        "pipeline_request",
+        "raw_data"
+      ],
+      "outputs": [
+        "transform_result"
+      ],
+      "signature": "def TransformData(pipeline_request: dict, raw_data: list) -> dict",
+      "global_vars": [
+        {
+          "variable": "raw_data",
+          "op": "read",
+          "description": "Read raw records from raw_data store"
+        },
+        {
+          "variable": "processed_data",
+          "op": "write",
+          "description": "Write transformed records to processed_data store"
+        },
+        {
+          "variable": "pipeline_log",
+          "op": "write",
+          "description": "Log transform step with timestamp, records_in, records_out, errors"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "raw_data",
+          "operation_type": "read",
+          "description": "Read raw records for transformation"
+        },
+        {
+          "source_name": "processed_data",
+          "operation_type": "write",
+          "description": "Store transformed records"
+        },
+        {
+          "source_name": "pipeline_log",
+          "operation_type": "write",
+          "description": "Append transform log entry"
+        }
+      ],
+      "requested_capabilities": [
+        "database.read",
+        "database.write",
+        "database.append"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-002",
+          "description": "Malformed records must be skipped, not cause failure"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-003",
+          "description": "processed_data contains all valid transformed records"
+        },
+        {
+          "ac_id": "AC-004",
+          "description": "pipeline_log contains a transform entry with correct counts"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateData",
+      "purpose": "Check processed_data against quality rules, mark invalid records, produce quality_score",
+      "behavior": "Read processed_data, apply quality rules to each record, compute quality_score, mark invalid records, store result",
+      "inputs": [
+        "pipeline_request",
+        "processed_data"
+      ],
+      "outputs": [
+        "validate_result"
+      ],
+      "signature": "def ValidateData(pipeline_request: dict, processed_data: list) -> dict",
+      "global_vars": [
+        {
+          "variable": "processed_data",
+          "op": "read_write",
+          "description": "Read processed_data, update records with quality_score and validity flags"
+        },
+        {
+          "variable": "pipeline_log",
+          "op": "write",
+          "description": "Log validation step with timestamp, records_in, records_out, errors"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "processed_data",
+          "operation_type": "read_write",
+          "description": "Read and update records with quality metadata"
+        },
+        {
+          "source_name": "pipeline_log",
+          "operation_type": "write",
+          "description": "Append validation log entry"
+        }
+      ],
+      "requested_capabilities": [
+        "database.read",
+        "database.write",
+        "database.append"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "All records must be checked; quality_score computed for each"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-005",
+          "description": "Each record in processed_data has quality_score and validity flag"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "pipeline_log contains a validate entry with correct counts"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ExportData",
+      "purpose": "Format validated records as output, include only records that passed validation, log export",
+      "behavior": "Read processed_data, filter to only validated records, format as csv or json, log export",
+      "inputs": [
+        "pipeline_request",
+        "processed_data"
+      ],
+      "outputs": [
+        "export_result"
+      ],
+      "signature": "def ExportData(pipeline_request: dict, processed_data: list) -> dict",
+      "global_vars": [
+        {
+          "variable": "processed_data",
+          "op": "read",
+          "description": "Read processed_data to filter validated records"
+        },
+        {
+          "variable": "pipeline_log",
+          "op": "write",
+          "description": "Log export step with timestamp, records_in, records_out, errors"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "processed_data",
+          "operation_type": "read",
+          "description": "Read records for export filtering"
+        },
+        {
+          "source_name": "pipeline_log",
+          "operation_type": "write",
+          "description": "Append export log entry"
+        }
+      ],
+      "requested_capabilities": [
+        "database.read",
+        "database.append"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-004",
+          "description": "Only records with quality_score above threshold are included in output"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-007",
+          "description": "Output contains only validated records"
+        },
+        {
+          "ac_id": "AC-008",
+          "description": "pipeline_log contains an export entry with correct counts"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "Parent global state conservation verified: raw_data (read_write) covered by IngestData(write) + TransformData(read); processed_data (read_write) covered by TransformData(write) + ValidateData(read_write) + ExportData(read); pipeline_log (read_write) covered by all children (write). No parent operation dropped."
+}

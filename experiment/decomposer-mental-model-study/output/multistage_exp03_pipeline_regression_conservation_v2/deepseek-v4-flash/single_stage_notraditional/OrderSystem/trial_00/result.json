@@ -1,0 +1,60 @@
+{
+  "label": "single_stage_notraditional/OrderSystem/trial_00",
+  "condition": "single_stage_notraditional",
+  "case": "OrderSystem",
+  "trial": 0,
+  "n_children": 5,
+  "child_names": [
+    "ParseCommand",
+    "ValidateOrderData",
+    "PlaceOrder",
+    "CancelOrder",
+    "TrackOrder"
+  ],
+  "has_routing": true,
+  "sibling_calls": [
+    {
+      "from": "ParseCommand",
+      "to": "ValidateOrderData",
+      "method": "structural_router"
+    },
+    {
+      "from": "ParseCommand",
+      "to": "PlaceOrder",
+      "method": "structural_router"
+    },
+    {
+      "from": "ParseCommand",
+      "to": "CancelOrder",
+      "method": "structural_router"
+    },
+    {
+      "from": "ParseCommand",
+      "to": "TrackOrder",
+      "method": "structural_router"
+    }
+  ],
+  "child_count_violation": false,
+  "missing_required_fields": [],
+  "dangling_inputs": [],
+  "global_var_subset_violations": [],
+  "global_var_union_gap": [],
+  "cannot_compose": true,
+  "composition_feedback": {
+    "reason": "missing_child_input_source",
+    "offending_child": "ValidateOrderData",
+    "violations": [
+      {
+        "from_node": "Parent",
+        "to_node": "ValidateOrderData",
+        "rule": "data_flow",
+        "details": "ValidateOrderData requires 'command' as input, but the parent only receives 'command' and 'order_data' as top-level inputs. The parent can pass 'command' directly, but the child's signature expects it as a separate parameter, which is fine. However, the parent must call ParseCommand first to get the validated command, then pass that to ValidateOrderData. This is possible, but the issue is that ValidateOrderData also needs 'order_data', which the parent has. So this is actually okay. The real problem is that after ValidateOrderData, the parent needs to route to PlaceOrder, CancelOrder, or TrackOrder based on the command, but the command is lost after ParseCommand returns it. The parent must store the command to decide which child to call next. This is a design issue but not a tree structure violation. However, the parent's output is 'order_result: dict', and each of the three handler children returns a dict, so that matches. The main issue is that the parent has no way to know which handler to call after ValidateOrderData without storing the command. This is a missing input source for the routing decision. The parent should have a way to pass the command to the routing logic, but since children are independent and cannot call each other, the parent must store the command itself. This is possible if the parent keeps the command in a variable. So actually it is composable. Wait, let me re-check: The parent receives 'command' and 'order_data'. It can call ParseCommand(command) to get validated_command. Then call ValidateOrderData(validated_command, order_data) to get validation result. Then based on validated_command, call the appropriate handler with order_data. This works. So why did I say cannot_compose? Because I thought there was a missing input source, but the parent has all inputs. The only potential issue is that ValidateOrderData returns a dict with 'valid' field, but the parent must check that before proceeding. That's fine. So actually it is composable. Let me correct: The parent can compose these children. There is no tree structure violation. The children are independent. The parent can call them in sequence. So the answer should be ok."
+      }
+    ],
+    "suggested_fix": "No fix needed. The parent can implement the composition by calling ParseCommand, then ValidateOrderData, then based on the command, call the appropriate handler. All inputs are available from the parent's inputs.",
+    "requires_redecomposition": false
+  },
+  "parse_error": false,
+  "elapsed": 22.7,
+  "llm_calls": 2
+}

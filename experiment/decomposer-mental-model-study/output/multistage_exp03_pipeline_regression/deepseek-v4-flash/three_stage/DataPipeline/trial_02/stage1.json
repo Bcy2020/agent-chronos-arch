@@ -1,0 +1,253 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read raw data from source and store in raw_data",
+      "behavior": "Read from source based on type (csv/json/api), parse records, store in raw_data, log ingestion with counts",
+      "boundary": {
+        "in_scope": [
+          "reading source",
+          "parsing records",
+          "storing to raw_data",
+          "logging ingestion"
+        ],
+        "out_of_scope": [
+          "transformation",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "pipeline_request",
+          "description": "Contains action and source details",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "ingest_result",
+          "description": "Success status, records count, errors",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "pipeline_request.action == 'ingest'",
+        "source path/url is accessible"
+      ],
+      "postconditions": [
+        "raw_data populated with parsed records",
+        "ingestion logged"
+      ],
+      "guarantees": [
+        "All records from source are stored",
+        "Errors are captured without crashing"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformation rules to raw_data and store in processed_data",
+      "behavior": "Read raw_data, apply each rule from transform_config, skip malformed records with logging, store results in processed_data",
+      "boundary": {
+        "in_scope": [
+          "applying transformation rules",
+          "handling malformed records",
+          "storing to processed_data",
+          "logging transform"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "pipeline_request",
+          "description": "Contains transform_config",
+          "source": "parent input"
+        },
+        {
+          "name": "raw_data",
+          "description": "Raw records to transform",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "transform_result",
+          "description": "Success status, records processed, errors",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "pipeline_request.action == 'transform'",
+        "raw_data is not empty"
+      ],
+      "postconditions": [
+        "processed_data populated with transformed records",
+        "transform logged"
+      ],
+      "guarantees": [
+        "Malformed records are skipped and logged",
+        "All valid rules applied"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateData",
+      "purpose": "Check processed_data against quality rules and mark invalid records",
+      "behavior": "Read processed_data, compute quality_score for each record, mark invalid records, store updated processed_data, log validation",
+      "boundary": {
+        "in_scope": [
+          "computing quality_score",
+          "marking invalid records",
+          "logging validation"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "processed_data",
+          "description": "Transformed records to validate",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "validate_result",
+          "description": "Success status, records processed, errors",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "pipeline_request.action == 'validate'",
+        "processed_data is not empty"
+      ],
+      "postconditions": [
+        "Each record has quality_score",
+        "Invalid records marked",
+        "validation logged"
+      ],
+      "guarantees": [
+        "All records are scored",
+        "Invalid records are not removed but marked"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ExportData",
+      "purpose": "Format validated records as output and log export",
+      "behavior": "Read processed_data, filter only records that passed validation, format as csv or json per export_format, return as data list, log export",
+      "boundary": {
+        "in_scope": [
+          "filtering valid records",
+          "formatting output",
+          "logging export"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "validation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "pipeline_request",
+          "description": "Contains export_format",
+          "source": "parent input"
+        },
+        {
+          "name": "processed_data",
+          "description": "Validated records to export",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "export_result",
+          "description": "Success status, records exported, errors, data list",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "pipeline_request.action == 'export'",
+        "processed_data contains validated records"
+      ],
+      "postconditions": [
+        "Export logged",
+        "Output data formatted correctly"
+      ],
+      "guarantees": [
+        "Only valid records exported",
+        "Format matches request"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The DataPipeline function block is decomposed into four sequential children corresponding to the four ETL actions: IngestData, TransformData, ValidateData, ExportData. Each child handles one action independently, accessing shared data stores (raw_data, processed_data) as needed, and returns results to the parent for aggregation into the final pipeline_result. This decomposition aligns with the business rules and ensures each step logs appropriately.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "IngestData",
+      "data": "pipeline_request",
+      "note": "When action is 'ingest'"
+    },
+    {
+      "from": "IngestData",
+      "to": "parent",
+      "data": "ingest_result",
+      "note": "Returns success, counts, errors"
+    },
+    {
+      "from": "parent",
+      "to": "TransformData",
+      "data": "pipeline_request",
+      "note": "When action is 'transform'"
+    },
+    {
+      "from": "TransformData",
+      "to": "parent",
+      "data": "transform_result",
+      "note": "Returns success, counts, errors"
+    },
+    {
+      "from": "parent",
+      "to": "ValidateData",
+      "data": "pipeline_request",
+      "note": "When action is 'validate'"
+    },
+    {
+      "from": "ValidateData",
+      "to": "parent",
+      "data": "validate_result",
+      "note": "Returns success, counts, errors"
+    },
+    {
+      "from": "parent",
+      "to": "ExportData",
+      "data": "pipeline_request",
+      "note": "When action is 'export'"
+    },
+    {
+      "from": "ExportData",
+      "to": "parent",
+      "data": "export_result",
+      "note": "Returns success, counts, errors, data"
+    }
+  ]
+}

@@ -1,0 +1,444 @@
+{
+  "children": [
+    {
+      "name": "ParseAndValidateInput",
+      "purpose": "Parse the input JSON and validate that it contains required fields (action, repo, branch) and that action is one of the allowed values.",
+      "behavior": "Extract action, repo, branch from input; validate presence and action enum; return parsed fields or error.",
+      "boundary": {
+        "in_scope": [
+          "input parsing",
+          "field validation",
+          "action enum check"
+        ],
+        "out_of_scope": [
+          "build logic",
+          "data store access"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "parsed_input",
+          "description": "Validated action, repo, branch",
+          "consumer": "parent"
+        },
+        {
+          "name": "error",
+          "description": "Validation error if any",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "parsed_input has action, repo, branch"
+      ],
+      "guarantees": [
+        "Returns error for invalid action or missing fields"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure function, atomic operation"
+    },
+    {
+      "name": "CheckBuildExists",
+      "purpose": "Check if a build already exists for the given repo and branch in the builds store.",
+      "behavior": "Query builds store by repo and branch; return boolean and existing build_id if found.",
+      "boundary": {
+        "in_scope": [
+          "builds store query",
+          "repo+branch lookup"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "cancelling",
+          "listing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "ParseAndValidateInput output"
+        },
+        {
+          "name": "branch",
+          "description": "Branch name",
+          "source": "ParseAndValidateInput output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "exists",
+          "description": "True if build exists",
+          "consumer": "parent"
+        },
+        {
+          "name": "existing_build_id",
+          "description": "Build ID if exists",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "builds store is accessible"
+      ],
+      "postconditions": [
+        "No side effects on builds store"
+      ],
+      "guarantees": [
+        "Returns accurate existence status"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data store query"
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build record in the builds store and return build_id.",
+      "behavior": "Generate unique build_id, create build record with status 'running', store in builds store, return build_id.",
+      "boundary": {
+        "in_scope": [
+          "build creation",
+          "build_id generation",
+          "status initialization"
+        ],
+        "out_of_scope": [
+          "cancelling",
+          "listing",
+          "status checking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "ParseAndValidateInput output"
+        },
+        {
+          "name": "branch",
+          "description": "Branch name",
+          "source": "ParseAndValidateInput output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_id",
+          "description": "Newly created build ID",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "No existing build for repo+branch",
+        "builds store writable"
+      ],
+      "postconditions": [
+        "New build record exists in builds store"
+      ],
+      "guarantees": [
+        "Build status is 'running'",
+        "build_id is unique"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic write operation"
+    },
+    {
+      "name": "GetBuildStatus",
+      "purpose": "Retrieve the current status of a build from the builds store.",
+      "behavior": "Query builds store by build_id; return status and logs.",
+      "boundary": {
+        "in_scope": [
+          "build status retrieval",
+          "log retrieval"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "cancelling",
+          "listing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_id",
+          "description": "Build ID to check",
+          "source": "parent input (from parsed_input or existing_build_id)"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "status",
+          "description": "Current build status",
+          "consumer": "parent"
+        },
+        {
+          "name": "logs",
+          "description": "Build logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build_id exists in builds store"
+      ],
+      "postconditions": [
+        "No side effects"
+      ],
+      "guarantees": [
+        "Returns accurate status and logs"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data store query"
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "List all builds from the builds store, optionally filtered by repo and branch.",
+      "behavior": "Query builds store; if repo and branch provided, filter; return list of builds with status and logs.",
+      "boundary": {
+        "in_scope": [
+          "build listing",
+          "filtering"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "cancelling",
+          "status checking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Optional repository filter",
+          "source": "ParseAndValidateInput output"
+        },
+        {
+          "name": "branch",
+          "description": "Optional branch filter",
+          "source": "ParseAndValidateInput output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "builds_list",
+          "description": "List of builds with details",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "builds store is accessible"
+      ],
+      "postconditions": [
+        "No side effects"
+      ],
+      "guarantees": [
+        "Returns all matching builds"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data store query"
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build by updating its status to 'cancelled' in the builds store.",
+      "behavior": "Update build record status to 'cancelled' in builds store; return success.",
+      "boundary": {
+        "in_scope": [
+          "build cancellation",
+          "status update"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "listing",
+          "status checking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_id",
+          "description": "Build ID to cancel",
+          "source": "parent input (from parsed_input or existing_build_id)"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "success",
+          "description": "True if cancelled",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build_id exists in builds store",
+        "build status is 'running'"
+      ],
+      "postconditions": [
+        "Build status is 'cancelled'"
+      ],
+      "guarantees": [
+        "Only cancels running builds"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic write operation"
+    },
+    {
+      "name": "FormatOutput",
+      "purpose": "Format the final output JSON with success, build_id, status, logs based on action and results.",
+      "behavior": "Construct output JSON from results of previous children; include success flag and relevant fields.",
+      "boundary": {
+        "in_scope": [
+          "output formatting",
+          "error handling"
+        ],
+        "out_of_scope": [
+          "data store access",
+          "build logic"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "action",
+          "description": "Action performed",
+          "source": "ParseAndValidateInput output"
+        },
+        {
+          "name": "build_id",
+          "description": "Build ID if applicable",
+          "source": "TriggerBuild or CancelBuild or GetBuildStatus output"
+        },
+        {
+          "name": "status",
+          "description": "Build status if applicable",
+          "source": "GetBuildStatus or TriggerBuild output"
+        },
+        {
+          "name": "logs",
+          "description": "Build logs if applicable",
+          "source": "GetBuildStatus output"
+        },
+        {
+          "name": "builds_list",
+          "description": "List of builds if applicable",
+          "source": "ListBuilds output"
+        },
+        {
+          "name": "error",
+          "description": "Error message if any",
+          "source": "ParseAndValidateInput or CheckBuildExists output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "output",
+          "description": "Final JSON response",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "All required inputs are provided based on action"
+      ],
+      "postconditions": [
+        "Output is valid JSON"
+      ],
+      "guarantees": [
+        "Output contains success field"
+      ],
+      "composition_role": "aggregate",
+      "stop_decompose": true,
+      "stop_reason": "Pure function, atomic operation"
+    }
+  ],
+  "decomposition_rationale": "The parent BuildSystem is decomposed into seven children that cover all functional requirements: ParseAndValidateInput handles input validation, CheckBuildExists enforces the one-build-per-repo+branch constraint, TriggerBuild, GetBuildStatus, ListBuilds, and CancelBuild each handle a specific action, and FormatOutput assembles the final response. Children do not call each other; parent orchestrates based on action.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ParseAndValidateInput",
+      "data": "input",
+      "note": "Raw input"
+    },
+    {
+      "from": "ParseAndValidateInput",
+      "to": "parent",
+      "data": "parsed_input or error",
+      "note": "Validation result"
+    },
+    {
+      "from": "parent",
+      "to": "CheckBuildExists",
+      "data": "repo, branch",
+      "note": "Only for trigger action"
+    },
+    {
+      "from": "CheckBuildExists",
+      "to": "parent",
+      "data": "exists, existing_build_id",
+      "note": "Existence check"
+    },
+    {
+      "from": "parent",
+      "to": "TriggerBuild",
+      "data": "repo, branch",
+      "note": "If action=trigger and no existing build"
+    },
+    {
+      "from": "TriggerBuild",
+      "to": "parent",
+      "data": "build_id",
+      "note": "New build ID"
+    },
+    {
+      "from": "parent",
+      "to": "GetBuildStatus",
+      "data": "build_id",
+      "note": "If action=status"
+    },
+    {
+      "from": "GetBuildStatus",
+      "to": "parent",
+      "data": "status, logs",
+      "note": "Build details"
+    },
+    {
+      "from": "parent",
+      "to": "ListBuilds",
+      "data": "repo, branch",
+      "note": "If action=list"
+    },
+    {
+      "from": "ListBuilds",
+      "to": "parent",
+      "data": "builds_list",
+      "note": "List of builds"
+    },
+    {
+      "from": "parent",
+      "to": "CancelBuild",
+      "data": "build_id",
+      "note": "If action=cancel"
+    },
+    {
+      "from": "CancelBuild",
+      "to": "parent",
+      "data": "success",
+      "note": "Cancellation result"
+    },
+    {
+      "from": "parent",
+      "to": "FormatOutput",
+      "data": "action, build_id, status, logs, builds_list, error",
+      "note": "Aggregate results"
+    },
+    {
+      "from": "FormatOutput",
+      "to": "parent",
+      "data": "output",
+      "note": "Final JSON"
+    }
+  ]
+}

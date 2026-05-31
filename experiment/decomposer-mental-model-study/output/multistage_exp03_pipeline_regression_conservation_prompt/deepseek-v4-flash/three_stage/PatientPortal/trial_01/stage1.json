@@ -1,0 +1,232 @@
+{
+  "children": [
+    {
+      "name": "RegisterPatient",
+      "purpose": "Validate required fields, create patient record, and generate unique patient_id",
+      "behavior": "Check that name, dob, contact, and insurance are present in patient_data; if missing, return error. Generate a unique patient_id (e.g., UUID). Store patient record in patients database with registered_at timestamp. Return success with patient_id.",
+      "boundary": {
+        "in_scope": [
+          "field validation",
+          "patient_id generation",
+          "database write"
+        ],
+        "out_of_scope": [
+          "booking",
+          "records retrieval",
+          "profile updates"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "patient_data",
+          "description": "Patient payload with name, dob, contact, insurance",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "patient_result",
+          "description": "Result dict with success, data (patient_id), message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'register'"
+      ],
+      "postconditions": [
+        "patient record exists in patients database"
+      ],
+      "guarantees": [
+        "patient_id is unique",
+        "required fields validated"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "BookAppointment",
+      "purpose": "Check patient exists, check doctor availability, create appointment record, send confirmation",
+      "behavior": "Verify patient_id exists in patients database. Check that appointment_time is not in the past. Query appointments database for doctor_id at requested time to ensure no conflict. If available, create appointment record with status 'confirmed' and generate appointment_id. Return success with appointment details.",
+      "boundary": {
+        "in_scope": [
+          "patient existence check",
+          "time validation",
+          "availability check",
+          "appointment creation"
+        ],
+        "out_of_scope": [
+          "registration",
+          "records",
+          "profile updates"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "patient_data",
+          "description": "Patient payload with patient_id, doctor_id, appointment_time",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "patient_result",
+          "description": "Result dict with success, data (appointment_id, details), message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'book'",
+        "patient exists",
+        "appointment_time is future"
+      ],
+      "postconditions": [
+        "appointment record created in appointments database"
+      ],
+      "guarantees": [
+        "no double booking",
+        "time validated"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "RetrieveMedicalRecords",
+      "purpose": "Retrieve all medical records for a patient, sorted by date descending",
+      "behavior": "Query records database for all records matching patient_id. Sort by timestamp descending. Return list of records.",
+      "boundary": {
+        "in_scope": [
+          "database query",
+          "sorting"
+        ],
+        "out_of_scope": [
+          "registration",
+          "booking",
+          "updates"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "patient_data",
+          "description": "Patient payload with patient_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "patient_result",
+          "description": "Result dict with success, data (list of records), message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'records'"
+      ],
+      "postconditions": [
+        "records retrieved and sorted"
+      ],
+      "guarantees": [
+        "records are append-only (no modification)"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "UpdatePatientProfile",
+      "purpose": "Update patient profile fields, validate insurance change against external system",
+      "behavior": "Check patient_id exists. Update allowed fields (name, dob, contact) in patients database. If insurance field is present and changed, validate against external system (simulated check). If validation fails, return error. Otherwise, update insurance. Return success with updated profile.",
+      "boundary": {
+        "in_scope": [
+          "profile update",
+          "insurance validation"
+        ],
+        "out_of_scope": [
+          "registration",
+          "booking",
+          "records"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "patient_data",
+          "description": "Patient payload with patient_id and fields to update",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "patient_result",
+          "description": "Result dict with success, data (updated fields), message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'update'",
+        "patient exists"
+      ],
+      "postconditions": [
+        "patient profile updated in database"
+      ],
+      "guarantees": [
+        "insurance validated if changed"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "Each child handles one distinct command from the parent's entry point, covering all four operations: register, book, records, update. They are independent and do not call each other; the parent routes based on command.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "RegisterPatient",
+      "data": "command='register', patient_data",
+      "note": "route to registration"
+    },
+    {
+      "from": "parent",
+      "to": "BookAppointment",
+      "data": "command='book', patient_data",
+      "note": "route to booking"
+    },
+    {
+      "from": "parent",
+      "to": "RetrieveMedicalRecords",
+      "data": "command='records', patient_data",
+      "note": "route to records retrieval"
+    },
+    {
+      "from": "parent",
+      "to": "UpdatePatientProfile",
+      "data": "command='update', patient_data",
+      "note": "route to profile update"
+    },
+    {
+      "from": "RegisterPatient",
+      "to": "parent",
+      "data": "patient_result",
+      "note": "return result"
+    },
+    {
+      "from": "BookAppointment",
+      "to": "parent",
+      "data": "patient_result",
+      "note": "return result"
+    },
+    {
+      "from": "RetrieveMedicalRecords",
+      "to": "parent",
+      "data": "patient_result",
+      "note": "return result"
+    },
+    {
+      "from": "UpdatePatientProfile",
+      "to": "parent",
+      "data": "patient_result",
+      "note": "return result"
+    }
+  ]
+}

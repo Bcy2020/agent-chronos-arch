@@ -1,0 +1,276 @@
+{
+  "children": [
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build record and start the build process",
+      "behavior": "Validate that no build is running for the same repo+branch, create a new build record with status 'running', run compile, test, and package steps sequentially, update status to 'completed' or 'failed'",
+      "boundary": {
+        "in_scope": [
+          "create build record",
+          "run build steps",
+          "store artifacts",
+          "update status"
+        ],
+        "out_of_scope": [
+          "check status",
+          "list builds",
+          "cancel builds"
+        ]
+      },
+      "preconditions": [
+        "No running build for the same repo+branch"
+      ],
+      "postconditions": [
+        "Build record created with final status",
+        "Artifacts stored if build succeeded"
+      ],
+      "guarantees": [
+        "Only one build per repo+branch runs at a time",
+        "Logs are stored incrementally"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "build_request",
+          "type": "dict",
+          "description": "JSON with action='trigger', repo (str), branch (str), config (dict with build_steps list)",
+          "source": "parent input"
+        },
+        {
+          "name": "builds_db",
+          "type": "Database",
+          "description": "Builds database for reading/writing build records",
+          "source": "internal data store"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "JSON with success (bool), build_id (str), status (str), logs (list)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TriggerBuild(build_request: dict, builds_db: Database) -> dict"
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Return the current status and logs of a specific build",
+      "behavior": "Look up the build by build_id in the builds database, return its status and logs",
+      "boundary": {
+        "in_scope": [
+          "read build record",
+          "return status and logs"
+        ],
+        "out_of_scope": [
+          "trigger builds",
+          "list builds",
+          "cancel builds"
+        ]
+      },
+      "preconditions": [
+        "build_id exists in builds"
+      ],
+      "postconditions": [
+        "No state change"
+      ],
+      "guarantees": [
+        "Returns current status and logs"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "build_request",
+          "type": "dict",
+          "description": "JSON with action='status', build_id (str)",
+          "source": "parent input"
+        },
+        {
+          "name": "builds_db",
+          "type": "Database",
+          "description": "Builds database for reading build records",
+          "source": "internal data store"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "JSON with success (bool), build_id (str), status (str), logs (list)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CheckBuildStatus(build_request: dict, builds_db: Database) -> dict"
+    },
+    {
+      "name": "ListBuildHistory",
+      "purpose": "Return all builds filtered by optional repo, branch, or status",
+      "behavior": "Query the builds database with optional filters (repo, branch, status) and return matching build records",
+      "boundary": {
+        "in_scope": [
+          "query builds with filters",
+          "return list of builds"
+        ],
+        "out_of_scope": [
+          "trigger builds",
+          "check status",
+          "cancel builds"
+        ]
+      },
+      "preconditions": [],
+      "postconditions": [
+        "No state change"
+      ],
+      "guarantees": [
+        "Returns filtered build history"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "build_request",
+          "type": "dict",
+          "description": "JSON with action='list', optional repo (str), branch (str), status (str)",
+          "source": "parent input"
+        },
+        {
+          "name": "builds_db",
+          "type": "Database",
+          "description": "Builds database for querying build records",
+          "source": "internal data store"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "JSON with success (bool), builds (list of dicts with build_id, repo, branch, status, logs)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ListBuildHistory(build_request: dict, builds_db: Database) -> dict"
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Stop a running build and update its status to cancelled",
+      "behavior": "Check if build is running, if so stop it and update status to 'cancelled'; if already completed, no-op",
+      "boundary": {
+        "in_scope": [
+          "stop running build",
+          "update status to cancelled"
+        ],
+        "out_of_scope": [
+          "trigger builds",
+          "check status",
+          "list builds"
+        ]
+      },
+      "preconditions": [
+        "build_id exists"
+      ],
+      "postconditions": [
+        "If build was running, status changed to cancelled"
+      ],
+      "guarantees": [
+        "Cancelling a completed build is a no-op"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "build_request",
+          "type": "dict",
+          "description": "JSON with action='cancel', build_id (str)",
+          "source": "parent input"
+        },
+        {
+          "name": "builds_db",
+          "type": "Database",
+          "description": "Builds database for reading/writing build records",
+          "source": "internal data store"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "JSON with success (bool), build_id (str), status (str)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelBuild(build_request: dict, builds_db: Database) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "build_request": "TriggerBuild.inputs[0], CheckBuildStatus.inputs[0], ListBuildHistory.inputs[0], CancelBuild.inputs[0]"
+    },
+    "parent_outputs_produced_by": {
+      "build_result": "TriggerBuild.outputs[0], CheckBuildStatus.outputs[0], ListBuildHistory.outputs[0], CancelBuild.outputs[0]"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "build_request",
+      "to_node": "TriggerBuild",
+      "to_input": "build_request",
+      "note": "when action is 'trigger'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "build_request",
+      "to_node": "CheckBuildStatus",
+      "to_input": "build_request",
+      "note": "when action is 'status'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "build_request",
+      "to_node": "ListBuildHistory",
+      "to_input": "build_request",
+      "note": "when action is 'list'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "build_request",
+      "to_node": "CancelBuild",
+      "to_input": "build_request",
+      "note": "when action is 'cancel'"
+    },
+    {
+      "from_node": "TriggerBuild",
+      "from_output": "build_result",
+      "to_node": "parent",
+      "to_input": "build_result",
+      "note": "return result"
+    },
+    {
+      "from_node": "CheckBuildStatus",
+      "from_output": "build_result",
+      "to_node": "parent",
+      "to_input": "build_result",
+      "note": "return result"
+    },
+    {
+      "from_node": "ListBuildHistory",
+      "from_output": "build_result",
+      "to_node": "parent",
+      "to_input": "build_result",
+      "note": "return result"
+    },
+    {
+      "from_node": "CancelBuild",
+      "from_output": "build_result",
+      "to_node": "parent",
+      "to_input": "build_result",
+      "note": "return result"
+    }
+  ]
+}

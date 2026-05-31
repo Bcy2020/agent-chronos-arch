@@ -1,4 +1,9 @@
 """
+[VERIFIED 2026-05-28] CodeGenerator with STAGE 1 Tree Structure Review
+- Added tree structure verification before interface review and code generation
+- Successfully detects routing violations (sibling calling patterns)
+- No overfitting: uses general tree principles, not enumerated pattern names
+
 CodeGenerator LLM: Generates Python code for a node.
 - For parent nodes: composes child node interfaces
 - For leaf nodes: generates complete implementation
@@ -26,15 +31,38 @@ class CodeGenerator:
 
 WORKFLOW — THREE STAGES:
 
-STAGE 1 — REVIEW (before writing any code):
-Intuitively check whether the children's interfaces collectively satisfy ALL of the parent's requirements:
+STAGE 1 — TREE STRUCTURE REVIEW (before writing any code):
+
+First, verify the decomposition satisfies tree structure constraints. These are non-negotiable structural rules:
+
+TREE STRUCTURE RULES:
+1. **Child independence**: Each child node is an independent function. A child must NOT call, reference, or depend on any sibling node.
+2. **Sibling invisibility**: Children operate at the same level and have no knowledge of each other. The decomposition tree ensures that sibling nodes are isolated — they cannot invoke each other's functions.
+3. **Parent as sole orchestrator**: The parent node is the ONLY node that directly calls its children. The parent coordinates the workflow by invoking children in sequence or conditionally.
+4. **Data flow goes through parent**: Data flow edges represent LOGICAL dependencies — the parent takes one child's output and passes it as input to another child. This is the normal pattern of parent orchestration and is NOT a violation. What IS forbidden is a child directly calling or invoking a sibling function.
+
+TRUST THE STRUCTURE, NOT THE DESCRIPTION:
+The tree structure is the authoritative representation of relationships. Base your verification on structural facts, not on how nodes describe themselves.
+- Tree visualization is ground truth: All nodes at the same depth under the same parent ARE siblings. This is a structural fact that overrides any ambiguous wording in behavior descriptions.
+- Behavior text naming siblings explicitly IS a violation: If a node's behavior says "calls CreateOrder" and CreateOrder is a sibling, that is a clear violation.
+- Behavior text with ambiguous wording that implies sibling calling IS also a violation: If a node's behavior says "calls the handler child" but the tree shows all handlers as siblings at the same depth, the structure proves these handlers are NOT its children — the description is misleading, and what it describes IS sibling calling.
+- Input source / output consumer fields are NOT evidence of direct calls: These show logical data flow that the parent resolves by passing data between children. Do not flag them.
+- Generic processing terms are not violations: Words like "parse", "validate", "process", "calculate", "return result" without referencing specific sibling functions are normal single-node behavior.
+
+DO NOT TRUST THE DECOMPOSER'S DESCRIPTION:
+If a node's behavior describes calling or invoking other sibling nodes, that IS a violation regardless of how the decomposer frames it. The decomposer's narrative does not override structural reality.
+
+If any tree structure check fails, the decomposition is invalid — return cannot_compose with reason "tree_structure_violation".
+
+STAGE 2 — INTERFACE REVIEW (only if STAGE 1 passes):
+Check whether the children's interfaces collectively satisfy ALL of the parent's requirements:
 - Does every child input parameter have a clear source? (parent input, prior child output, or leaf capability)
 - Can every parent output field be produced by combining child outputs?
 - Is every needed data access covered by at least one child?
 - Do the child signatures fit together without type mismatches?
 If any check fails, the decomposition is invalid — return cannot_compose.
 
-STAGE 2 — IMPLEMENT (only if STAGE 1 passes):
+STAGE 3 — IMPLEMENT (only if STAGE 1 and STAGE 2 pass):
 Write the parent function by composing child calls. Rules:
 1. You MUST implement the parent function by calling the child functions
 2. Child functions are NOT implemented yet - you only have their interfaces
@@ -72,8 +100,16 @@ Return ONLY valid JSON with this structure:
   "child_calls": ["child1", "child2"],
   "implementation_notes": "Brief explanation of the logic",
   "decomposition_feedback": {
-    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | other",
+    "reason": "tree_structure_violation | missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | other",
     "offending_child": "ChildName or empty",
+    "violations": [
+      {
+        "from_node": "name of node that violates",
+        "to_node": "name of node being called/referenced",
+        "rule": "which rule is violated",
+        "details": "why this is a violation"
+      }
+    ],
     "missing_inputs": [
       {
         "child": "ChildName",

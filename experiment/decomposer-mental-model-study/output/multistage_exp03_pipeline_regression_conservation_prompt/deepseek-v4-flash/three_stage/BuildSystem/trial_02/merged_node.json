@@ -1,0 +1,646 @@
+[
+  {
+    "name": "ValidateBuildRequest",
+    "purpose": "Validate the build_request JSON for required fields and business rules",
+    "behavior": "Check action is one of trigger/status/list/cancel; for trigger, ensure repo and config.build_steps present; for status/cancel, ensure build_id present; check repo+branch uniqueness for trigger",
+    "boundary": {
+      "in_scope": [
+        "validation of input fields",
+        "uniqueness check for trigger"
+      ],
+      "out_of_scope": [
+        "executing any build action",
+        "modifying state"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "Input JSON with action and parameters",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "validated_request",
+        "description": "Validated request with defaults applied",
+        "consumer": "parent"
+      },
+      {
+        "name": "validation_error",
+        "description": "Error message if validation fails",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "build_request is a dict"
+    ],
+    "postconditions": [
+      "If valid, validated_request contains all required fields with defaults"
+    ],
+    "guarantees": [
+      "No side effects on data stores"
+    ],
+    "composition_role": "validate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "build_request",
+        "type": "dict",
+        "description": "Input JSON with action and parameters",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "validated_request",
+        "type": "dict",
+        "description": "Validated request with defaults applied",
+        "consumer": "parent"
+      },
+      {
+        "name": "validation_error",
+        "type": "str",
+        "description": "Error message if validation fails",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ValidateBuildRequest(build_request: dict) -> dict",
+    "global_vars": [],
+    "data_operations": [],
+    "requested_capabilities": [],
+    "constraints": [
+      {
+        "constraint_id": "C-001",
+        "description": "build_request must be a valid JSON object"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-001",
+        "description": "Valid request returns validated_request with defaults applied"
+      },
+      {
+        "ac_id": "AC-002",
+        "description": "Invalid request returns validation_error string"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "pure_function"
+  },
+  {
+    "name": "RouteAction",
+    "purpose": "Route the validated request to the appropriate action handler based on action field",
+    "behavior": "Examine action field and call the corresponding child function: TriggerBuild, CheckBuildStatus, ListBuildHistory, or CancelBuild",
+    "boundary": {
+      "in_scope": [
+        "dispatching to action-specific functions"
+      ],
+      "out_of_scope": [
+        "performing the actual action logic"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "validated_request",
+        "description": "Validated build request with action",
+        "source": "ValidateBuildRequest output"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "action_result",
+        "description": "Result from the executed action",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "validated_request has a valid action"
+    ],
+    "postconditions": [
+      "One child function is invoked"
+    ],
+    "guarantees": [
+      "No side effects beyond calling the child"
+    ],
+    "composition_role": "decide",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "validated_request",
+        "type": "dict",
+        "description": "Validated build request with action",
+        "source": "ValidateBuildRequest output"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "action_result",
+        "type": "dict",
+        "description": "Result from the executed action",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def RouteAction(validated_request: dict) -> dict",
+    "global_vars": [],
+    "data_operations": [],
+    "requested_capabilities": [],
+    "constraints": [
+      {
+        "constraint_id": "C-002",
+        "description": "validated_request must contain a valid action field"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-003",
+        "description": "Routes to correct handler based on action field"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "pure_function"
+  },
+  {
+    "name": "TriggerBuild",
+    "purpose": "Execute a new build: create record, run compile, run test, package artifacts, update status",
+    "behavior": "Create build record in builds store with status 'running'; run compile steps; run test steps; package artifacts; update status to 'completed' or 'failed'; store logs incrementally",
+    "boundary": {
+      "in_scope": [
+        "build record creation",
+        "compilation",
+        "testing",
+        "artifact packaging",
+        "log storage"
+      ],
+      "out_of_scope": [
+        "validation",
+        "cancellation",
+        "listing"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "validated_request",
+        "description": "Request with repo, branch, config.build_steps",
+        "source": "RouteAction"
+      },
+      {
+        "name": "builds",
+        "description": "Build records store",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "artifacts",
+        "description": "Artifacts store",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "Result with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "No running build for same repo+branch"
+    ],
+    "postconditions": [
+      "Build record created and updated with final status",
+      "Logs stored incrementally",
+      "Artifacts stored if build succeeded"
+    ],
+    "guarantees": [
+      "Only one build per repo+branch runs at a time"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "validated_request",
+        "type": "dict",
+        "description": "Request with repo, branch, config.build_steps",
+        "source": "RouteAction"
+      },
+      {
+        "name": "builds",
+        "type": "Database",
+        "description": "Build records store",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "Result with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def TriggerBuild(validated_request: dict, builds: Database) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read_write",
+        "description": "Build records store for creating and updating build records"
+      },
+      {
+        "variable": "artifacts",
+        "op": "write",
+        "description": "Artifact store for saving packaged artifacts"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read_write",
+        "description": "Create build record, update status and logs"
+      },
+      {
+        "source_name": "artifacts",
+        "operation_type": "write",
+        "description": "Store packaged artifacts after successful build"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read_write",
+      "artifacts.write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-003",
+        "description": "Only one build per repo+branch runs at a time"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-004",
+        "description": "Build record created with status 'running'"
+      },
+      {
+        "ac_id": "AC-005",
+        "description": "Compilation steps executed successfully"
+      },
+      {
+        "ac_id": "AC-006",
+        "description": "Test steps executed successfully"
+      },
+      {
+        "ac_id": "AC-007",
+        "description": "Artifacts packaged and stored"
+      },
+      {
+        "ac_id": "AC-008",
+        "description": "Final status updated to 'completed' or 'failed'"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "CheckBuildStatus",
+    "purpose": "Return current status and logs for a given build_id",
+    "behavior": "Look up build record by build_id in builds store; return status and logs",
+    "boundary": {
+      "in_scope": [
+        "reading build record",
+        "returning status and logs"
+      ],
+      "out_of_scope": [
+        "modifying state",
+        "triggering builds"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "validated_request",
+        "description": "Request with build_id",
+        "source": "RouteAction"
+      },
+      {
+        "name": "builds",
+        "description": "Build records store",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "Result with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "build_id exists in builds store"
+    ],
+    "postconditions": [
+      "No state changes"
+    ],
+    "guarantees": [
+      "Returns current status and logs"
+    ],
+    "composition_role": "query",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "validated_request",
+        "type": "dict",
+        "description": "Request with build_id",
+        "source": "RouteAction"
+      },
+      {
+        "name": "builds",
+        "type": "Database",
+        "description": "Build records store",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "Result with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def CheckBuildStatus(validated_request: dict, builds: Database) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read",
+        "description": "Build records store for reading build status and logs"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read",
+        "description": "Read build record by build_id"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-004",
+        "description": "build_id must exist in builds store"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-009",
+        "description": "Returns status and logs for existing build_id"
+      },
+      {
+        "ac_id": "AC-010",
+        "description": "Returns error for non-existent build_id"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "ListBuildHistory",
+    "purpose": "Return all builds filtered by repo/branch/status",
+    "behavior": "Query builds store with optional filters from request; return list of build records",
+    "boundary": {
+      "in_scope": [
+        "filtering builds by repo, branch, status"
+      ],
+      "out_of_scope": [
+        "modifying state",
+        "single build status"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "validated_request",
+        "description": "Request with optional repo, branch, status filters",
+        "source": "RouteAction"
+      },
+      {
+        "name": "builds",
+        "description": "Build records store",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "Result with success, list of builds",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "None"
+    ],
+    "postconditions": [
+      "No state changes"
+    ],
+    "guarantees": [
+      "Returns filtered list of builds"
+    ],
+    "composition_role": "query",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "validated_request",
+        "type": "dict",
+        "description": "Request with optional repo, branch, status filters",
+        "source": "RouteAction"
+      },
+      {
+        "name": "builds",
+        "type": "Database",
+        "description": "Build records store",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "Result with success, list of builds",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ListBuildHistory(validated_request: dict, builds: Database) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read",
+        "description": "Build records store for querying build history"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read",
+        "description": "Query builds with optional filters"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-005",
+        "description": "Filters are optional; returns all builds if no filters provided"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-011",
+        "description": "Returns list of builds matching filters"
+      },
+      {
+        "ac_id": "AC-012",
+        "description": "Returns empty list if no builds match"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "CancelBuild",
+    "purpose": "Cancel a running build: stop execution, update status to 'cancelled'",
+    "behavior": "Look up build by build_id; if status is 'running', update status to 'cancelled' and stop any ongoing processes; if already completed, no-op",
+    "boundary": {
+      "in_scope": [
+        "cancelling running builds",
+        "status update"
+      ],
+      "out_of_scope": [
+        "triggering",
+        "listing"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "validated_request",
+        "description": "Request with build_id",
+        "source": "RouteAction"
+      },
+      {
+        "name": "builds",
+        "description": "Build records store",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "Result with success, build_id, status",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "build_id exists in builds store"
+    ],
+    "postconditions": [
+      "If build was running, status changed to 'cancelled'"
+    ],
+    "guarantees": [
+      "Cancelling a completed build is a no-op"
+    ],
+    "composition_role": "mutate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "validated_request",
+        "type": "dict",
+        "description": "Request with build_id",
+        "source": "RouteAction"
+      },
+      {
+        "name": "builds",
+        "type": "Database",
+        "description": "Build records store",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "Result with success, build_id, status",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def CancelBuild(validated_request: dict, builds: Database) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read_write",
+        "description": "Build records store for reading and updating build status"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read_write",
+        "description": "Read build record by build_id, update status to 'cancelled' if running"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read_write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-006",
+        "description": "build_id must exist in builds store"
+      },
+      {
+        "constraint_id": "C-007",
+        "description": "Only running builds can be cancelled"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-013",
+        "description": "Running build status updated to 'cancelled'"
+      },
+      {
+        "ac_id": "AC-014",
+        "description": "Completed build remains unchanged"
+      },
+      {
+        "ac_id": "AC-015",
+        "description": "Non-existent build_id returns error"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "atomic_operation"
+  }
+]

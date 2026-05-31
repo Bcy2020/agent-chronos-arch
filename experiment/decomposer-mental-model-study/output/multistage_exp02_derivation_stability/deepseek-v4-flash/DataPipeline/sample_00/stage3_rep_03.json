@@ -1,0 +1,382 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read data from external source and store in raw_data",
+      "behavior": "Reads input source, parses data, writes to raw_data store, logs ingestion",
+      "boundary": {
+        "in_scope": [
+          "reading source",
+          "parsing",
+          "writing to raw_data",
+          "logging"
+        ],
+        "out_of_scope": [
+          "transformation",
+          "validation",
+          "export"
+        ]
+      },
+      "preconditions": [
+        "input contains valid source"
+      ],
+      "postconditions": [
+        "raw_data contains ingested records"
+      ],
+      "guarantees": [
+        "logs ingestion details"
+      ],
+      "composition_role": "transform",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with action and source",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ingestion_result",
+          "type": "dict",
+          "description": "JSON with success, records_ingested, errors",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def IngestData(input: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "raw_data",
+          "op": "write",
+          "description": "write ingested records to raw_data store"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "raw_data",
+          "operation_type": "write",
+          "description": "write ingested records to raw_data"
+        }
+      ],
+      "requested_capabilities": [
+        "data_store.raw_data.write",
+        "logging.info"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must handle malformed input gracefully with error logging"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Must not exceed 100MB memory for raw_data writes"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid source, ingestion_result.success is True and raw_data contains records"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given invalid source, ingestion_result.success is False and errors list is populated"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformations to raw data and store in processed_data",
+      "behavior": "Reads raw_data, applies transformation rules, writes to processed_data, logs transformation",
+      "boundary": {
+        "in_scope": [
+          "reading raw_data",
+          "transforming",
+          "writing to processed_data",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "validation",
+          "export"
+        ]
+      },
+      "preconditions": [
+        "raw_data is populated"
+      ],
+      "postconditions": [
+        "processed_data contains transformed records"
+      ],
+      "guarantees": [
+        "logs transformation details"
+      ],
+      "composition_role": "transform",
+      "inputs": [
+        {
+          "name": "transform_config",
+          "type": "dict",
+          "description": "Transformation rules from parent",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "transformation_result",
+          "type": "dict",
+          "description": "JSON with success, records_transformed, errors",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TransformData(transform_config: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "raw_data",
+          "op": "read",
+          "description": "read raw records from raw_data store"
+        },
+        {
+          "variable": "processed_data",
+          "op": "write",
+          "description": "write transformed records to processed_data store"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "raw_data",
+          "operation_type": "read",
+          "description": "read raw records for transformation"
+        },
+        {
+          "source_name": "processed_data",
+          "operation_type": "write",
+          "description": "write transformed records to processed_data"
+        }
+      ],
+      "requested_capabilities": [
+        "data_store.raw_data.read",
+        "data_store.processed_data.write",
+        "logging.info"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "Must preserve record count unless transformation rules specify aggregation"
+        },
+        {
+          "constraint_id": "C-004",
+          "description": "Must not introduce data loss beyond what transformation rules define"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-003",
+          "description": "Given valid transform_config, transformation_result.success is True and processed_data contains transformed records"
+        },
+        {
+          "ac_id": "AC-004",
+          "description": "Given empty raw_data, transformation_result.success is True with records_transformed = 0"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateQuality",
+      "purpose": "Check quality of processed data and mark invalid records",
+      "behavior": "Reads processed_data, applies validation rules, marks invalid records, logs validation",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "validating",
+          "marking invalid records",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "export"
+        ]
+      },
+      "preconditions": [
+        "processed_data is populated"
+      ],
+      "postconditions": [
+        "processed_data has validity flags"
+      ],
+      "guarantees": [
+        "logs validation details"
+      ],
+      "composition_role": "validate",
+      "inputs": [
+        {
+          "name": "validation_rules",
+          "type": "dict",
+          "description": "Quality criteria from parent",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validation_result",
+          "type": "dict",
+          "description": "JSON with success, valid_count, invalid_count, errors",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateQuality(validation_rules: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "processed_data",
+          "op": "read_write",
+          "description": "read processed records and write validity flags"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "processed_data",
+          "operation_type": "read_write",
+          "description": "read processed records and update with validity flags"
+        }
+      ],
+      "requested_capabilities": [
+        "data_store.processed_data.read",
+        "data_store.processed_data.write",
+        "logging.info"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-005",
+          "description": "Must not modify record content beyond adding validity flags"
+        },
+        {
+          "constraint_id": "C-006",
+          "description": "Must apply all validation rules atomically per record"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-005",
+          "description": "Given valid processed_data, validation_result.success is True and all records have validity flags"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "Given all records pass validation, valid_count equals total records and invalid_count is 0"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ExportResults",
+      "purpose": "Export only valid records from processed_data to output",
+      "behavior": "Reads processed_data, filters valid records, formats output, logs export",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "filtering valid records",
+          "formatting output",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "validation"
+        ]
+      },
+      "preconditions": [
+        "processed_data has validity flags"
+      ],
+      "postconditions": [
+        "output contains only valid records"
+      ],
+      "guarantees": [
+        "logs export details",
+        "exports only valid records"
+      ],
+      "composition_role": "execute",
+      "inputs": [
+        {
+          "name": "export_format",
+          "type": "dict",
+          "description": "Output format specification",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "export_result",
+          "type": "dict",
+          "description": "JSON with success, records_exported, errors, data",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ExportResults(export_format: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "processed_data",
+          "op": "read",
+          "description": "read processed records with validity flags"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "processed_data",
+          "operation_type": "read",
+          "description": "read processed records for export filtering"
+        }
+      ],
+      "requested_capabilities": [
+        "data_store.processed_data.read",
+        "logging.info"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-007",
+          "description": "Must only export records with validity flag set to valid"
+        },
+        {
+          "constraint_id": "C-008",
+          "description": "Must format output according to export_format specification"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-007",
+          "description": "Given valid processed_data with validity flags, export_result.success is True and data contains only valid records"
+        },
+        {
+          "ac_id": "AC-008",
+          "description": "Given no valid records, export_result.success is True with records_exported = 0 and data is empty"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children operate on shared memory stores raw_data and processed_data. IngestData writes to raw_data; TransformData reads raw_data and writes to processed_data; ValidateQuality reads and writes processed_data; ExportResults reads processed_data. No child should modify stores outside its designated scope. Logging is required for all operations. Error handling must be graceful with detailed error messages in result dicts."
+}

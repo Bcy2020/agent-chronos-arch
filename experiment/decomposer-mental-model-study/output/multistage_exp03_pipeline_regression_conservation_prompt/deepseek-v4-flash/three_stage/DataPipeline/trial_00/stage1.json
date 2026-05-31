@@ -1,0 +1,262 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read raw data from source, parse records, store in raw_data, and log ingestion",
+      "behavior": "Based on source type (csv/json/api), read and parse records, store in raw_data, log step with counts",
+      "boundary": {
+        "in_scope": [
+          "reading from source",
+          "parsing records",
+          "storing in raw_data",
+          "logging ingestion"
+        ],
+        "out_of_scope": [
+          "transformation",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "pipeline_request",
+          "description": "Contains action='ingest' and source details",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "ingest_result",
+          "description": "Dict with success, records_processed, errors, data (raw records)",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "pipeline_request action is 'ingest'",
+        "source is valid and accessible"
+      ],
+      "postconditions": [
+        "raw_data contains parsed records",
+        "pipeline_log has ingest entry"
+      ],
+      "guarantees": [
+        "All records parsed without exception",
+        "Malformed records are logged as errors"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformation rules to raw_data, store in processed_data, skip malformed records",
+      "behavior": "Read raw_data, apply each rule to each record, skip and log malformed records, store result in processed_data",
+      "boundary": {
+        "in_scope": [
+          "reading raw_data",
+          "applying transformation rules",
+          "skipping malformed records",
+          "storing in processed_data",
+          "logging transform"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "pipeline_request",
+          "description": "Contains action='transform' and transform_config",
+          "source": "parent input"
+        },
+        {
+          "name": "raw_data",
+          "description": "Raw records from previous step",
+          "source": "internal leaf access (raw_data store)"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "transform_result",
+          "description": "Dict with success, records_processed, errors, data (transformed records)",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "pipeline_request action is 'transform'",
+        "raw_data is populated"
+      ],
+      "postconditions": [
+        "processed_data contains transformed records",
+        "pipeline_log has transform entry"
+      ],
+      "guarantees": [
+        "Malformed records are skipped, not failed",
+        "All valid records are transformed"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateData",
+      "purpose": "Check processed_data against quality rules, mark invalid records, produce quality_score",
+      "behavior": "Read processed_data, apply quality rules to each record, compute quality_score, mark invalid records, store result",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "applying quality rules",
+          "computing quality_score",
+          "marking invalid records",
+          "logging validation"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "pipeline_request",
+          "description": "Contains action='validate'",
+          "source": "parent input"
+        },
+        {
+          "name": "processed_data",
+          "description": "Transformed records",
+          "source": "internal leaf access (processed_data store)"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "validate_result",
+          "description": "Dict with success, records_processed, errors, data (validated records with quality_score)",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "pipeline_request action is 'validate'",
+        "processed_data is populated"
+      ],
+      "postconditions": [
+        "Each record has quality_score",
+        "Invalid records are marked",
+        "pipeline_log has validate entry"
+      ],
+      "guarantees": [
+        "All records are checked",
+        "Quality_score is computed for each"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ExportData",
+      "purpose": "Format validated records as output, include only records that passed validation, log export",
+      "behavior": "Read processed_data, filter to only validated records, format as csv or json, log export",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "filtering validated records",
+          "formatting output",
+          "logging export"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "validation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "pipeline_request",
+          "description": "Contains action='export' and export_format",
+          "source": "parent input"
+        },
+        {
+          "name": "processed_data",
+          "description": "Validated records with quality_score",
+          "source": "internal leaf access (processed_data store)"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "export_result",
+          "description": "Dict with success, records_processed, errors, data (formatted output)",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "pipeline_request action is 'export'",
+        "processed_data is populated"
+      ],
+      "postconditions": [
+        "Output contains only validated records",
+        "pipeline_log has export entry"
+      ],
+      "guarantees": [
+        "Only records with quality_score above threshold are included",
+        "Format is correct"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The DataPipeline function block performs four distinct ETL steps: ingest, transform, validate, export. Each step is a self-contained function that reads from or writes to shared data stores (raw_data, processed_data) and logs its activity. The parent orchestrates by checking the action field and calling the appropriate child function, then aggregating results into pipeline_result.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "IngestData",
+      "data": "pipeline_request",
+      "note": "When action is 'ingest'"
+    },
+    {
+      "from": "parent",
+      "to": "TransformData",
+      "data": "pipeline_request",
+      "note": "When action is 'transform'"
+    },
+    {
+      "from": "parent",
+      "to": "ValidateData",
+      "data": "pipeline_request",
+      "note": "When action is 'validate'"
+    },
+    {
+      "from": "parent",
+      "to": "ExportData",
+      "data": "pipeline_request",
+      "note": "When action is 'export'"
+    },
+    {
+      "from": "IngestData",
+      "to": "parent",
+      "data": "ingest_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from": "TransformData",
+      "to": "parent",
+      "data": "transform_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from": "ValidateData",
+      "to": "parent",
+      "data": "validate_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from": "ExportData",
+      "to": "parent",
+      "data": "export_result",
+      "note": "Return result to parent"
+    }
+  ]
+}

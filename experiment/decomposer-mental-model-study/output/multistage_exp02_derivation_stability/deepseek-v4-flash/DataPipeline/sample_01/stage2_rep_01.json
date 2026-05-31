@@ -1,0 +1,300 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read and parse input data from source, store raw data in raw_data store",
+      "behavior": "Extract source from input, read data, parse into records, store in raw_data, return count and errors",
+      "boundary": {
+        "in_scope": [
+          "reading source",
+          "parsing data",
+          "storing raw records"
+        ],
+        "out_of_scope": [
+          "transformation",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        "input"
+      ],
+      "semantic_outputs": [
+        "ingest_result"
+      ],
+      "preconditions": [
+        "input contains valid source"
+      ],
+      "postconditions": [
+        "raw_data populated with records"
+      ],
+      "guarantees": [
+        "logs each step",
+        "returns count of ingested records"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with action and source",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ingest_result",
+          "type": "dict",
+          "description": "JSON with records_ingested, errors",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def IngestData(input: dict) -> dict"
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformations to raw data and store in processed_data",
+      "behavior": "Read raw_data, apply transformation rules (e.g., mapping, cleaning), write to processed_data, return count and errors",
+      "boundary": {
+        "in_scope": [
+          "transformation logic",
+          "data cleaning",
+          "mapping"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        "transform_config",
+        "raw_data"
+      ],
+      "semantic_outputs": [
+        "transform_result"
+      ],
+      "preconditions": [
+        "raw_data is populated"
+      ],
+      "postconditions": [
+        "processed_data contains transformed records"
+      ],
+      "guarantees": [
+        "logs each step",
+        "returns count of transformed records"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "transform_config",
+          "type": "dict",
+          "description": "Transformation rules (implicit from parent input)",
+          "source": "parent input"
+        },
+        {
+          "name": "raw_data",
+          "type": "list",
+          "description": "Records from raw_data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "transform_result",
+          "type": "dict",
+          "description": "JSON with records_transformed, errors",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TransformData(transform_config: dict, raw_data: list) -> dict"
+    },
+    {
+      "name": "ValidateQuality",
+      "purpose": "Check quality of transformed data, mark invalid records",
+      "behavior": "Read processed_data, apply validation rules (e.g., schema, range, completeness), mark invalid records, return validation summary",
+      "boundary": {
+        "in_scope": [
+          "validation rules",
+          "quality checks"
+        ],
+        "out_of_scope": [
+          "transformation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        "validation_rules",
+        "processed_data"
+      ],
+      "semantic_outputs": [
+        "validation_result"
+      ],
+      "preconditions": [
+        "processed_data is populated"
+      ],
+      "postconditions": [
+        "valid records are marked, invalid records are flagged"
+      ],
+      "guarantees": [
+        "logs each step",
+        "returns validation summary"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validation_rules",
+          "type": "dict",
+          "description": "Rules for quality checks",
+          "source": "parent input"
+        },
+        {
+          "name": "processed_data",
+          "type": "list",
+          "description": "Transformed records",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validation_result",
+          "type": "dict",
+          "description": "JSON with valid_count, invalid_count, errors",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateQuality(validation_rules: dict, processed_data: list) -> dict"
+    },
+    {
+      "name": "ExportResults",
+      "purpose": "Export only valid records to output destination",
+      "behavior": "Read processed_data, filter valid records, write to output destination (e.g., file, API), return export summary",
+      "boundary": {
+        "in_scope": [
+          "filtering valid records",
+          "writing to destination"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "validation"
+        ]
+      },
+      "semantic_inputs": [
+        "export_destination",
+        "processed_data"
+      ],
+      "semantic_outputs": [
+        "export_result"
+      ],
+      "preconditions": [
+        "processed_data has validity flags"
+      ],
+      "postconditions": [
+        "valid records are exported"
+      ],
+      "guarantees": [
+        "logs each step",
+        "only exports valid records"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "export_destination",
+          "type": "str",
+          "description": "Target for export (from parent input)",
+          "source": "parent input"
+        },
+        {
+          "name": "processed_data",
+          "type": "list",
+          "description": "Transformed records with validity flags",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "export_result",
+          "type": "dict",
+          "description": "JSON with records_exported, errors",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ExportResults(export_destination: str, processed_data: list) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "IngestData"
+    },
+    "parent_outputs_produced_by": {
+      "output": "ExportResults"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "IngestData",
+      "to_input": "input",
+      "note": "parent passes input to IngestData"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "TransformData",
+      "to_input": "transform_config",
+      "note": "parent passes input (transform config) to TransformData"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ValidateQuality",
+      "to_input": "validation_rules",
+      "note": "parent passes input (validation rules) to ValidateQuality"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ExportResults",
+      "to_input": "export_destination",
+      "note": "parent passes input (export destination) to ExportResults"
+    },
+    {
+      "from_node": "IngestData",
+      "from_output": "ingest_result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "IngestData returns result to parent"
+    },
+    {
+      "from_node": "TransformData",
+      "from_output": "transform_result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "TransformData returns result to parent"
+    },
+    {
+      "from_node": "ValidateQuality",
+      "from_output": "validation_result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "ValidateQuality returns result to parent"
+    },
+    {
+      "from_node": "ExportResults",
+      "from_output": "export_result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "ExportResults returns result to parent"
+    }
+  ]
+}

@@ -1,0 +1,301 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read raw data from source, parse records, store in raw_data, and log ingestion",
+      "behavior": "Based on source type (csv/json/api), read and parse records, store in raw_data, log step with counts",
+      "boundary": {
+        "in_scope": [
+          "reading from source",
+          "parsing records",
+          "storing in raw_data",
+          "logging ingestion"
+        ],
+        "out_of_scope": [
+          "transformation",
+          "validation",
+          "export"
+        ]
+      },
+      "preconditions": [
+        "pipeline_request action is 'ingest'",
+        "source is valid and accessible"
+      ],
+      "postconditions": [
+        "raw_data contains parsed records",
+        "pipeline_log has ingest entry"
+      ],
+      "guarantees": [
+        "All records parsed without exception",
+        "Malformed records are logged as errors"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "pipeline_request",
+          "type": "dict",
+          "description": "JSON with action='ingest' and source details",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ingest_result",
+          "type": "dict",
+          "description": "Dict with success (bool), records_processed (int), errors (list), data (list of raw records)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def IngestData(pipeline_request: dict) -> dict"
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformation rules to raw_data, store in processed_data, skip malformed records",
+      "behavior": "Read raw_data, apply each rule to each record, skip and log malformed records, store result in processed_data",
+      "boundary": {
+        "in_scope": [
+          "reading raw_data",
+          "applying transformation rules",
+          "skipping malformed records",
+          "storing in processed_data",
+          "logging transform"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "validation",
+          "export"
+        ]
+      },
+      "preconditions": [
+        "pipeline_request action is 'transform'",
+        "raw_data is populated"
+      ],
+      "postconditions": [
+        "processed_data contains transformed records",
+        "pipeline_log has transform entry"
+      ],
+      "guarantees": [
+        "Malformed records are skipped, not failed",
+        "All valid records are transformed"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "pipeline_request",
+          "type": "dict",
+          "description": "JSON with action='transform' and transform_config",
+          "source": "parent input"
+        },
+        {
+          "name": "raw_data",
+          "type": "list",
+          "description": "Raw records from previous step",
+          "source": "internal leaf access (raw_data store)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "transform_result",
+          "type": "dict",
+          "description": "Dict with success (bool), records_processed (int), errors (list), data (list of transformed records)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TransformData(pipeline_request: dict, raw_data: list) -> dict"
+    },
+    {
+      "name": "ValidateData",
+      "purpose": "Check processed_data against quality rules, mark invalid records, produce quality_score",
+      "behavior": "Read processed_data, apply quality rules to each record, compute quality_score, mark invalid records, store result",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "applying quality rules",
+          "computing quality_score",
+          "marking invalid records",
+          "logging validation"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "export"
+        ]
+      },
+      "preconditions": [
+        "pipeline_request action is 'validate'",
+        "processed_data is populated"
+      ],
+      "postconditions": [
+        "Each record has quality_score",
+        "Invalid records are marked",
+        "pipeline_log has validate entry"
+      ],
+      "guarantees": [
+        "All records are checked",
+        "Quality_score is computed for each"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "pipeline_request",
+          "type": "dict",
+          "description": "JSON with action='validate'",
+          "source": "parent input"
+        },
+        {
+          "name": "processed_data",
+          "type": "list",
+          "description": "Transformed records",
+          "source": "internal leaf access (processed_data store)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validate_result",
+          "type": "dict",
+          "description": "Dict with success (bool), records_processed (int), errors (list), data (list of validated records with quality_score)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateData(pipeline_request: dict, processed_data: list) -> dict"
+    },
+    {
+      "name": "ExportData",
+      "purpose": "Format validated records as output, include only records that passed validation, log export",
+      "behavior": "Read processed_data, filter to only validated records, format as csv or json, log export",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "filtering validated records",
+          "formatting output",
+          "logging export"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "validation"
+        ]
+      },
+      "preconditions": [
+        "pipeline_request action is 'export'",
+        "processed_data is populated"
+      ],
+      "postconditions": [
+        "Output contains only validated records",
+        "pipeline_log has export entry"
+      ],
+      "guarantees": [
+        "Only records with quality_score above threshold are included",
+        "Format is correct"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "pipeline_request",
+          "type": "dict",
+          "description": "JSON with action='export' and export_format",
+          "source": "parent input"
+        },
+        {
+          "name": "processed_data",
+          "type": "list",
+          "description": "Validated records with quality_score",
+          "source": "internal leaf access (processed_data store)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "export_result",
+          "type": "dict",
+          "description": "Dict with success (bool), records_processed (int), errors (list), data (formatted output as list)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ExportData(pipeline_request: dict, processed_data: list) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "pipeline_request": [
+        "IngestData.pipeline_request",
+        "TransformData.pipeline_request",
+        "ValidateData.pipeline_request",
+        "ExportData.pipeline_request"
+      ]
+    },
+    "parent_outputs_produced_by": {
+      "pipeline_result": [
+        "IngestData.ingest_result",
+        "TransformData.transform_result",
+        "ValidateData.validate_result",
+        "ExportData.export_result"
+      ]
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "pipeline_request",
+      "to_node": "IngestData",
+      "to_input": "pipeline_request",
+      "note": "When action is 'ingest'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "pipeline_request",
+      "to_node": "TransformData",
+      "to_input": "pipeline_request",
+      "note": "When action is 'transform'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "pipeline_request",
+      "to_node": "ValidateData",
+      "to_input": "pipeline_request",
+      "note": "When action is 'validate'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "pipeline_request",
+      "to_node": "ExportData",
+      "to_input": "pipeline_request",
+      "note": "When action is 'export'"
+    },
+    {
+      "from_node": "IngestData",
+      "from_output": "ingest_result",
+      "to_node": "parent",
+      "to_input": "pipeline_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "TransformData",
+      "from_output": "transform_result",
+      "to_node": "parent",
+      "to_input": "pipeline_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "ValidateData",
+      "from_output": "validate_result",
+      "to_node": "parent",
+      "to_input": "pipeline_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "ExportData",
+      "from_output": "export_result",
+      "to_node": "parent",
+      "to_input": "pipeline_result",
+      "note": "Return result to parent"
+    }
+  ]
+}

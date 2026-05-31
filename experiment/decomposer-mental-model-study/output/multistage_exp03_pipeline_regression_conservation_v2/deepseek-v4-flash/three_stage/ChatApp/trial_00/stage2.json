@@ -1,0 +1,531 @@
+{
+  "children": [
+    {
+      "name": "ValidateAndPrepareSend",
+      "purpose": "Validate that the user is a member of the target channel and prepare the message data for storage.",
+      "behavior": "Check if user_id is in the members list of the channel identified by channel_id from the channels store. If not, return error. Otherwise, prepare a new message entry with content, user_id, channel_id, and current timestamp.",
+      "boundary": {
+        "in_scope": [
+          "user membership validation",
+          "message data preparation"
+        ],
+        "out_of_scope": [
+          "storing message",
+          "updating last_seen",
+          "notifying members"
+        ]
+      },
+      "preconditions": [
+        "command is 'send'",
+        "message_data contains channel_id, user_id, content"
+      ],
+      "postconditions": [
+        "If successful, message data is prepared with timestamp"
+      ],
+      "guarantees": [
+        "Returns error if user not a member"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure validation and preparation logic",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'send'",
+          "source": "parent input"
+        },
+        {
+          "name": "message_data",
+          "type": "dict",
+          "description": "Contains channel_id, user_id, content",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "DatabaseStore",
+          "description": "Channel data store to check membership",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validation_result",
+          "type": "dict",
+          "description": "Success flag and prepared message data or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateAndPrepareSend(command: str, message_data: dict, channels: DatabaseStore) -> dict"
+    },
+    {
+      "name": "StoreMessage",
+      "purpose": "Persist the validated message to the messages store.",
+      "behavior": "Generate a new message_id, store the message entry (channel_id, user_id, content, timestamp) in the messages store, and return the message_id.",
+      "boundary": {
+        "in_scope": [
+          "message storage"
+        ],
+        "out_of_scope": [
+          "validation",
+          "updating last_seen",
+          "notifying"
+        ]
+      },
+      "preconditions": [
+        "Validation succeeded",
+        "messages store is writable"
+      ],
+      "postconditions": [
+        "Message is stored in messages store"
+      ],
+      "guarantees": [
+        "Message is persisted"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic database write operation",
+      "inputs": [
+        {
+          "name": "prepared_message",
+          "type": "dict",
+          "description": "Message data with timestamp",
+          "source": "ValidateAndPrepareSend output"
+        },
+        {
+          "name": "messages",
+          "type": "DatabaseStore",
+          "description": "Message store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "stored_message_id",
+          "type": "str",
+          "description": "ID of the stored message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def StoreMessage(prepared_message: dict, messages: DatabaseStore) -> str"
+    },
+    {
+      "name": "UpdateUserLastSeen",
+      "purpose": "Update the last_seen timestamp for the user in the users store.",
+      "behavior": "Set the last_seen field of the user identified by user_id to the current timestamp.",
+      "boundary": {
+        "in_scope": [
+          "updating last_seen"
+        ],
+        "out_of_scope": [
+          "message storage",
+          "notifying"
+        ]
+      },
+      "preconditions": [
+        "user_id exists in users store"
+      ],
+      "postconditions": [
+        "last_seen is updated"
+      ],
+      "guarantees": [
+        "Timestamp is set to current time"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic update operation",
+      "inputs": [
+        {
+          "name": "user_id",
+          "type": "str",
+          "description": "User to update",
+          "source": "parent input (message_data.user_id)"
+        },
+        {
+          "name": "users",
+          "type": "DatabaseStore",
+          "description": "Users store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "update_status",
+          "type": "bool",
+          "description": "Success flag",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def UpdateUserLastSeen(user_id: str, users: DatabaseStore) -> bool"
+    },
+    {
+      "name": "NotifyChannelMembers",
+      "purpose": "Notify all other members of the channel about the new message.",
+      "behavior": "Retrieve the list of members from the channel store (excluding the sender), and for each member, trigger a notification (e.g., update a notification log or push event).",
+      "boundary": {
+        "in_scope": [
+          "notifying members"
+        ],
+        "out_of_scope": [
+          "message storage",
+          "last_seen update"
+        ]
+      },
+      "preconditions": [
+        "Channel exists",
+        "Members list is available"
+      ],
+      "postconditions": [
+        "Notifications sent to all other members"
+      ],
+      "guarantees": [
+        "Sender is not notified"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Simple notification dispatch",
+      "inputs": [
+        {
+          "name": "channel_id",
+          "type": "str",
+          "description": "Channel to notify members of",
+          "source": "parent input (message_data.channel_id)"
+        },
+        {
+          "name": "user_id",
+          "type": "str",
+          "description": "Sender to exclude",
+          "source": "parent input (message_data.user_id)"
+        },
+        {
+          "name": "channels",
+          "type": "DatabaseStore",
+          "description": "Channel store to get members",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "notification_status",
+          "type": "bool",
+          "description": "Success flag",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def NotifyChannelMembers(channel_id: str, user_id: str, channels: DatabaseStore) -> bool"
+    },
+    {
+      "name": "RetrieveMessageHistory",
+      "purpose": "Retrieve the last 100 messages from a channel, sorted by timestamp descending.",
+      "behavior": "Query the messages store for all messages with the given channel_id, sort by timestamp descending, limit to 100, and return the list.",
+      "boundary": {
+        "in_scope": [
+          "message retrieval"
+        ],
+        "out_of_scope": [
+          "validation",
+          "storage"
+        ]
+      },
+      "preconditions": [
+        "command is 'history'",
+        "channel_id is provided"
+      ],
+      "postconditions": [
+        "Returns messages sorted by timestamp descending"
+      ],
+      "guarantees": [
+        "Maximum 100 messages returned"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Pure query operation",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'history'",
+          "source": "parent input"
+        },
+        {
+          "name": "message_data",
+          "type": "dict",
+          "description": "Contains channel_id",
+          "source": "parent input"
+        },
+        {
+          "name": "messages",
+          "type": "DatabaseStore",
+          "description": "Message store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "history_result",
+          "type": "list",
+          "description": "List of up to 100 messages",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RetrieveMessageHistory(command: str, message_data: dict, messages: DatabaseStore) -> list"
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel with a unique name, set the caller as creator and first member.",
+      "behavior": "Check if channel name already exists in channels store. If not, generate a new channel_id, store the channel with name, members list containing user_id, and created_by as user_id. Return success with channel_id.",
+      "boundary": {
+        "in_scope": [
+          "channel creation",
+          "uniqueness check"
+        ],
+        "out_of_scope": [
+          "message operations",
+          "joining"
+        ]
+      },
+      "preconditions": [
+        "command is 'create_channel'",
+        "channel_name is unique"
+      ],
+      "postconditions": [
+        "New channel is created with user as first member"
+      ],
+      "guarantees": [
+        "Channel name is unique"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic creation with uniqueness check",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'create_channel'",
+          "source": "parent input"
+        },
+        {
+          "name": "message_data",
+          "type": "dict",
+          "description": "Contains channel_name, user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "DatabaseStore",
+          "description": "Channel store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "channel_creation_result",
+          "type": "dict",
+          "description": "Success flag and new channel_id or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CreateChannel(command: str, message_data: dict, channels: DatabaseStore) -> dict"
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Add a user to a channel's member list if not already a member.",
+      "behavior": "Check if user_id is already in the members list of the channel. If not, append user_id to members list and update the channel store. Return success.",
+      "boundary": {
+        "in_scope": [
+          "membership addition"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "message operations"
+        ]
+      },
+      "preconditions": [
+        "command is 'join'",
+        "channel exists"
+      ],
+      "postconditions": [
+        "User is added to channel members if not already present"
+      ],
+      "guarantees": [
+        "No duplicate membership"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic membership update",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'join'",
+          "source": "parent input"
+        },
+        {
+          "name": "message_data",
+          "type": "dict",
+          "description": "Contains channel_id, user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "DatabaseStore",
+          "description": "Channel store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "join_result",
+          "type": "dict",
+          "description": "Success flag or error if already member",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def JoinChannel(command: str, message_data: dict, channels: DatabaseStore) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "command": "ValidateAndPrepareSend, RetrieveMessageHistory, CreateChannel, JoinChannel",
+      "message_data": "ValidateAndPrepareSend, RetrieveMessageHistory, CreateChannel, JoinChannel"
+    },
+    "parent_outputs_produced_by": {
+      "message_result": "ValidateAndPrepareSend, StoreMessage, UpdateUserLastSeen, NotifyChannelMembers, RetrieveMessageHistory, CreateChannel, JoinChannel"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "ValidateAndPrepareSend",
+      "to_input": "command",
+      "note": "Route send command"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "message_data",
+      "to_node": "ValidateAndPrepareSend",
+      "to_input": "message_data",
+      "note": "Pass message data"
+    },
+    {
+      "from_node": "ValidateAndPrepareSend",
+      "from_output": "validation_result",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return validation result"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "prepared_message",
+      "to_node": "StoreMessage",
+      "to_input": "prepared_message",
+      "note": "Pass prepared message if validation succeeded"
+    },
+    {
+      "from_node": "StoreMessage",
+      "from_output": "stored_message_id",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return stored message ID"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "user_id",
+      "to_node": "UpdateUserLastSeen",
+      "to_input": "user_id",
+      "note": "Pass user ID for last_seen update"
+    },
+    {
+      "from_node": "UpdateUserLastSeen",
+      "from_output": "update_status",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return update status"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "channel_id",
+      "to_node": "NotifyChannelMembers",
+      "to_input": "channel_id",
+      "note": "Pass channel ID"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "user_id",
+      "to_node": "NotifyChannelMembers",
+      "to_input": "user_id",
+      "note": "Pass sender user ID to exclude"
+    },
+    {
+      "from_node": "NotifyChannelMembers",
+      "from_output": "notification_status",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return notification status"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "RetrieveMessageHistory",
+      "to_input": "command",
+      "note": "Route history command"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "message_data",
+      "to_node": "RetrieveMessageHistory",
+      "to_input": "message_data",
+      "note": "Pass message data"
+    },
+    {
+      "from_node": "RetrieveMessageHistory",
+      "from_output": "history_result",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return message history"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "CreateChannel",
+      "to_input": "command",
+      "note": "Route create_channel command"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "message_data",
+      "to_node": "CreateChannel",
+      "to_input": "message_data",
+      "note": "Pass message data"
+    },
+    {
+      "from_node": "CreateChannel",
+      "from_output": "channel_creation_result",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return channel creation result"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "JoinChannel",
+      "to_input": "command",
+      "note": "Route join command"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "message_data",
+      "to_node": "JoinChannel",
+      "to_input": "message_data",
+      "note": "Pass message data"
+    },
+    {
+      "from_node": "JoinChannel",
+      "from_output": "join_result",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return join result"
+    }
+  ]
+}

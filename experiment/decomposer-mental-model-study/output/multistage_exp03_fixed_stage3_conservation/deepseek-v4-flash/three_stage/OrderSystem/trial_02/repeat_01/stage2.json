@@ -1,0 +1,402 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Validate and parse the command string to determine the operation to execute",
+      "behavior": "Check command is one of 'place', 'cancel', 'track'; return parsed command type",
+      "boundary": {
+        "in_scope": [
+          "command validation",
+          "command type extraction"
+        ],
+        "out_of_scope": [
+          "order data validation",
+          "execution logic"
+        ]
+      },
+      "preconditions": [
+        "command is a string"
+      ],
+      "postconditions": [
+        "command_type is 'place', 'cancel', or 'track'"
+      ],
+      "guarantees": [
+        "Returns error if command is invalid"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Order command string",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "command_type",
+          "type": "str",
+          "description": "Validated command type",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(command: str) -> str"
+    },
+    {
+      "name": "ValidateOrderData",
+      "purpose": "Validate order_data structure and required fields based on command type",
+      "behavior": "Check required fields exist and have correct types; for 'place' ensure items list non-empty; for 'cancel' and 'track' ensure order_id present",
+      "boundary": {
+        "in_scope": [
+          "field presence",
+          "type checking",
+          "basic format validation"
+        ],
+        "out_of_scope": [
+          "business rule validation",
+          "database lookups"
+        ]
+      },
+      "preconditions": [
+        "command_type is valid"
+      ],
+      "postconditions": [
+        "Returns validated data or raises error"
+      ],
+      "guarantees": [
+        "Ensures data conforms to expected schema"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command_type",
+          "type": "str",
+          "description": "Parsed command type",
+          "source": "ParseCommand output"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validated_data",
+          "type": "dict",
+          "description": "Validated order data or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateOrderData(command_type: str, order_data: dict) -> dict"
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the 'place' order workflow: validate inventory, charge payment, reserve stock, create order, send notification",
+      "behavior": "Check item availability and stock, charge payment via payment gateway, reserve inventory, create order record, send confirmation notification; rollback on failure",
+      "boundary": {
+        "in_scope": [
+          "inventory check",
+          "payment charge",
+          "inventory reservation",
+          "order creation",
+          "notification"
+        ],
+        "out_of_scope": [
+          "cancel logic",
+          "track logic"
+        ]
+      },
+      "preconditions": [
+        "command_type is 'place'",
+        "validated_data is valid"
+      ],
+      "postconditions": [
+        "Order created if successful",
+        "Inventory reserved",
+        "Payment charged"
+      ],
+      "guarantees": [
+        "Atomic: rollback on failure",
+        "Payment charged before stock decrement"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validated_data",
+          "type": "dict",
+          "description": "Validated order data",
+          "source": "ValidateOrderData output"
+        },
+        {
+          "name": "orders",
+          "type": "Database",
+          "description": "Order database",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "inventory",
+          "type": "Database",
+          "description": "Inventory database",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result of place operation",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(validated_data: dict, orders: Database, inventory: Database) -> dict"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the 'cancel' order workflow: verify order exists and not shipped, refund payment, restore inventory, update order status",
+      "behavior": "Lookup order, check status not shipped, refund payment, restore reserved inventory, update order status to cancelled; rollback on failure",
+      "boundary": {
+        "in_scope": [
+          "order lookup",
+          "status check",
+          "payment refund",
+          "inventory restoration",
+          "status update"
+        ],
+        "out_of_scope": [
+          "place logic",
+          "track logic"
+        ]
+      },
+      "preconditions": [
+        "command_type is 'cancel'",
+        "validated_data is valid"
+      ],
+      "postconditions": [
+        "Order status updated to cancelled",
+        "Payment refunded",
+        "Inventory restored"
+      ],
+      "guarantees": [
+        "Cannot cancel shipped order",
+        "Atomic rollback"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validated_data",
+          "type": "dict",
+          "description": "Validated order data with order_id",
+          "source": "ValidateOrderData output"
+        },
+        {
+          "name": "orders",
+          "type": "Database",
+          "description": "Order database",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "inventory",
+          "type": "Database",
+          "description": "Inventory database",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result of cancel operation",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(validated_data: dict, orders: Database, inventory: Database) -> dict"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the 'track' order workflow: return current order status and estimated delivery time",
+      "behavior": "Lookup order by order_id, retrieve status and estimated delivery, return result",
+      "boundary": {
+        "in_scope": [
+          "order lookup",
+          "status retrieval",
+          "delivery time estimation"
+        ],
+        "out_of_scope": [
+          "place logic",
+          "cancel logic"
+        ]
+      },
+      "preconditions": [
+        "command_type is 'track'",
+        "validated_data is valid"
+      ],
+      "postconditions": [
+        "Returns order status and estimated delivery"
+      ],
+      "guarantees": [
+        "No side effects on data stores"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validated_data",
+          "type": "dict",
+          "description": "Validated order data with order_id",
+          "source": "ValidateOrderData output"
+        },
+        {
+          "name": "orders",
+          "type": "Database",
+          "description": "Order database",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result of track operation with status and delivery time",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(validated_data: dict, orders: Database) -> dict"
+    },
+    {
+      "name": "FormatResult",
+      "purpose": "Format the operation result into the standard output JSON structure",
+      "behavior": "Take success, order_id, status, message from child operation and construct final output dict",
+      "boundary": {
+        "in_scope": [
+          "result formatting",
+          "output structure"
+        ],
+        "out_of_scope": [
+          "business logic",
+          "data store access"
+        ]
+      },
+      "preconditions": [
+        "operation_result is available"
+      ],
+      "postconditions": [
+        "Output conforms to expected JSON schema"
+      ],
+      "guarantees": [
+        "Consistent output format"
+      ],
+      "composition_role": "aggregate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "operation_result",
+          "type": "dict",
+          "description": "Raw result from PlaceOrder, CancelOrder, or TrackOrder",
+          "source": "PlaceOrder | CancelOrder | TrackOrder output"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Formatted JSON result",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def FormatResult(operation_result: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "command": "ParseCommand.inputs[0]",
+      "order_data": "ValidateOrderData.inputs[1]"
+    },
+    "parent_outputs_produced_by": {
+      "order_result": "FormatResult.outputs[0]"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "ParseCommand",
+      "to_input": "command",
+      "note": "Pass command string for parsing"
+    },
+    {
+      "from_node": "ParseCommand",
+      "from_output": "command_type",
+      "to_node": "ValidateOrderData",
+      "to_input": "command_type",
+      "note": "Pass parsed command type for validation"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "ValidateOrderData",
+      "to_input": "order_data",
+      "note": "Pass order data for validation"
+    },
+    {
+      "from_node": "ValidateOrderData",
+      "from_output": "validated_data",
+      "to_node": "PlaceOrder",
+      "to_input": "validated_data",
+      "note": "Pass validated data to place handler"
+    },
+    {
+      "from_node": "ValidateOrderData",
+      "from_output": "validated_data",
+      "to_node": "CancelOrder",
+      "to_input": "validated_data",
+      "note": "Pass validated data to cancel handler"
+    },
+    {
+      "from_node": "ValidateOrderData",
+      "from_output": "validated_data",
+      "to_node": "TrackOrder",
+      "to_input": "validated_data",
+      "note": "Pass validated data to track handler"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "order_result",
+      "to_node": "FormatResult",
+      "to_input": "operation_result",
+      "note": "Pass place result for formatting"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_result",
+      "to_node": "FormatResult",
+      "to_input": "operation_result",
+      "note": "Pass cancel result for formatting"
+    },
+    {
+      "from_node": "TrackOrder",
+      "from_output": "order_result",
+      "to_node": "FormatResult",
+      "to_input": "operation_result",
+      "note": "Pass track result for formatting"
+    },
+    {
+      "from_node": "FormatResult",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return final formatted result"
+    }
+  ]
+}

@@ -1,0 +1,193 @@
+{
+  "children": [
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the full 'place' order workflow: validate items, charge payment, reserve inventory, create order record, send notification.",
+      "behavior": "Receives command and order_data; if command is 'place', performs all steps sequentially; returns success/failure result with rollback on failure.",
+      "boundary": {
+        "in_scope": [
+          "validating item existence and stock",
+          "charging payment via payment gateway",
+          "reserving inventory",
+          "creating order record",
+          "sending confirmation notification",
+          "rolling back on failure"
+        ],
+        "out_of_scope": [
+          "cancel workflow",
+          "track workflow",
+          "command parsing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "command",
+          "description": "The order command string",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "description": "Order payload with items, payment_method, shipping_address, order_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'place'"
+      ],
+      "postconditions": [
+        "If success, order is created, payment charged, inventory reserved; if failure, no side effects"
+      ],
+      "guarantees": [
+        "Atomicity: all steps succeed or none",
+        "Payment charged before inventory decremented"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the full 'cancel' order workflow: verify order exists and not shipped, refund payment, restore inventory, update order status.",
+      "behavior": "Receives command and order_data; if command is 'cancel', performs all steps sequentially; returns success/failure result with rollback on failure.",
+      "boundary": {
+        "in_scope": [
+          "verifying order existence and not shipped",
+          "refunding payment",
+          "restoring inventory",
+          "updating order status to cancelled"
+        ],
+        "out_of_scope": [
+          "place workflow",
+          "track workflow",
+          "command parsing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "command",
+          "description": "The order command string",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'cancel'"
+      ],
+      "postconditions": [
+        "If success, order status is cancelled, payment refunded, inventory restored; if failure, no side effects"
+      ],
+      "guarantees": [
+        "Atomicity",
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the 'track' order workflow: return current order status and estimated delivery time.",
+      "behavior": "Receives command and order_data; if command is 'track', queries order status and estimated delivery; returns result.",
+      "boundary": {
+        "in_scope": [
+          "querying order status",
+          "computing estimated delivery time"
+        ],
+        "out_of_scope": [
+          "place workflow",
+          "cancel workflow",
+          "command parsing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "command",
+          "description": "The order command string",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message (including delivery time)",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'track'"
+      ],
+      "postconditions": [
+        "Order state unchanged"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent OrderSystem function is a command router that delegates to three distinct workflows: PlaceOrder, CancelOrder, and TrackOrder. Each child handles a complete command workflow atomically, with no sibling calls. The parent parses the command and invokes the appropriate child.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "PlaceOrder",
+      "data": "command, order_data",
+      "note": "If command is 'place'"
+    },
+    {
+      "from": "parent",
+      "to": "CancelOrder",
+      "data": "command, order_data",
+      "note": "If command is 'cancel'"
+    },
+    {
+      "from": "parent",
+      "to": "TrackOrder",
+      "data": "command, order_data",
+      "note": "If command is 'track'"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    }
+  ]
+}

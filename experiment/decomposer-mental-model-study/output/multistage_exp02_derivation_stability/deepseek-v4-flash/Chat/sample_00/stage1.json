@@ -1,0 +1,367 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Extract and validate the command field from the input JSON",
+      "behavior": "Parse the input JSON to extract the 'command' field and validate it is one of the allowed commands (send, history, create_channel, join). Return the command and remaining payload.",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "command validation"
+        ],
+        "out_of_scope": [
+          "executing the command",
+          "data store access"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "command",
+          "description": "Validated command string",
+          "consumer": "parent"
+        },
+        {
+          "name": "payload",
+          "description": "Remaining data after command extraction",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command is one of: send, history, create_channel, join"
+      ],
+      "guarantees": [
+        "Returns error if command is missing or invalid"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Send a message to a joined channel",
+      "behavior": "Validate that the user is a member of the specified channel, then store the message in the messages data store with timestamp and user info.",
+      "boundary": {
+        "in_scope": [
+          "membership check",
+          "message storage"
+        ],
+        "out_of_scope": [
+          "history retrieval",
+          "channel creation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payload",
+          "description": "Contains channel_id, user_id, and message text",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "description": "Data store for channel membership",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "messages",
+          "description": "Data store for messages",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "Success or error status",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "User is a member of the channel",
+        "Message text is non-empty"
+      ],
+      "postconditions": [
+        "Message is stored in messages data store"
+      ],
+      "guarantees": [
+        "Returns error if user not in channel"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Retrieve message history for a channel",
+      "behavior": "Validate that the user is a member of the channel, then fetch up to 100 most recent messages from the messages data store for that channel.",
+      "boundary": {
+        "in_scope": [
+          "membership check",
+          "message retrieval",
+          "limit enforcement"
+        ],
+        "out_of_scope": [
+          "message sending",
+          "channel creation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payload",
+          "description": "Contains channel_id and user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "description": "Data store for channel membership",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "messages",
+          "description": "Data store for messages",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "history",
+          "description": "List of up to 100 messages",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "User is a member of the channel"
+      ],
+      "postconditions": [
+        "Returns at most 100 messages"
+      ],
+      "guarantees": [
+        "Returns error if user not in channel"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel",
+      "behavior": "Create a new channel entry in the channels data store with a unique channel_id and add the creator as the first member.",
+      "boundary": {
+        "in_scope": [
+          "channel creation",
+          "membership initialization"
+        ],
+        "out_of_scope": [
+          "message operations",
+          "joining existing channels"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payload",
+          "description": "Contains channel_name and creator user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "description": "Data store for channels",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "channel_id",
+          "description": "Unique identifier for the new channel",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Channel name is non-empty and unique"
+      ],
+      "postconditions": [
+        "Channel is created and creator is a member"
+      ],
+      "guarantees": [
+        "Returns error if channel name already exists"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Join an existing channel",
+      "behavior": "Validate that the channel exists and the user is not already a member, then add the user to the channel's member list.",
+      "boundary": {
+        "in_scope": [
+          "membership addition"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "message operations"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payload",
+          "description": "Contains channel_id and user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "description": "Data store for channels",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "Success or error status",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Channel exists",
+        "User is not already a member"
+      ],
+      "postconditions": [
+        "User is added to channel member list"
+      ],
+      "guarantees": [
+        "Returns error if channel does not exist or user already member"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Format the final output JSON",
+      "behavior": "Take the result from the executed command and format it into a standard JSON response with success, data, and message fields.",
+      "boundary": {
+        "in_scope": [
+          "response formatting"
+        ],
+        "out_of_scope": [
+          "command execution",
+          "data store access"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "command_result",
+          "description": "Result from the executed child function",
+          "source": "parent input"
+        },
+        {
+          "name": "command",
+          "description": "Original command for context",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "output",
+          "description": "Formatted JSON response",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Command execution completed"
+      ],
+      "postconditions": [
+        "Output is valid JSON with success, data, message"
+      ],
+      "guarantees": [
+        "Always returns a consistent response structure"
+      ],
+      "composition_role": "aggregate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent ChatApp handles four distinct commands. Each command is decomposed into a separate child function that performs the specific operation, plus a ParseCommand child to route the request and a FormatResponse child to produce the output. This keeps each child focused on a single responsibility and avoids overlapping logic.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ParseCommand",
+      "data": "input JSON",
+      "note": "Extract command and payload"
+    },
+    {
+      "from": "ParseCommand",
+      "to": "parent",
+      "data": "command, payload",
+      "note": "Return parsed data"
+    },
+    {
+      "from": "parent",
+      "to": "SendMessage",
+      "data": "payload",
+      "note": "If command is 'send'"
+    },
+    {
+      "from": "parent",
+      "to": "GetHistory",
+      "data": "payload",
+      "note": "If command is 'history'"
+    },
+    {
+      "from": "parent",
+      "to": "CreateChannel",
+      "data": "payload",
+      "note": "If command is 'create_channel'"
+    },
+    {
+      "from": "parent",
+      "to": "JoinChannel",
+      "data": "payload",
+      "note": "If command is 'join'"
+    },
+    {
+      "from": "SendMessage",
+      "to": "parent",
+      "data": "result",
+      "note": "Return success/error"
+    },
+    {
+      "from": "GetHistory",
+      "to": "parent",
+      "data": "history",
+      "note": "Return message list"
+    },
+    {
+      "from": "CreateChannel",
+      "to": "parent",
+      "data": "channel_id",
+      "note": "Return new channel ID"
+    },
+    {
+      "from": "JoinChannel",
+      "to": "parent",
+      "data": "result",
+      "note": "Return success/error"
+    },
+    {
+      "from": "parent",
+      "to": "FormatResponse",
+      "data": "command_result, command",
+      "note": "Format final output"
+    },
+    {
+      "from": "FormatResponse",
+      "to": "parent",
+      "data": "output JSON",
+      "note": "Return formatted response"
+    }
+  ]
+}

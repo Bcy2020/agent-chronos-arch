@@ -1,0 +1,185 @@
+You are a senior code reviewer examining a code submission. The code below was written by another developer. Your job is to review whether the submitted parent function correctly uses the declared child functions — and based on that, judge whether the decomposition (the set of children) is valid.
+
+The decomposition declares a set of child functions. The parent function is supposed to call EACH child directly. Review the code carefully: if any child's name never appears as a DIRECT call in the parent code, the decomposition is INVALID — those children are not actually composed into the parent.
+
+REVIEW CHECKLIST — examine the code and the children list together:
+
+1. RETURN VALUE ORIGIN — Trace every value in every return statement. Each business value must originate from a child function's output or a parent function's input. Acceptable origins include:
+   - A variable assigned from a child call: rows = RunQuery(...)
+   - A field extracted from a child result: user_id = transaction["user_id"]
+   - A parent input parameter: amount, service, etc.
+   - A computation from parent inputs: len(content), quantity * 2
+
+   A return value that is a literal (None, True, False, a quoted string, a number, an empty list [], an empty dict {}) is a VIOLATION if it represents data that should come from a child.
+
+2. CHILD COVERAGE — Compare the children list against the actual code. EVERY child's function name must appear as a direct call site in the parent code. If child names are missing from the code (not called by the parent), that is a FAIL — the decomposition claims these children are needed but the parent doesn't use them.
+
+3. DIRECT ACCESS — The code must NOT directly read or write any global variable or data source. All data operations must go through child function calls.
+
+4. NO CROSS CALLS (TREE STRUCTURE) — The decomposition is a tree, not a graph. Each child should only be called by the parent. If the code shows one child calling another child, that is a tree structure violation — siblings do not call each other.
+
+5. DECLARED DATAFLOW CONFORMANCE — Verify that generated code realizes every declared dataflow edge. For child-to-child data dependency, parent must mediate the transfer. If code uses a different source for a child input than the declared edge requires, return cannot_compose with reason "dataflow_conformance_failure".
+
+If ANY check fails, return status="cannot_compose" with detailed feedback and list which checks failed in failed_checks.
+If ALL checks pass, return status="ok" with empty checks marked passed.
+
+Return ONLY valid JSON with this structure:
+{
+  "status": "ok | cannot_compose",
+  "checks": {
+    "return_value_origin": {"passed": true, "detail": "explanation of the verdict"},
+    "child_coverage": {"passed": true, "detail": "explanation of the verdict"},
+    "no_direct_access": {"passed": true, "detail": "explanation of the verdict"},
+    "no_cross_calls": {"passed": true, "detail": "explanation of the verdict"},
+    "dataflow_conformance": {"passed": true, "detail": "explanation of the verdict"}
+  },
+  "decomposition_feedback": {
+    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | dataflow_conformance_failure | other",
+    "offending_child": "ChildName or empty",
+    "failed_checks": ["return_value_origin", "child_coverage"],
+    "missing_inputs": [
+      {
+        "child": "ChildName",
+        "param": "param_name",
+        "why_needed": "why this input is needed",
+        "expected_source": "parent input / previous child output / new child output"
+      }
+    ],
+    "direct_resource_accesses": [
+      {
+        "resource": "resource_name",
+        "operation": "read",
+        "why_needed": "why this resource access is needed"
+      }
+    ],
+    "suggested_fix": "Concrete suggestion for re-decomposition",
+    "requires_redecomposition": true
+  }
+}
+
+Review the submitted code below. This code was written by another developer.
+
+============================================================
+SUBMITTED PARENT FUNCTION
+============================================================
+Name: ProcessChatCommand
+Purpose: Real Stage1 decomposition for Chat/trial_02
+
+Parent Inputs:
+  - input: Any - Parent input: input
+Parent Outputs:
+  - output: Any - Parent output: output
+
+Data Sources:
+  - channels (data_store, read_write)
+  - messages (data_store, read_write)
+
+============================================================
+CHILDREN - INTERFACES
+============================================================
+
+  [ParseAndValidateCommand]
+    Purpose: Parse the input JSON and validate the command field
+    Behavior: Extract command and message_data from input; check command is one of send, history, create_channel, join; return error if invalid
+    Signature: def ParseAndValidateCommand(input: Any) -> tuple[Any, Any]
+    Inputs:
+      - input: Any (source: parent)
+    Outputs:
+      - validated_command: Any (consumer: parent)
+      - message_data: Any (consumer: parent)
+
+  [SendMessage]
+    Purpose: Handle send command: validate membership, store message, update last_seen
+    Behavior: Check user is member of channel via channels store; create message entry in messages store; update channel's last_seen timestamp
+    Signature: def SendMessage(message_data: Any) -> Any
+    Inputs:
+      - message_data: Any (source: parent)
+    Outputs:
+      - send_result: Any (consumer: parent)
+
+  [GetHistory]
+    Purpose: Handle history command: retrieve last 100 messages from channel
+    Behavior: Query messages store for channel_id, sort by timestamp descending, limit to 100
+    Signature: def GetHistory(message_data: Any) -> Any
+    Inputs:
+      - message_data: Any (source: parent)
+    Outputs:
+      - history_result: Any (consumer: parent)
+
+  [CreateChannel]
+    Purpose: Handle create_channel command: create channel with unique name, set creator as member
+    Behavior: Check channel name uniqueness in channels store; create new channel entry with creator as first member
+    Signature: def CreateChannel(message_data: Any) -> Any
+    Inputs:
+      - message_data: Any (source: parent)
+    Outputs:
+      - create_result: Any (consumer: parent)
+
+  [JoinChannel]
+    Purpose: Handle join command: add user to channel's member list
+    Behavior: Check channel exists; add user_id to channel's members array if not already present
+    Signature: def JoinChannel(message_data: Any) -> Any
+    Inputs:
+      - message_data: Any (source: parent)
+    Outputs:
+      - join_result: Any (consumer: parent)
+
+  [FormatResponse]
+    Purpose: Format the final output JSON with success, data, and message fields
+    Behavior: Take result from child operation and wrap in standard response format
+    Signature: def FormatResponse(operation_result: Any, error: Any) -> Any
+    Inputs:
+      - operation_result: Any (source: parent)
+      - error: Any (source: parent)
+    Outputs:
+      - output: Any (consumer: parent)
+
+============================================================
+DECLARED DATAFLOW EDGES - AUTHORITATIVE COMPOSITION CONTRACT
+============================================================
+
+Each row is a data transfer that the parent implementation must realize.
+Sibling-to-sibling rows describe data dependency only; they must be implemented by the parent:
+the parent calls the source child, stores its output, then passes the value to the target child.
+Children must never call siblings.
+
+| from_node | from_output | to_node | to_input | note |
+|-----------|-------------|---------|----------|------|
+| parent | input | ParseAndValidateCommand | input | parse and validate command |
+| ParseAndValidateCommand | validated_command | parent | validated_command | return parsed data |
+| ParseAndValidateCommand | message_data | parent | message_data | return parsed data |
+| parent | message_data | SendMessage | message_data | if command is send |
+| parent | message_data | GetHistory | message_data | if command is history |
+| parent | message_data | CreateChannel | message_data | if command is create_channel |
+| parent | message_data | JoinChannel | message_data | if command is join |
+| SendMessage | send_result | parent | send_result | return result |
+| GetHistory | history_result | parent | history_result | return result |
+| CreateChannel | create_result | parent | create_result | return result |
+| JoinChannel | join_result | parent | join_result | return result |
+| FormatResponse | output | parent | output | return formatted response |
+
+
+============================================================
+GENERATED CODE TO VERIFY
+============================================================
+```python
+def ProcessChatCommand(input: Any) -> Any:
+    validated_command, message_data = ParseAndValidateCommand(input)
+    if validated_command == 'send':
+        send_result = SendMessage(message_data)
+        output = FormatResponse(send_result, None)
+    elif validated_command == 'history':
+        history_result = GetHistory(message_data)
+        output = FormatResponse(history_result, None)
+    elif validated_command == 'create_channel':
+        create_result = CreateChannel(message_data)
+        output = FormatResponse(create_result, None)
+    elif validated_command == 'join':
+        join_result = JoinChannel(message_data)
+        output = FormatResponse(join_result, None)
+    else:
+        output = FormatResponse(None, 'Invalid command')
+    return output
+```
+
+Apply the verification checklist. Return your verdict as valid JSON.

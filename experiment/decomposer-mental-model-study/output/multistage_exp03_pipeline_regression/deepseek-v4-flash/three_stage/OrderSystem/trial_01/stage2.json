@@ -1,0 +1,258 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Validate and parse the command string to determine the operation type.",
+      "behavior": "Check that command is one of 'place', 'cancel', 'track'. Return the command type or raise an error.",
+      "boundary": {
+        "in_scope": [
+          "command validation",
+          "command type extraction"
+        ],
+        "out_of_scope": [
+          "order data processing",
+          "database operations"
+        ]
+      },
+      "preconditions": [
+        "command is a string"
+      ],
+      "postconditions": [
+        "command_type is one of the three valid values"
+      ],
+      "guarantees": [
+        "Returns valid command type or raises error"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure validation function",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "The command string from parent input",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "command_type",
+          "type": "str",
+          "description": "Validated command type: 'place', 'cancel', or 'track'",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(command: str) -> str"
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the 'place' command: validate items, charge payment, reserve inventory, create order record, send notification.",
+      "behavior": "Sequentially call internal sub-steps: validate items, charge payment, reserve inventory, create order, send notification. On failure, rollback previous steps.",
+      "boundary": {
+        "in_scope": [
+          "item validation",
+          "payment charging",
+          "inventory reservation",
+          "order creation",
+          "notification sending",
+          "rollback"
+        ],
+        "out_of_scope": [
+          "cancel logic",
+          "track logic"
+        ]
+      },
+      "preconditions": [
+        "command_type is 'place'",
+        "order_data contains items, payment_method, shipping_address"
+      ],
+      "postconditions": [
+        "If success: order created, payment charged, inventory reserved, notification sent. If failure: all changes rolled back."
+      ],
+      "guarantees": [
+        "Atomicity: all or nothing"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Complex multi-step operation",
+      "inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload from parent input",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dictionary with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(order_data: dict) -> dict"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the 'cancel' command: verify order exists and not shipped, refund payment, restore inventory, update order status.",
+      "behavior": "Sequentially call internal sub-steps: verify order, refund payment, restore inventory, update status. On failure, rollback.",
+      "boundary": {
+        "in_scope": [
+          "order verification",
+          "payment refund",
+          "inventory restoration",
+          "status update",
+          "rollback"
+        ],
+        "out_of_scope": [
+          "place logic",
+          "track logic"
+        ]
+      },
+      "preconditions": [
+        "command_type is 'cancel'",
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "If success: order cancelled, payment refunded, inventory restored. If failure: no changes."
+      ],
+      "guarantees": [
+        "Atomicity: all or nothing"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Complex multi-step operation",
+      "inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload from parent input",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dictionary with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(order_data: dict) -> dict"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the 'track' command: return current order status and estimated delivery time.",
+      "behavior": "Look up order by order_id in orders data store, retrieve status and estimated delivery, return result.",
+      "boundary": {
+        "in_scope": [
+          "order lookup",
+          "status retrieval",
+          "delivery time estimation"
+        ],
+        "out_of_scope": [
+          "place logic",
+          "cancel logic"
+        ]
+      },
+      "preconditions": [
+        "command_type is 'track'",
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "Result contains current status and estimated delivery time"
+      ],
+      "guarantees": [
+        "Read-only operation, no side effects"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Simple read operation",
+      "inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload from parent input",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dictionary with success, order_id, status, message, estimated_delivery",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(order_data: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "command": "ParseCommand",
+      "order_data": "PlaceOrder, CancelOrder, TrackOrder"
+    },
+    "parent_outputs_produced_by": {
+      "order_result": "PlaceOrder, CancelOrder, TrackOrder"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "ParseCommand",
+      "to_input": "command",
+      "note": "Pass command for validation"
+    },
+    {
+      "from_node": "ParseCommand",
+      "from_output": "command_type",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return validated command type to parent for routing"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "PlaceOrder",
+      "to_input": "order_data",
+      "note": "Pass order data when command_type is 'place'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "CancelOrder",
+      "to_input": "order_data",
+      "note": "Pass order data when command_type is 'cancel'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "TrackOrder",
+      "to_input": "order_data",
+      "note": "Pass order data when command_type is 'track'"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "TrackOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "",
+      "note": "Return result to parent"
+    }
+  ]
+}

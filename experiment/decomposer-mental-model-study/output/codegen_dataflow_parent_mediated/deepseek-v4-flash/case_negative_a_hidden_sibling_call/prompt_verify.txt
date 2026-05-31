@@ -1,0 +1,131 @@
+You are a senior code reviewer examining a code submission. The code below was written by another developer. Your job is to review whether the submitted parent function correctly uses the declared child functions — and based on that, judge whether the decomposition (the set of children) is valid.
+
+The decomposition declares a set of child functions. The parent function is supposed to call EACH child directly. Review the code carefully: if any child's name never appears as a DIRECT call in the parent code, the decomposition is INVALID — those children are not actually composed into the parent.
+
+REVIEW CHECKLIST — examine the code and the children list together:
+
+1. RETURN VALUE ORIGIN — Trace every value in every return statement. Each business value must originate from a child function's output or a parent function's input. Acceptable origins include:
+   - A variable assigned from a child call: rows = RunQuery(...)
+   - A field extracted from a child result: user_id = transaction["user_id"]
+   - A parent input parameter: amount, service, etc.
+   - A computation from parent inputs: len(content), quantity * 2
+
+   A return value that is a literal (None, True, False, a quoted string, a number, an empty list [], an empty dict {}) is a VIOLATION if it represents data that should come from a child.
+
+2. CHILD COVERAGE — Compare the children list against the actual code. EVERY child's function name must appear as a direct call site in the parent code. If child names are missing from the code (not called by the parent), that is a FAIL — the decomposition claims these children are needed but the parent doesn't use them.
+
+3. DIRECT ACCESS — The code must NOT directly read or write any global variable or data source. All data operations must go through child function calls.
+
+4. NO CROSS CALLS (TREE STRUCTURE) — The decomposition is a tree, not a graph. Each child should only be called by the parent. If the code shows one child calling another child, that is a tree structure violation — siblings do not call each other.
+
+5. DECLARED DATAFLOW CONFORMANCE — Verify that generated code realizes every declared dataflow edge. For child-to-child data dependency, parent must mediate the transfer. If code uses a different source for a child input than the declared edge requires, return cannot_compose with reason "dataflow_conformance_failure".
+
+If ANY check fails, return status="cannot_compose" with detailed feedback and list which checks failed in failed_checks.
+If ALL checks pass, return status="ok" with empty checks marked passed.
+
+Return ONLY valid JSON with this structure:
+{
+  "status": "ok | cannot_compose",
+  "checks": {
+    "return_value_origin": {"passed": true, "detail": "explanation of the verdict"},
+    "child_coverage": {"passed": true, "detail": "explanation of the verdict"},
+    "no_direct_access": {"passed": true, "detail": "explanation of the verdict"},
+    "no_cross_calls": {"passed": true, "detail": "explanation of the verdict"},
+    "dataflow_conformance": {"passed": true, "detail": "explanation of the verdict"}
+  },
+  "decomposition_feedback": {
+    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | dataflow_conformance_failure | other",
+    "offending_child": "ChildName or empty",
+    "failed_checks": ["return_value_origin", "child_coverage"],
+    "missing_inputs": [
+      {
+        "child": "ChildName",
+        "param": "param_name",
+        "why_needed": "why this input is needed",
+        "expected_source": "parent input / previous child output / new child output"
+      }
+    ],
+    "direct_resource_accesses": [
+      {
+        "resource": "resource_name",
+        "operation": "read",
+        "why_needed": "why this resource access is needed"
+      }
+    ],
+    "suggested_fix": "Concrete suggestion for re-decomposition",
+    "requires_redecomposition": true
+  }
+}
+
+Review the submitted code below. This code was written by another developer.
+
+============================================================
+SUBMITTED PARENT FUNCTION
+============================================================
+Name: ProcessOrder
+Purpose: Process order commands.
+
+Parent Inputs:
+  - command: str - Order command
+  - payload: dict - Order payload
+Parent Outputs:
+  - result: dict - Order result
+
+============================================================
+CHILDREN - INTERFACES
+============================================================
+
+  [RouteCommand]
+    Purpose: Route command to the appropriate handler and return result.
+    Behavior: Parses command, calls the appropriate handler (CreateOrder or CancelOrder), returns result.
+    Signature: def RouteCommand(command: str, payload: dict) -> dict
+    Inputs:
+      - command: str (source: parent)
+      - payload: dict (source: parent)
+    Outputs:
+      - result: dict (consumer: parent)
+
+  [CreateOrder]
+    Purpose: Create a new order.
+    Behavior: Validates and creates order record.
+    Signature: def CreateOrder(payload: dict) -> dict
+    Inputs:
+      - payload: dict (source: parent)
+    Outputs:
+      - result: dict (consumer: parent)
+
+  [CancelOrder]
+    Purpose: Cancel an existing order.
+    Behavior: Verifies and cancels order.
+    Signature: def CancelOrder(payload: dict) -> dict
+    Inputs:
+      - payload: dict (source: parent)
+    Outputs:
+      - result: dict (consumer: parent)
+
+============================================================
+DECLARED DATAFLOW EDGES - AUTHORITATIVE COMPOSITION CONTRACT
+============================================================
+
+Each row is a data transfer that the parent implementation must realize.
+Sibling-to-sibling rows describe data dependency only; they must be implemented by the parent:
+the parent calls the source child, stores its output, then passes the value to the target child.
+Children must never call siblings.
+
+| from_node | from_output | to_node | to_input | note |
+|-----------|-------------|---------|----------|------|
+| parent | command | RouteCommand | command | Pass command for routing |
+| parent | payload | RouteCommand | payload | Pass payload for routing |
+| RouteCommand | result | parent | result | Return routed result |
+
+
+============================================================
+GENERATED CODE TO VERIFY
+============================================================
+```python
+def ProcessOrder(command: str, payload: dict) -> dict:
+    result = RouteCommand(command, payload)
+    return result
+```
+
+Apply the verification checklist. Return your verdict as valid JSON.

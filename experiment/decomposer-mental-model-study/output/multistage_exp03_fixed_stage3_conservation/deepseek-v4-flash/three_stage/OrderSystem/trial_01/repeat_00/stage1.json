@@ -1,0 +1,231 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Validate and parse the command string to determine the operation type.",
+      "behavior": "Check that command is one of 'place', 'cancel', 'track'. Return the command type or raise an error.",
+      "boundary": {
+        "in_scope": [
+          "command validation",
+          "command type extraction"
+        ],
+        "out_of_scope": [
+          "order data processing",
+          "database operations"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "command",
+          "description": "The command string from parent input",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "command_type",
+          "description": "Validated command type: 'place', 'cancel', or 'track'",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is a string"
+      ],
+      "postconditions": [
+        "command_type is one of the three valid values"
+      ],
+      "guarantees": [
+        "Returns valid command type or raises error"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure validation function"
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the 'place' command: validate items, charge payment, reserve inventory, create order record, send notification.",
+      "behavior": "Sequentially call internal sub-steps: validate items, charge payment, reserve inventory, create order, send notification. On failure, rollback previous steps.",
+      "boundary": {
+        "in_scope": [
+          "item validation",
+          "payment charging",
+          "inventory reservation",
+          "order creation",
+          "notification sending",
+          "rollback"
+        ],
+        "out_of_scope": [
+          "cancel logic",
+          "track logic"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload from parent input",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dictionary with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command_type is 'place'",
+        "order_data contains items, payment_method, shipping_address"
+      ],
+      "postconditions": [
+        "If success: order created, payment charged, inventory reserved, notification sent. If failure: all changes rolled back."
+      ],
+      "guarantees": [
+        "Atomicity: all or nothing"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Complex multi-step operation"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the 'cancel' command: verify order exists and not shipped, refund payment, restore inventory, update order status.",
+      "behavior": "Sequentially call internal sub-steps: verify order, refund payment, restore inventory, update status. On failure, rollback.",
+      "boundary": {
+        "in_scope": [
+          "order verification",
+          "payment refund",
+          "inventory restoration",
+          "status update",
+          "rollback"
+        ],
+        "out_of_scope": [
+          "place logic",
+          "track logic"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload from parent input",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dictionary with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command_type is 'cancel'",
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "If success: order cancelled, payment refunded, inventory restored. If failure: no changes."
+      ],
+      "guarantees": [
+        "Atomicity: all or nothing"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Complex multi-step operation"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the 'track' command: return current order status and estimated delivery time.",
+      "behavior": "Look up order by order_id in orders data store, retrieve status and estimated delivery, return result.",
+      "boundary": {
+        "in_scope": [
+          "order lookup",
+          "status retrieval",
+          "delivery time estimation"
+        ],
+        "out_of_scope": [
+          "place logic",
+          "cancel logic"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload from parent input",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dictionary with success, order_id, status, message, estimated_delivery",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command_type is 'track'",
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "Result contains current status and estimated delivery time"
+      ],
+      "guarantees": [
+        "Read-only operation, no side effects"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Simple read operation"
+    }
+  ],
+  "decomposition_rationale": "The parent OrderSystem function is decomposed into four children: ParseCommand for command validation, and three command-specific executors (PlaceOrder, CancelOrder, TrackOrder) that each handle their respective logic. This separates concerns cleanly and allows each child to be independently developed and tested.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ParseCommand",
+      "data": "command",
+      "note": "Validate command type"
+    },
+    {
+      "from": "ParseCommand",
+      "to": "parent",
+      "data": "command_type",
+      "note": "Return validated command"
+    },
+    {
+      "from": "parent",
+      "to": "PlaceOrder",
+      "data": "order_data",
+      "note": "If command_type is 'place'"
+    },
+    {
+      "from": "parent",
+      "to": "CancelOrder",
+      "data": "order_data",
+      "note": "If command_type is 'cancel'"
+    },
+    {
+      "from": "parent",
+      "to": "TrackOrder",
+      "data": "order_data",
+      "note": "If command_type is 'track'"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    }
+  ]
+}

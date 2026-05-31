@@ -1,0 +1,286 @@
+{
+  "children": [
+    {
+      "name": "RegisterPatient",
+      "purpose": "Validate required fields, create patient record, generate unique patient_id",
+      "behavior": "Check that name, dob, contact, insurance are present and non-empty; generate a new patient_id; store patient data in patients database; return success with patient_id",
+      "boundary": {
+        "in_scope": [
+          "field validation",
+          "patient_id generation",
+          "database write"
+        ],
+        "out_of_scope": [
+          "booking",
+          "records retrieval",
+          "profile update"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "patient_data",
+          "description": "Patient payload with name, dob, contact, insurance",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "register_result",
+          "description": "Dict with success, patient_id, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'register'"
+      ],
+      "postconditions": [
+        "Patient record exists in patients database"
+      ],
+      "guarantees": [
+        "patient_id is unique",
+        "required fields are validated"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "BookAppointment",
+      "purpose": "Check patient exists, check doctor availability, create appointment record, send confirmation",
+      "behavior": "Verify patient_id exists in patients; check doctor availability at requested time (no conflict); create appointment record with status 'confirmed'; generate confirmation message",
+      "boundary": {
+        "in_scope": [
+          "patient existence check",
+          "doctor availability check",
+          "appointment creation"
+        ],
+        "out_of_scope": [
+          "registration",
+          "records retrieval",
+          "profile update"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "patient_data",
+          "description": "Patient payload with patient_id, doctor_id, appointment_time",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "book_result",
+          "description": "Dict with success, appointment_id, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'book'",
+        "patient_id exists",
+        "appointment_time is in the future"
+      ],
+      "postconditions": [
+        "Appointment record exists in appointments database"
+      ],
+      "guarantees": [
+        "No double-booking",
+        "Appointment time is validated"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "RetrieveMedicalRecords",
+      "purpose": "Retrieve all medical records for a patient, sorted by date descending",
+      "behavior": "Query records database for all records with given patient_id; sort by timestamp descending; return list of records",
+      "boundary": {
+        "in_scope": [
+          "records retrieval",
+          "sorting"
+        ],
+        "out_of_scope": [
+          "registration",
+          "booking",
+          "profile update"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "patient_data",
+          "description": "Patient payload with patient_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "records_result",
+          "description": "Dict with success, records list, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'records'",
+        "patient_id exists"
+      ],
+      "postconditions": [
+        "Records are returned sorted by date descending"
+      ],
+      "guarantees": [
+        "Records are append-only, no modification"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "UpdatePatientProfile",
+      "purpose": "Update patient profile fields; if insurance changed, validate against external system",
+      "behavior": "Update provided fields in patient record; if insurance field is present and different from current, call external validation; return success with updated data",
+      "boundary": {
+        "in_scope": [
+          "field update",
+          "insurance change detection",
+          "external validation call"
+        ],
+        "out_of_scope": [
+          "registration",
+          "booking",
+          "records retrieval"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "patient_data",
+          "description": "Patient payload with patient_id and fields to update",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "update_result",
+          "description": "Dict with success, updated fields, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'update'",
+        "patient_id exists"
+      ],
+      "postconditions": [
+        "Patient record is updated in database"
+      ],
+      "guarantees": [
+        "Insurance validation is performed if changed"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateInsuranceExternal",
+      "purpose": "Validate insurance information against external system",
+      "behavior": "Send insurance data to external validation service; return validation result (valid/invalid)",
+      "boundary": {
+        "in_scope": [
+          "external API call",
+          "validation logic"
+        ],
+        "out_of_scope": [
+          "database operations",
+          "other commands"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "insurance",
+          "description": "Insurance dict to validate",
+          "source": "parent input (via UpdatePatientProfile)"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "validation_result",
+          "description": "Boolean indicating if insurance is valid",
+          "consumer": "UpdatePatientProfile"
+        }
+      ],
+      "preconditions": [
+        "Insurance data is provided"
+      ],
+      "postconditions": [
+        "Validation result is returned"
+      ],
+      "guarantees": [
+        "External system is called"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic external validation operation"
+    }
+  ],
+  "decomposition_rationale": "The four commands are independent operations that share no sibling dependencies. Each child handles one command's core logic. ValidateInsuranceExternal is extracted as a separate leaf because it is a distinct external validation step used only by UpdatePatientProfile. The parent routes based on command and aggregates results.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "RegisterPatient",
+      "data": "patient_data",
+      "note": "When command is 'register'"
+    },
+    {
+      "from": "parent",
+      "to": "BookAppointment",
+      "data": "patient_data",
+      "note": "When command is 'book'"
+    },
+    {
+      "from": "parent",
+      "to": "RetrieveMedicalRecords",
+      "data": "patient_data",
+      "note": "When command is 'records'"
+    },
+    {
+      "from": "parent",
+      "to": "UpdatePatientProfile",
+      "data": "patient_data",
+      "note": "When command is 'update'"
+    },
+    {
+      "from": "UpdatePatientProfile",
+      "to": "ValidateInsuranceExternal",
+      "data": "insurance",
+      "note": "If insurance field changed"
+    },
+    {
+      "from": "ValidateInsuranceExternal",
+      "to": "UpdatePatientProfile",
+      "data": "validation_result",
+      "note": "Return validation status"
+    },
+    {
+      "from": "RegisterPatient",
+      "to": "parent",
+      "data": "register_result",
+      "note": "Return result"
+    },
+    {
+      "from": "BookAppointment",
+      "to": "parent",
+      "data": "book_result",
+      "note": "Return result"
+    },
+    {
+      "from": "RetrieveMedicalRecords",
+      "to": "parent",
+      "data": "records_result",
+      "note": "Return result"
+    },
+    {
+      "from": "UpdatePatientProfile",
+      "to": "parent",
+      "data": "update_result",
+      "note": "Return result"
+    }
+  ]
+}

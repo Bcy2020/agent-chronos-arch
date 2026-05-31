@@ -1,0 +1,674 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Parse and validate the input JSON to extract action, repo, and branch",
+      "behavior": "Extract action, repo, branch from input; validate required fields and action enum",
+      "boundary": {
+        "in_scope": [
+          "input parsing",
+          "validation of required fields",
+          "action enum check"
+        ],
+        "out_of_scope": [
+          "build logic",
+          "data store access"
+        ]
+      },
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "action, repo, branch are extracted and validated"
+      ],
+      "guarantees": [
+        "Returns error if input missing required fields or invalid action"
+      ],
+      "composition_role": "transform",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "parsed_action",
+          "type": "str",
+          "description": "Validated action string",
+          "consumer": "parent"
+        },
+        {
+          "name": "parsed_repo",
+          "type": "str",
+          "description": "Validated repo string",
+          "consumer": "parent"
+        },
+        {
+          "name": "parsed_branch",
+          "type": "str",
+          "description": "Validated branch string",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseInput(input: dict) -> tuple[str, str, str]",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Input must be valid JSON"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Action must be one of: trigger, status, list, cancel"
+        },
+        {
+          "constraint_id": "C-003",
+          "description": "repo and branch must be non-empty strings"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid JSON with all required fields, returns parsed action, repo, branch"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given invalid JSON, returns error"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Given missing required fields, returns error"
+        },
+        {
+          "ac_id": "AC-004",
+          "description": "Given invalid action, returns error"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CheckExistingBuild",
+      "purpose": "Check if a build already exists for the given repo and branch",
+      "behavior": "Query builds data store for existing build with matching repo and branch",
+      "boundary": {
+        "in_scope": [
+          "data store query",
+          "build existence check"
+        ],
+        "out_of_scope": [
+          "build creation",
+          "status updates"
+        ]
+      },
+      "preconditions": [
+        "builds data store is accessible"
+      ],
+      "postconditions": [
+        "Returns existing build or null"
+      ],
+      "guarantees": [
+        "Does not modify data store"
+      ],
+      "composition_role": "query",
+      "inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "existing_build",
+          "type": "Optional[dict]",
+          "description": "Existing build record or null",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CheckExistingBuild(repo: str, branch: str) -> Optional[dict]",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Query builds store for existing build by repo and branch"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-004",
+          "description": "Must query builds store by repo and branch"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-005",
+          "description": "Given repo and branch, returns existing build record if found"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "Given repo and branch with no existing build, returns null"
+        },
+        {
+          "ac_id": "AC-007",
+          "description": "Does not modify builds store"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build record and initiate build process",
+      "behavior": "Generate build_id, create build record in builds store, set status to running, start log collection",
+      "boundary": {
+        "in_scope": [
+          "build record creation",
+          "build_id generation",
+          "status initialization"
+        ],
+        "out_of_scope": [
+          "cancellation",
+          "status checking"
+        ]
+      },
+      "preconditions": [
+        "No existing build for repo+branch",
+        "builds data store writable"
+      ],
+      "postconditions": [
+        "New build record created in builds store"
+      ],
+      "guarantees": [
+        "Build ID is unique",
+        "Status set to running"
+      ],
+      "composition_role": "execute",
+      "inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "Newly created build ID",
+          "consumer": "parent"
+        },
+        {
+          "name": "status",
+          "type": "str",
+          "description": "Initial build status (running)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TriggerBuild(repo: str, branch: str) -> tuple[str, str]",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "write",
+          "description": "Create new build record in builds store"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-005",
+          "description": "Must generate unique build_id"
+        },
+        {
+          "constraint_id": "C-006",
+          "description": "Must set initial status to 'running'"
+        },
+        {
+          "constraint_id": "C-007",
+          "description": "Must not create duplicate build for same repo+branch"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-008",
+          "description": "Given repo and branch, creates new build record with unique build_id"
+        },
+        {
+          "ac_id": "AC-009",
+          "description": "New build record has status 'running'"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Returns build_id and status"
+        },
+        {
+          "ac_id": "AC-011",
+          "description": "Fails if build already exists for repo+branch"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Retrieve the current status of a specific build",
+      "behavior": "Look up build by build_id in builds store and return its status and logs",
+      "boundary": {
+        "in_scope": [
+          "build status retrieval",
+          "log retrieval"
+        ],
+        "out_of_scope": [
+          "build creation",
+          "cancellation"
+        ]
+      },
+      "preconditions": [
+        "Build exists in builds store"
+      ],
+      "postconditions": [
+        "Returns status and logs"
+      ],
+      "guarantees": [
+        "Does not modify data store"
+      ],
+      "composition_role": "query",
+      "inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "Build ID to check",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "status",
+          "type": "str",
+          "description": "Current build status",
+          "consumer": "parent"
+        },
+        {
+          "name": "logs",
+          "type": "list",
+          "description": "Current build logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CheckBuildStatus(build_id: str) -> tuple[str, list]",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Query builds store for build by build_id"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-008",
+          "description": "Must query builds store by build_id"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-012",
+          "description": "Given valid build_id, returns current status and logs"
+        },
+        {
+          "ac_id": "AC-013",
+          "description": "Given invalid build_id, returns error"
+        },
+        {
+          "ac_id": "AC-014",
+          "description": "Does not modify builds store"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "List all builds with optional filtering by repo and branch",
+      "behavior": "Query builds store for all builds, optionally filter by repo and branch, return list",
+      "boundary": {
+        "in_scope": [
+          "build listing",
+          "filtering"
+        ],
+        "out_of_scope": [
+          "individual build details"
+        ]
+      },
+      "preconditions": [
+        "builds data store accessible"
+      ],
+      "postconditions": [
+        "Returns list of builds"
+      ],
+      "guarantees": [
+        "Does not modify data store"
+      ],
+      "composition_role": "query",
+      "inputs": [
+        {
+          "name": "repo",
+          "type": "Optional[str]",
+          "description": "Optional repo filter",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "type": "Optional[str]",
+          "description": "Optional branch filter",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "builds_list",
+          "type": "list",
+          "description": "List of build records",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ListBuilds(repo: Optional[str] = None, branch: Optional[str] = None) -> list",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Query builds store for all builds with optional filtering"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-009",
+          "description": "Must support optional filtering by repo and branch"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-015",
+          "description": "Given no filters, returns all builds"
+        },
+        {
+          "ac_id": "AC-016",
+          "description": "Given repo filter, returns builds for that repo"
+        },
+        {
+          "ac_id": "AC-017",
+          "description": "Given branch filter, returns builds for that branch"
+        },
+        {
+          "ac_id": "AC-018",
+          "description": "Given both filters, returns builds matching both"
+        },
+        {
+          "ac_id": "AC-019",
+          "description": "Does not modify builds store"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-005"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build and update its status",
+      "behavior": "Look up build by build_id, set status to cancelled, stop log collection",
+      "boundary": {
+        "in_scope": [
+          "build cancellation",
+          "status update"
+        ],
+        "out_of_scope": [
+          "build creation",
+          "status checking"
+        ]
+      },
+      "preconditions": [
+        "Build exists and is running"
+      ],
+      "postconditions": [
+        "Build status set to cancelled"
+      ],
+      "guarantees": [
+        "Does not delete build record"
+      ],
+      "composition_role": "mutate",
+      "inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "Build ID to cancel",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "status",
+          "type": "str",
+          "description": "Updated status (cancelled)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelBuild(build_id: str) -> str",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read_write",
+          "description": "Read build record by build_id, update status to cancelled"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read",
+        "builds.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-010",
+          "description": "Must only cancel builds with status 'running'"
+        },
+        {
+          "constraint_id": "C-011",
+          "description": "Must set status to 'cancelled'"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-020",
+          "description": "Given valid build_id of running build, sets status to cancelled"
+        },
+        {
+          "ac_id": "AC-021",
+          "description": "Given invalid build_id, returns error"
+        },
+        {
+          "ac_id": "AC-022",
+          "description": "Given build_id of non-running build, returns error"
+        },
+        {
+          "ac_id": "AC-023",
+          "description": "Returns updated status"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-006"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "FormatOutput",
+      "purpose": "Format the final output JSON with success, build_id, status, logs",
+      "behavior": "Construct output JSON from provided data, set success flag based on operation outcome",
+      "boundary": {
+        "in_scope": [
+          "output formatting",
+          "success flag setting"
+        ],
+        "out_of_scope": [
+          "data store access",
+          "business logic"
+        ]
+      },
+      "preconditions": [
+        "All required data available"
+      ],
+      "postconditions": [
+        "Output JSON constructed"
+      ],
+      "guarantees": [
+        "Output conforms to expected schema"
+      ],
+      "composition_role": "aggregate",
+      "inputs": [
+        {
+          "name": "action",
+          "type": "str",
+          "description": "Original action",
+          "source": "parent input"
+        },
+        {
+          "name": "build_id",
+          "type": "Optional[str]",
+          "description": "Build ID from operation",
+          "source": "parent"
+        },
+        {
+          "name": "status",
+          "type": "Optional[str]",
+          "description": "Status from operation",
+          "source": "parent"
+        },
+        {
+          "name": "logs",
+          "type": "Optional[list]",
+          "description": "Logs from operation",
+          "source": "parent"
+        },
+        {
+          "name": "error",
+          "type": "Optional[str]",
+          "description": "Error message if any",
+          "source": "parent"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "dict",
+          "description": "Formatted JSON output",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def FormatOutput(action: str, build_id: Optional[str] = None, status: Optional[str] = None, logs: Optional[list] = None, error: Optional[str] = None) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-012",
+          "description": "Output must include 'success' boolean field"
+        },
+        {
+          "constraint_id": "C-013",
+          "description": "If error is provided, success must be false"
+        },
+        {
+          "constraint_id": "C-014",
+          "description": "Output must include action, build_id, status, logs fields when applicable"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-024",
+          "description": "Given action and no error, returns success=true with build_id, status, logs"
+        },
+        {
+          "ac_id": "AC-025",
+          "description": "Given error, returns success=false with error message"
+        },
+        {
+          "ac_id": "AC-026",
+          "description": "Output is valid JSON"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-007"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children that access data stores have been assigned appropriate requested_capabilities. ParseInput and FormatOutput are pure functions with no data store access. CheckExistingBuild, CheckBuildStatus, and ListBuilds are read-only operations. TriggerBuild and CancelBuild require write access. No global_vars are needed as all state is passed through inputs/outputs or stored in the builds data store."
+}

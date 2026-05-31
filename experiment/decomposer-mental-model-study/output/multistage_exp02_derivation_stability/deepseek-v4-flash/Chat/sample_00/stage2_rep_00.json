@@ -1,0 +1,469 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Extract and validate the command field from the input JSON",
+      "behavior": "Parse the input JSON to extract the 'command' field and validate it is one of the allowed commands (send, history, create_channel, join). Return the command and remaining payload.",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "command validation"
+        ],
+        "out_of_scope": [
+          "executing the command",
+          "data store access"
+        ]
+      },
+      "semantic_inputs": [
+        "input: Any - JSON with command (send/history/create_channel/join)"
+      ],
+      "semantic_outputs": [
+        "command: str - validated command string",
+        "payload: dict - remaining data after command extraction"
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command is one of: send, history, create_channel, join"
+      ],
+      "guarantees": [
+        "Returns error if command is missing or invalid"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Validated command string",
+          "consumer": "parent"
+        },
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Remaining data after command extraction",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(input: Any) -> tuple[str, dict]"
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Send a message to a joined channel",
+      "behavior": "Validate that the user is a member of the specified channel, then store the message in the messages data store with timestamp and user info.",
+      "boundary": {
+        "in_scope": [
+          "membership check",
+          "message storage"
+        ],
+        "out_of_scope": [
+          "history retrieval",
+          "channel creation"
+        ]
+      },
+      "semantic_inputs": [
+        "payload: dict - contains channel_id, user_id, and message text",
+        "channels: DataStore - channel membership data",
+        "messages: DataStore - message storage"
+      ],
+      "semantic_outputs": [
+        "result: dict - success or error status"
+      ],
+      "preconditions": [
+        "User is a member of the channel",
+        "Message text is non-empty"
+      ],
+      "postconditions": [
+        "Message is stored in messages data store"
+      ],
+      "guarantees": [
+        "Returns error if user not in channel"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Contains channel_id, user_id, and message text",
+          "source": "parent input (from ParseCommand)"
+        },
+        {
+          "name": "channels",
+          "type": "DataStore",
+          "description": "Data store for channel membership",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "messages",
+          "type": "DataStore",
+          "description": "Data store for messages",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Success or error status",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def SendMessage(payload: dict, channels: DataStore, messages: DataStore) -> dict"
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Retrieve message history for a channel",
+      "behavior": "Validate that the user is a member of the channel, then fetch up to 100 most recent messages from the messages data store for that channel.",
+      "boundary": {
+        "in_scope": [
+          "membership check",
+          "message retrieval",
+          "limit enforcement"
+        ],
+        "out_of_scope": [
+          "message sending",
+          "channel creation"
+        ]
+      },
+      "semantic_inputs": [
+        "payload: dict - contains channel_id and user_id",
+        "channels: DataStore - channel membership data",
+        "messages: DataStore - message storage"
+      ],
+      "semantic_outputs": [
+        "history: list - list of up to 100 messages"
+      ],
+      "preconditions": [
+        "User is a member of the channel"
+      ],
+      "postconditions": [
+        "Returns at most 100 messages"
+      ],
+      "guarantees": [
+        "Returns error if user not in channel"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Contains channel_id and user_id",
+          "source": "parent input (from ParseCommand)"
+        },
+        {
+          "name": "channels",
+          "type": "DataStore",
+          "description": "Data store for channel membership",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "messages",
+          "type": "DataStore",
+          "description": "Data store for messages",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "history",
+          "type": "list",
+          "description": "List of up to 100 messages",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def GetHistory(payload: dict, channels: DataStore, messages: DataStore) -> list"
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel",
+      "behavior": "Create a new channel entry in the channels data store with a unique channel_id and add the creator as the first member.",
+      "boundary": {
+        "in_scope": [
+          "channel creation",
+          "membership initialization"
+        ],
+        "out_of_scope": [
+          "message operations",
+          "joining existing channels"
+        ]
+      },
+      "semantic_inputs": [
+        "payload: dict - contains channel_name and creator user_id",
+        "channels: DataStore - channel storage"
+      ],
+      "semantic_outputs": [
+        "channel_id: str - unique identifier for the new channel"
+      ],
+      "preconditions": [
+        "Channel name is non-empty and unique"
+      ],
+      "postconditions": [
+        "Channel is created and creator is a member"
+      ],
+      "guarantees": [
+        "Returns error if channel name already exists"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Contains channel_name and creator user_id",
+          "source": "parent input (from ParseCommand)"
+        },
+        {
+          "name": "channels",
+          "type": "DataStore",
+          "description": "Data store for channels",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "channel_id",
+          "type": "str",
+          "description": "Unique identifier for the new channel",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CreateChannel(payload: dict, channels: DataStore) -> str"
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Join an existing channel",
+      "behavior": "Validate that the channel exists and the user is not already a member, then add the user to the channel's member list.",
+      "boundary": {
+        "in_scope": [
+          "membership addition"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "message operations"
+        ]
+      },
+      "semantic_inputs": [
+        "payload: dict - contains channel_id and user_id",
+        "channels: DataStore - channel storage"
+      ],
+      "semantic_outputs": [
+        "result: dict - success or error status"
+      ],
+      "preconditions": [
+        "Channel exists",
+        "User is not already a member"
+      ],
+      "postconditions": [
+        "User is added to channel member list"
+      ],
+      "guarantees": [
+        "Returns error if channel does not exist or user already member"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Contains channel_id and user_id",
+          "source": "parent input (from ParseCommand)"
+        },
+        {
+          "name": "channels",
+          "type": "DataStore",
+          "description": "Data store for channels",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Success or error status",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def JoinChannel(payload: dict, channels: DataStore) -> dict"
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Format the final output JSON",
+      "behavior": "Take the result from the executed command and format it into a standard JSON response with success, data, and message fields.",
+      "boundary": {
+        "in_scope": [
+          "response formatting"
+        ],
+        "out_of_scope": [
+          "command execution",
+          "data store access"
+        ]
+      },
+      "semantic_inputs": [
+        "command_result: Any - result from the executed child function",
+        "command: str - original command for context"
+      ],
+      "semantic_outputs": [
+        "output: Any - formatted JSON response"
+      ],
+      "preconditions": [
+        "Command execution completed"
+      ],
+      "postconditions": [
+        "Output is valid JSON with success, data, message"
+      ],
+      "guarantees": [
+        "Always returns a consistent response structure"
+      ],
+      "composition_role": "aggregate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command_result",
+          "type": "Any",
+          "description": "Result from the executed child function",
+          "source": "parent (from executed child)"
+        },
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Original command for context",
+          "source": "parent (from ParseCommand)"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "Any",
+          "description": "Formatted JSON response",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def FormatResponse(command_result: Any, command: str) -> Any"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseCommand"
+    },
+    "parent_outputs_produced_by": {
+      "output": "FormatResponse"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseCommand",
+      "to_input": "input",
+      "note": "Parent passes raw JSON to ParseCommand"
+    },
+    {
+      "from_node": "ParseCommand",
+      "from_output": "command",
+      "to_node": "parent",
+      "to_input": "command",
+      "note": "ParseCommand returns validated command to parent for routing"
+    },
+    {
+      "from_node": "ParseCommand",
+      "from_output": "payload",
+      "to_node": "parent",
+      "to_input": "payload",
+      "note": "ParseCommand returns payload to parent for routing to command handler"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "payload",
+      "to_node": "SendMessage",
+      "to_input": "payload",
+      "note": "Parent routes payload to SendMessage when command is 'send'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "payload",
+      "to_node": "GetHistory",
+      "to_input": "payload",
+      "note": "Parent routes payload to GetHistory when command is 'history'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "payload",
+      "to_node": "CreateChannel",
+      "to_input": "payload",
+      "note": "Parent routes payload to CreateChannel when command is 'create_channel'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "payload",
+      "to_node": "JoinChannel",
+      "to_input": "payload",
+      "note": "Parent routes payload to JoinChannel when command is 'join'"
+    },
+    {
+      "from_node": "SendMessage",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "command_result",
+      "note": "SendMessage returns result to parent for formatting"
+    },
+    {
+      "from_node": "GetHistory",
+      "from_output": "history",
+      "to_node": "parent",
+      "to_input": "command_result",
+      "note": "GetHistory returns history to parent for formatting"
+    },
+    {
+      "from_node": "CreateChannel",
+      "from_output": "channel_id",
+      "to_node": "parent",
+      "to_input": "command_result",
+      "note": "CreateChannel returns channel_id to parent for formatting"
+    },
+    {
+      "from_node": "JoinChannel",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "command_result",
+      "note": "JoinChannel returns result to parent for formatting"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command_result",
+      "to_node": "FormatResponse",
+      "to_input": "command_result",
+      "note": "Parent passes command result to FormatResponse"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "FormatResponse",
+      "to_input": "command",
+      "note": "Parent passes original command to FormatResponse for context"
+    },
+    {
+      "from_node": "FormatResponse",
+      "from_output": "output",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "FormatResponse returns formatted JSON to parent"
+    }
+  ]
+}

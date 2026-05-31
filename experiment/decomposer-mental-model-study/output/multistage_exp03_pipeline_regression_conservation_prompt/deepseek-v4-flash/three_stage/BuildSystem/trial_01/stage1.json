@@ -1,0 +1,232 @@
+{
+  "children": [
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build record and run the build pipeline for a given repo and branch",
+      "behavior": "Check no running build for repo+branch, create build record with status 'running', execute compile step, execute test step, package artifacts, update status to 'success' or 'failed', store logs incrementally",
+      "boundary": {
+        "in_scope": [
+          "build record creation",
+          "compile execution",
+          "test execution",
+          "artifact packaging",
+          "status update",
+          "log storage"
+        ],
+        "out_of_scope": [
+          "status retrieval",
+          "build listing",
+          "build cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_request",
+          "description": "JSON with action='trigger', repo, branch, config",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "JSON with success, build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "No running build for the same repo+branch"
+      ],
+      "postconditions": [
+        "Build record created with final status",
+        "Artifacts stored if successful"
+      ],
+      "guarantees": [
+        "Only one build per repo+branch runs at a time",
+        "Logs stored incrementally"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Return the current status and logs of a specific build",
+      "behavior": "Look up build by build_id in builds store, return its status and logs",
+      "boundary": {
+        "in_scope": [
+          "build lookup",
+          "status retrieval",
+          "log retrieval"
+        ],
+        "out_of_scope": [
+          "build creation",
+          "build listing",
+          "build cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_request",
+          "description": "JSON with action='status', build_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "JSON with success, build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Build exists"
+      ],
+      "postconditions": [
+        "No state change"
+      ],
+      "guarantees": [
+        "Returns current status and logs"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "Return all builds filtered by optional repo, branch, or status",
+      "behavior": "Query builds store with optional filters, return list of build records",
+      "boundary": {
+        "in_scope": [
+          "build query",
+          "filtering by repo/branch/status"
+        ],
+        "out_of_scope": [
+          "build creation",
+          "status retrieval for single build",
+          "build cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_request",
+          "description": "JSON with action='list', optional repo, branch, status",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "JSON with success, builds list (each with build_id, repo, branch, status, started_at, finished_at)",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [],
+      "postconditions": [
+        "No state change"
+      ],
+      "guarantees": [
+        "Returns filtered list of builds"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Stop a running build and update its status to 'cancelled'",
+      "behavior": "Look up build by build_id, if status is 'running', stop the build process, update status to 'cancelled', store cancellation log; if already completed, no-op",
+      "boundary": {
+        "in_scope": [
+          "build lookup",
+          "build cancellation",
+          "status update",
+          "log append"
+        ],
+        "out_of_scope": [
+          "build creation",
+          "status retrieval",
+          "build listing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_request",
+          "description": "JSON with action='cancel', build_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "JSON with success, build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Build exists"
+      ],
+      "postconditions": [
+        "If build was running, status changed to 'cancelled'",
+        "Logs updated"
+      ],
+      "guarantees": [
+        "Cancelling a completed build is a no-op"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent BuildSystem handles four distinct actions: trigger, status, list, cancel. Each action is a self-contained function that does actual work without calling siblings. The parent routes based on the action field.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "TriggerBuild",
+      "data": "build_request",
+      "note": "when action='trigger'"
+    },
+    {
+      "from": "parent",
+      "to": "CheckBuildStatus",
+      "data": "build_request",
+      "note": "when action='status'"
+    },
+    {
+      "from": "parent",
+      "to": "ListBuilds",
+      "data": "build_request",
+      "note": "when action='list'"
+    },
+    {
+      "from": "parent",
+      "to": "CancelBuild",
+      "data": "build_request",
+      "note": "when action='cancel'"
+    },
+    {
+      "from": "TriggerBuild",
+      "to": "parent",
+      "data": "build_result",
+      "note": "return result"
+    },
+    {
+      "from": "CheckBuildStatus",
+      "to": "parent",
+      "data": "build_result",
+      "note": "return result"
+    },
+    {
+      "from": "ListBuilds",
+      "to": "parent",
+      "data": "build_result",
+      "note": "return result"
+    },
+    {
+      "from": "CancelBuild",
+      "to": "parent",
+      "data": "build_result",
+      "note": "return result"
+    }
+  ]
+}

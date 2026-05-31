@@ -1,0 +1,319 @@
+{
+  "children": [
+    {
+      "name": "ValidateBuildRequest",
+      "purpose": "Validate the incoming build_request for required fields and business rules",
+      "behavior": "Check action is one of trigger/status/list/cancel; for trigger ensure repo and config present; for status/cancel ensure build_id present; enforce one build per repo+branch constraint for trigger",
+      "boundary": {
+        "in_scope": [
+          "validation of input fields",
+          "checking business constraints"
+        ],
+        "out_of_scope": [
+          "executing any build action",
+          "modifying state"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_request",
+          "description": "the incoming request JSON",
+          "source": "parent input"
+        },
+        {
+          "name": "builds",
+          "description": "current build records to check constraints",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "validated_request",
+          "description": "validated request with defaults applied",
+          "consumer": "parent"
+        },
+        {
+          "name": "validation_error",
+          "description": "error message if validation fails",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build_request is a dict"
+      ],
+      "postconditions": [
+        "if valid, validated_request has all required fields"
+      ],
+      "guarantees": [
+        "no side effects on data stores"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build record, run compile and test steps, package artifacts, update status",
+      "behavior": "Insert new build record with status 'running', execute compile step, then test step, on success package artifacts and set status 'completed', on failure set status 'failed'",
+      "boundary": {
+        "in_scope": [
+          "creating build record",
+          "running build steps",
+          "storing artifacts",
+          "updating status"
+        ],
+        "out_of_scope": [
+          "validating request",
+          "listing builds",
+          "cancelling builds"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "validated_request",
+          "description": "validated trigger request with repo, branch, config",
+          "source": "parent input"
+        },
+        {
+          "name": "builds",
+          "description": "build records store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "artifacts",
+          "description": "artifacts store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "result with build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "validated_request.action == 'trigger'",
+        "no other running build for same repo+branch"
+      ],
+      "postconditions": [
+        "build record created with final status",
+        "artifacts stored if build succeeded"
+      ],
+      "guarantees": [
+        "logs stored incrementally",
+        "only one build per repo+branch runs at a time"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Return current status and logs for a given build_id",
+      "behavior": "Look up build record by build_id, return its status and logs",
+      "boundary": {
+        "in_scope": [
+          "querying build record",
+          "returning status and logs"
+        ],
+        "out_of_scope": [
+          "modifying state",
+          "triggering builds",
+          "listing builds"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "validated_request",
+          "description": "validated request with build_id",
+          "source": "parent input"
+        },
+        {
+          "name": "builds",
+          "description": "build records store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "result with build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "validated_request.action == 'status'",
+        "build_id exists in builds"
+      ],
+      "postconditions": [
+        "no state change"
+      ],
+      "guarantees": [
+        "returns current data"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ListBuildHistory",
+      "purpose": "Return all build records filtered by optional repo/branch/status",
+      "behavior": "Query builds store, apply filters from validated_request (repo, branch, status), return list of matching builds",
+      "boundary": {
+        "in_scope": [
+          "filtering builds",
+          "returning list"
+        ],
+        "out_of_scope": [
+          "modifying state",
+          "triggering builds",
+          "cancelling builds"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "validated_request",
+          "description": "validated request with optional filters",
+          "source": "parent input"
+        },
+        {
+          "name": "builds",
+          "description": "build records store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_list",
+          "description": "list of build records",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "validated_request.action == 'list'"
+      ],
+      "postconditions": [
+        "no state change"
+      ],
+      "guarantees": [
+        "returns all matching builds"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Stop a running build and update its status to 'cancelled'",
+      "behavior": "Look up build by build_id, if status is 'running' set status to 'cancelled' and stop execution; if already completed, no-op",
+      "boundary": {
+        "in_scope": [
+          "stopping running build",
+          "updating status"
+        ],
+        "out_of_scope": [
+          "triggering builds",
+          "listing builds",
+          "checking status"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "validated_request",
+          "description": "validated request with build_id",
+          "source": "parent input"
+        },
+        {
+          "name": "builds",
+          "description": "build records store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "result with build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "validated_request.action == 'cancel'",
+        "build_id exists in builds"
+      ],
+      "postconditions": [
+        "if build was running, status changed to 'cancelled'"
+      ],
+      "guarantees": [
+        "no-op for completed builds"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent BuildSystem handles four distinct actions: trigger, status, list, cancel. Each action is decomposed into a separate child function that performs the core work. Validation is extracted as a separate child to enforce business rules before any action. This ensures each child has a single responsibility and no sibling calls.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ValidateBuildRequest",
+      "data": "build_request",
+      "note": "validate input"
+    },
+    {
+      "from": "ValidateBuildRequest",
+      "to": "parent",
+      "data": "validated_request or validation_error",
+      "note": "pass validated data or error"
+    },
+    {
+      "from": "parent",
+      "to": "TriggerBuild",
+      "data": "validated_request",
+      "note": "if action is trigger"
+    },
+    {
+      "from": "parent",
+      "to": "CheckBuildStatus",
+      "data": "validated_request",
+      "note": "if action is status"
+    },
+    {
+      "from": "parent",
+      "to": "ListBuildHistory",
+      "data": "validated_request",
+      "note": "if action is list"
+    },
+    {
+      "from": "parent",
+      "to": "CancelBuild",
+      "data": "validated_request",
+      "note": "if action is cancel"
+    },
+    {
+      "from": "TriggerBuild",
+      "to": "parent",
+      "data": "build_result",
+      "note": "return result"
+    },
+    {
+      "from": "CheckBuildStatus",
+      "to": "parent",
+      "data": "build_result",
+      "note": "return result"
+    },
+    {
+      "from": "ListBuildHistory",
+      "to": "parent",
+      "data": "build_list",
+      "note": "return list"
+    },
+    {
+      "from": "CancelBuild",
+      "to": "parent",
+      "data": "build_result",
+      "note": "return result"
+    }
+  ]
+}

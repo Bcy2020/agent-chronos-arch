@@ -1,0 +1,431 @@
+{
+  "children": [
+    {
+      "name": "ValidateBuildRequest",
+      "purpose": "Validate the build_request JSON structure and required fields based on action",
+      "behavior": "Check action is one of trigger/status/list/cancel; for trigger, ensure repo and config present; for status/cancel, ensure build_id present; return validation result",
+      "boundary": {
+        "in_scope": [
+          "validate action",
+          "validate required fields",
+          "check field types"
+        ],
+        "out_of_scope": [
+          "business logic",
+          "database access",
+          "execution"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_request",
+          "description": "the incoming request JSON",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "validation_result",
+          "description": "validated request or error",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build_request is a dict"
+      ],
+      "postconditions": [
+        "validation_result contains either valid request or error message"
+      ],
+      "guarantees": [
+        "no side effects",
+        "pure validation"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "pure validation function"
+    },
+    {
+      "name": "CheckConcurrentBuild",
+      "purpose": "Check if a build is already running for the given repo+branch",
+      "behavior": "Query builds data store for any build with same repo and branch and status 'running' or 'queued'; return boolean",
+      "boundary": {
+        "in_scope": [
+          "query builds by repo and branch",
+          "check status"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "cancelling",
+          "listing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "repository name",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "description": "branch name",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "is_concurrent",
+          "description": "true if a build is already running",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "repo and branch are non-empty strings"
+      ],
+      "postconditions": [
+        "no state change"
+      ],
+      "guarantees": [
+        "read-only access to builds"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "atomic database query"
+    },
+    {
+      "name": "CreateBuildRecord",
+      "purpose": "Create a new build record in the builds data store",
+      "behavior": "Generate a unique build_id, set status to 'queued', store repo, branch, config, started_at, empty logs, return build_id",
+      "boundary": {
+        "in_scope": [
+          "generate build_id",
+          "insert record",
+          "set initial status"
+        ],
+        "out_of_scope": [
+          "execution",
+          "cancelling",
+          "listing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "repository name",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "description": "branch name",
+          "source": "parent input"
+        },
+        {
+          "name": "config",
+          "description": "build configuration with steps",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_id",
+          "description": "unique identifier for the build",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "no concurrent build for same repo+branch"
+      ],
+      "postconditions": [
+        "new build record exists with status 'queued'"
+      ],
+      "guarantees": [
+        "build_id is unique",
+        "record is persisted"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "atomic database write"
+    },
+    {
+      "name": "ExecuteBuildSteps",
+      "purpose": "Run the build steps: compile, test, package artifacts, update status and logs incrementally",
+      "behavior": "Iterate over config.build_steps, execute each step, append logs, update status to 'running' then 'completed' or 'failed', store artifacts",
+      "boundary": {
+        "in_scope": [
+          "execute steps",
+          "log output",
+          "update status",
+          "store artifacts"
+        ],
+        "out_of_scope": [
+          "validation",
+          "concurrency check",
+          "listing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_id",
+          "description": "the build to execute",
+          "source": "previous child output"
+        },
+        {
+          "name": "config",
+          "description": "build configuration with steps",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "execution_result",
+          "description": "final status and logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build record exists with status 'queued'"
+      ],
+      "postconditions": [
+        "build status is 'completed' or 'failed'",
+        "logs are stored",
+        "artifacts stored"
+      ],
+      "guarantees": [
+        "incremental log storage",
+        "atomic status update"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "can be further decomposed into compile, test, package"
+    },
+    {
+      "name": "QueryBuildStatus",
+      "purpose": "Return current status and logs for a given build_id",
+      "behavior": "Look up build record by build_id, return status and logs",
+      "boundary": {
+        "in_scope": [
+          "query by build_id",
+          "return status and logs"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "cancelling",
+          "listing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_id",
+          "description": "the build to query",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "status",
+          "description": "current build status",
+          "consumer": "parent"
+        },
+        {
+          "name": "logs",
+          "description": "build logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build_id exists in builds"
+      ],
+      "postconditions": [
+        "no state change"
+      ],
+      "guarantees": [
+        "read-only access"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "atomic database query"
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "Return all builds filtered by optional repo, branch, status",
+      "behavior": "Query builds data store, apply filters if provided, return list of build records",
+      "boundary": {
+        "in_scope": [
+          "query builds",
+          "apply filters",
+          "return list"
+        ],
+        "out_of_scope": [
+          "single build operations",
+          "execution"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "optional filter",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "description": "optional filter",
+          "source": "parent input"
+        },
+        {
+          "name": "status",
+          "description": "optional filter",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "builds_list",
+          "description": "list of build records",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "none"
+      ],
+      "postconditions": [
+        "no state change"
+      ],
+      "guarantees": [
+        "read-only access"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "atomic database query"
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build: stop execution, update status to 'cancelled'",
+      "behavior": "Check build status; if 'running' or 'queued', update status to 'cancelled' and append cancellation log; if already completed, no-op",
+      "boundary": {
+        "in_scope": [
+          "check status",
+          "update status",
+          "append log"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "listing",
+          "execution"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_id",
+          "description": "the build to cancel",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "cancel_result",
+          "description": "success or no-op indication",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build_id exists"
+      ],
+      "postconditions": [
+        "if running/queued, status changed to 'cancelled' and log appended"
+      ],
+      "guarantees": [
+        "no-op for completed builds"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "atomic state update"
+    }
+  ],
+  "decomposition_rationale": "The BuildSystem parent handles four distinct actions. Each action is decomposed into validation, then action-specific child functions. Validation is shared conceptually but invoked separately per action. Trigger action requires concurrency check, record creation, and execution. Status, list, and cancel are each single-purpose queries or mutations. This covers all responsibilities without overlapping.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ValidateBuildRequest",
+      "data": "build_request",
+      "note": "validate input"
+    },
+    {
+      "from": "ValidateBuildRequest",
+      "to": "parent",
+      "data": "validation_result",
+      "note": "pass validation result"
+    },
+    {
+      "from": "parent",
+      "to": "CheckConcurrentBuild",
+      "data": "repo, branch",
+      "note": "only for trigger action"
+    },
+    {
+      "from": "CheckConcurrentBuild",
+      "to": "parent",
+      "data": "is_concurrent",
+      "note": "concurrency flag"
+    },
+    {
+      "from": "parent",
+      "to": "CreateBuildRecord",
+      "data": "repo, branch, config",
+      "note": "only if no concurrent build"
+    },
+    {
+      "from": "CreateBuildRecord",
+      "to": "parent",
+      "data": "build_id",
+      "note": "new build id"
+    },
+    {
+      "from": "parent",
+      "to": "ExecuteBuildSteps",
+      "data": "build_id, config",
+      "note": "execute steps"
+    },
+    {
+      "from": "ExecuteBuildSteps",
+      "to": "parent",
+      "data": "execution_result",
+      "note": "final status and logs"
+    },
+    {
+      "from": "parent",
+      "to": "QueryBuildStatus",
+      "data": "build_id",
+      "note": "for status action"
+    },
+    {
+      "from": "QueryBuildStatus",
+      "to": "parent",
+      "data": "status, logs",
+      "note": "build details"
+    },
+    {
+      "from": "parent",
+      "to": "ListBuilds",
+      "data": "repo, branch, status",
+      "note": "for list action"
+    },
+    {
+      "from": "ListBuilds",
+      "to": "parent",
+      "data": "builds_list",
+      "note": "filtered list"
+    },
+    {
+      "from": "parent",
+      "to": "CancelBuild",
+      "data": "build_id",
+      "note": "for cancel action"
+    },
+    {
+      "from": "CancelBuild",
+      "to": "parent",
+      "data": "cancel_result",
+      "note": "cancellation outcome"
+    }
+  ]
+}

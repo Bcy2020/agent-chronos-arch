@@ -1,0 +1,251 @@
+{
+  "children": [
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the full 'place' order workflow: validate items, charge payment, reserve inventory, create order record, send notification.",
+      "behavior": "Receives command and order_data; if command is 'place', performs all steps sequentially; returns success/failure result with rollback on failure.",
+      "boundary": {
+        "in_scope": [
+          "validating item existence and stock",
+          "charging payment via payment gateway",
+          "reserving inventory",
+          "creating order record",
+          "sending confirmation notification",
+          "rolling back on failure"
+        ],
+        "out_of_scope": [
+          "cancel workflow",
+          "track workflow",
+          "command parsing"
+        ]
+      },
+      "preconditions": [
+        "command is 'place'"
+      ],
+      "postconditions": [
+        "If success, order is created, payment charged, inventory reserved; if failure, no side effects"
+      ],
+      "guarantees": [
+        "Atomicity: all steps succeed or none",
+        "Payment charged before inventory decremented"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Order command string, must be 'place'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with items, payment_method, shipping_address, order_id",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(command: str, order_data: dict) -> dict"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the full 'cancel' order workflow: verify order exists and not shipped, refund payment, restore inventory, update order status.",
+      "behavior": "Receives command and order_data; if command is 'cancel', performs all steps sequentially; returns success/failure result with rollback on failure.",
+      "boundary": {
+        "in_scope": [
+          "verifying order existence and not shipped",
+          "refunding payment",
+          "restoring inventory",
+          "updating order status to cancelled"
+        ],
+        "out_of_scope": [
+          "place workflow",
+          "track workflow",
+          "command parsing"
+        ]
+      },
+      "preconditions": [
+        "command is 'cancel'"
+      ],
+      "postconditions": [
+        "If success, order status is cancelled, payment refunded, inventory restored; if failure, no side effects"
+      ],
+      "guarantees": [
+        "Atomicity",
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Order command string, must be 'cancel'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(command: str, order_data: dict) -> dict"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the 'track' order workflow: return current order status and estimated delivery time.",
+      "behavior": "Receives command and order_data; if command is 'track', queries order status and estimated delivery; returns result.",
+      "boundary": {
+        "in_scope": [
+          "querying order status",
+          "computing estimated delivery time"
+        ],
+        "out_of_scope": [
+          "place workflow",
+          "cancel workflow",
+          "command parsing"
+        ]
+      },
+      "preconditions": [
+        "command is 'track'"
+      ],
+      "postconditions": [
+        "Order state unchanged"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Order command string, must be 'track'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success, order_id, status, message (including delivery time)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(command: str, order_data: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "command": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ],
+      "order_data": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ]
+    },
+    "parent_outputs_produced_by": {
+      "order_result": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ]
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "PlaceOrder",
+      "to_input": "command",
+      "note": "If command is 'place'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "PlaceOrder",
+      "to_input": "order_data",
+      "note": "If command is 'place'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "CancelOrder",
+      "to_input": "command",
+      "note": "If command is 'cancel'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "CancelOrder",
+      "to_input": "order_data",
+      "note": "If command is 'cancel'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "TrackOrder",
+      "to_input": "command",
+      "note": "If command is 'track'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "TrackOrder",
+      "to_input": "order_data",
+      "note": "If command is 'track'"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "TrackOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return result to parent"
+    }
+  ]
+}

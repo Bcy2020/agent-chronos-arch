@@ -1,0 +1,746 @@
+{
+  "children": [
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the 'place' command: validate items, charge payment, reserve inventory, create order, send notification",
+      "behavior": "Validates item existence and stock, charges payment via payment gateway, reserves inventory, creates order record, sends confirmation notification",
+      "inputs": [
+        "command",
+        "order_data"
+      ],
+      "outputs": [
+        "order_result"
+      ],
+      "signature": "def PlaceOrder(command: str, order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "write",
+          "description": "Create new order record"
+        },
+        {
+          "variable": "inventory",
+          "op": "read",
+          "description": "Read stock levels for validation"
+        },
+        {
+          "variable": "payments",
+          "op": "write",
+          "description": "Create payment record"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "write",
+          "description": "Create order record"
+        },
+        {
+          "source_name": "inventory",
+          "operation_type": "read",
+          "description": "Validate stock"
+        },
+        {
+          "source_name": "payments",
+          "operation_type": "write",
+          "description": "Record payment"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.write",
+        "inventory.read",
+        "payments.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must validate items before charging payment"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Must charge payment before reserving inventory"
+        },
+        {
+          "constraint_id": "C-003",
+          "description": "Must reserve inventory before creating order record"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Order created with status 'placed'"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Payment charged successfully"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Inventory reserved for all items"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001",
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the 'cancel' command: verify order exists and not shipped, refund payment, restore inventory, update status",
+      "behavior": "Checks order existence and shipping status, refunds payment, restores reserved inventory, updates order status to cancelled",
+      "inputs": [
+        "command",
+        "order_data"
+      ],
+      "outputs": [
+        "order_result"
+      ],
+      "signature": "def CancelOrder(command: str, order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read_write",
+          "description": "Read order status, update to cancelled"
+        },
+        {
+          "variable": "inventory",
+          "op": "write",
+          "description": "Restore reserved inventory"
+        },
+        {
+          "variable": "payments",
+          "op": "write",
+          "description": "Refund payment"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read_write",
+          "description": "Read order, update status"
+        },
+        {
+          "source_name": "inventory",
+          "operation_type": "write",
+          "description": "Restore inventory"
+        },
+        {
+          "source_name": "payments",
+          "operation_type": "write",
+          "description": "Refund payment"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read_write",
+        "inventory.write",
+        "payments.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-004",
+          "description": "Must verify order exists and not shipped before refund"
+        },
+        {
+          "constraint_id": "C-005",
+          "description": "Must refund payment before restoring inventory"
+        },
+        {
+          "constraint_id": "C-006",
+          "description": "Must restore inventory before updating status"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-004",
+          "description": "Order status updated to 'cancelled'"
+        },
+        {
+          "ac_id": "AC-005",
+          "description": "Payment refunded successfully"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "Inventory restored for all items"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001",
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the 'track' command: return current order status and estimated delivery time",
+      "behavior": "Queries order record for status and calculates estimated delivery time based on order data",
+      "inputs": [
+        "command",
+        "order_data"
+      ],
+      "outputs": [
+        "order_result"
+      ],
+      "signature": "def TrackOrder(command: str, order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read",
+          "description": "Read order status"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read",
+          "description": "Read order status"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-007",
+          "description": "Must not modify any data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-007",
+          "description": "Returns current order status"
+        },
+        {
+          "ac_id": "AC-008",
+          "description": "Returns estimated delivery time"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001",
+          "FR-004"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateItems",
+      "purpose": "Check that all items in the order exist and have sufficient stock",
+      "behavior": "Iterates over items, checks inventory for existence and stock_count >= requested quantity",
+      "inputs": [
+        "items",
+        "inventory"
+      ],
+      "outputs": [
+        "validation_result"
+      ],
+      "signature": "def ValidateItems(items: list, inventory: dict) -> bool",
+      "global_vars": [
+        {
+          "variable": "inventory",
+          "op": "read",
+          "description": "Read stock levels"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "inventory",
+          "operation_type": "read",
+          "description": "Check stock"
+        }
+      ],
+      "requested_capabilities": [
+        "inventory.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-008",
+          "description": "Must not modify inventory"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-009",
+          "description": "Returns true if all items exist and in stock"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Returns false if any item missing or insufficient stock"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": true,
+      "stop_reason": "Pure validation function"
+    },
+    {
+      "name": "ChargePayment",
+      "purpose": "Charge the customer's payment via payment gateway",
+      "behavior": "Calls payment gateway with amount and payment_method, records payment in payments store",
+      "inputs": [
+        "payment_method",
+        "total_amount",
+        "payments"
+      ],
+      "outputs": [
+        "payment_result"
+      ],
+      "signature": "def ChargePayment(payment_method: str, total_amount: float, payments: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "payments",
+          "op": "write",
+          "description": "Create payment record"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "payments",
+          "operation_type": "write",
+          "description": "Record payment"
+        }
+      ],
+      "requested_capabilities": [
+        "payments.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-009",
+          "description": "Must call payment gateway exactly once"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-011",
+          "description": "Payment charged successfully"
+        },
+        {
+          "ac_id": "AC-012",
+          "description": "Payment record created"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with external dependency"
+    },
+    {
+      "name": "ReserveInventory",
+      "purpose": "Reserve stock for each item in the order",
+      "behavior": "Updates inventory reserved_count for each product by the ordered quantity",
+      "inputs": [
+        "items",
+        "inventory"
+      ],
+      "outputs": [
+        "reservation_result"
+      ],
+      "signature": "def ReserveInventory(items: list, inventory: dict) -> bool",
+      "global_vars": [
+        {
+          "variable": "inventory",
+          "op": "write",
+          "description": "Update reserved_count"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "inventory",
+          "operation_type": "write",
+          "description": "Reserve stock"
+        }
+      ],
+      "requested_capabilities": [
+        "inventory.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-010",
+          "description": "Must update reserved_count atomically per product"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-013",
+          "description": "reserved_count incremented for each item"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation"
+    },
+    {
+      "name": "CreateOrderRecord",
+      "purpose": "Create a new order record in the orders database",
+      "behavior": "Inserts order data with status 'placed' and timestamp into orders store",
+      "inputs": [
+        "order_data",
+        "payment_id",
+        "orders"
+      ],
+      "outputs": [
+        "order_id"
+      ],
+      "signature": "def CreateOrderRecord(order_data: dict, payment_id: str, orders: dict) -> str",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "write",
+          "description": "Create order record"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "write",
+          "description": "Insert order"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-011",
+          "description": "Must generate unique order_id"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-014",
+          "description": "Order record created with status 'placed'"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data insertion"
+    },
+    {
+      "name": "SendConfirmationNotification",
+      "purpose": "Send order confirmation notification to customer",
+      "behavior": "Sends email or push notification with order details",
+      "inputs": [
+        "order_id",
+        "shipping_address"
+      ],
+      "outputs": [
+        "notification_result"
+      ],
+      "signature": "def SendConfirmationNotification(order_id: str, shipping_address: dict) -> bool",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-012",
+          "description": "Must not block on notification failure"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-015",
+          "description": "Notification sent successfully"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "External side effect"
+    },
+    {
+      "name": "VerifyOrderExistsAndNotShipped",
+      "purpose": "Check that the order exists and has not been shipped",
+      "behavior": "Queries orders store for order_id, checks status is not 'shipped'",
+      "inputs": [
+        "order_id",
+        "orders"
+      ],
+      "outputs": [
+        "verification_result"
+      ],
+      "signature": "def VerifyOrderExistsAndNotShipped(order_id: str, orders: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read",
+          "description": "Read order status"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read",
+          "description": "Check order"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-013",
+          "description": "Must not modify orders"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-016",
+          "description": "Returns exists and is_shipped flags"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": true,
+      "stop_reason": "Pure query function"
+    },
+    {
+      "name": "RefundPayment",
+      "purpose": "Refund the payment associated with the order",
+      "behavior": "Calls payment gateway to refund, updates payment record status to refunded",
+      "inputs": [
+        "order_id",
+        "payments"
+      ],
+      "outputs": [
+        "refund_result"
+      ],
+      "signature": "def RefundPayment(order_id: str, payments: dict) -> bool",
+      "global_vars": [
+        {
+          "variable": "payments",
+          "op": "write",
+          "description": "Update payment status"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "payments",
+          "operation_type": "write",
+          "description": "Refund payment"
+        }
+      ],
+      "requested_capabilities": [
+        "payments.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-014",
+          "description": "Must call payment gateway exactly once"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-017",
+          "description": "Payment refunded successfully"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with external dependency"
+    },
+    {
+      "name": "RestoreInventory",
+      "purpose": "Restore reserved inventory for the cancelled order",
+      "behavior": "Decrements reserved_count for each item in the order",
+      "inputs": [
+        "order_id",
+        "orders",
+        "inventory"
+      ],
+      "outputs": [
+        "restore_result"
+      ],
+      "signature": "def RestoreInventory(order_id: str, orders: dict, inventory: dict) -> bool",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read",
+          "description": "Read order items"
+        },
+        {
+          "variable": "inventory",
+          "op": "write",
+          "description": "Restore reserved_count"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read",
+          "description": "Get items"
+        },
+        {
+          "source_name": "inventory",
+          "operation_type": "write",
+          "description": "Restore stock"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read",
+        "inventory.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-015",
+          "description": "Must decrement reserved_count atomically per product"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-018",
+          "description": "reserved_count decremented for each item"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation"
+    },
+    {
+      "name": "UpdateOrderStatusToCancelled",
+      "purpose": "Update order status to 'cancelled'",
+      "behavior": "Sets order status to 'cancelled' in orders store",
+      "inputs": [
+        "order_id",
+        "orders"
+      ],
+      "outputs": [
+        "update_result"
+      ],
+      "signature": "def UpdateOrderStatusToCancelled(order_id: str, orders: dict) -> bool",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "write",
+          "description": "Update order status"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "write",
+          "description": "Set status"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-016",
+          "description": "Must update status exactly once"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-019",
+          "description": "Order status set to 'cancelled'"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation"
+    },
+    {
+      "name": "GetOrderStatusAndDelivery",
+      "purpose": "Retrieve order status and estimate delivery time",
+      "behavior": "Queries orders store for status, calculates estimated delivery based on order creation time and shipping address",
+      "inputs": [
+        "order_id",
+        "orders"
+      ],
+      "outputs": [
+        "track_result"
+      ],
+      "signature": "def GetOrderStatusAndDelivery(order_id: str, orders: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read",
+          "description": "Read order status"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read",
+          "description": "Get status"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-017",
+          "description": "Must not modify orders"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-020",
+          "description": "Returns status and estimated delivery"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": true,
+      "stop_reason": "Pure query function"
+    }
+  ],
+  "governance_notes": "Parent global_vars conservation verified: orders (read_write) covered by PlaceOrder (write), CancelOrder (read_write), TrackOrder (read), CreateOrderRecord (write), VerifyOrderExistsAndNotShipped (read), RestoreInventory (read), UpdateOrderStatusToCancelled (write), GetOrderStatusAndDelivery (read). inventory (read_write) covered by PlaceOrder (read), CancelOrder (write), ValidateItems (read), ReserveInventory (write), RestoreInventory (write). payments (read_write) covered by PlaceOrder (write), CancelOrder (write), ChargePayment (write), RefundPayment (write). All parent operations fully distributed."
+}

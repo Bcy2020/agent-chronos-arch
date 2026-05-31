@@ -1,0 +1,178 @@
+{
+  "children": [
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the complete place order workflow: validate stock, charge payment, reserve inventory, create order record, send notification.",
+      "behavior": "Calls validation, payment, inventory, order creation, and notification functions in sequence with rollback on failure.",
+      "boundary": {
+        "in_scope": [
+          "validating items and stock",
+          "charging payment",
+          "reserving inventory",
+          "creating order record",
+          "sending confirmation"
+        ],
+        "out_of_scope": [
+          "cancelling orders",
+          "tracking orders",
+          "handling other commands"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload with items, payment_method, shipping_address",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'place'"
+      ],
+      "postconditions": [
+        "If success, order record created with status 'confirmed'",
+        "If failure, no side effects remain"
+      ],
+      "guarantees": [
+        "Atomicity: rollback on any failure",
+        "Payment charged before inventory decremented"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the cancel order workflow: verify order exists and not shipped, refund payment, restore inventory, update order status.",
+      "behavior": "Calls verification, refund, inventory restoration, and status update functions in sequence with rollback on failure.",
+      "boundary": {
+        "in_scope": [
+          "verifying order exists and not shipped",
+          "refunding payment",
+          "restoring inventory",
+          "updating order status"
+        ],
+        "out_of_scope": [
+          "placing orders",
+          "tracking orders",
+          "handling other commands"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'cancel'"
+      ],
+      "postconditions": [
+        "If success, order status set to 'cancelled'",
+        "If failure, no side effects remain"
+      ],
+      "guarantees": [
+        "Atomicity: rollback on any failure",
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Return current order status and estimated delivery time for a given order.",
+      "behavior": "Looks up order by order_id in orders data store and returns status and estimated delivery time.",
+      "boundary": {
+        "in_scope": [
+          "reading order status",
+          "estimating delivery time"
+        ],
+        "out_of_scope": [
+          "modifying orders",
+          "placing or cancelling orders"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result with success, order_id, status, message including delivery time",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'track'"
+      ],
+      "postconditions": [
+        "Order data is read, not modified"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent OrderSystem function dispatches based on command to three independent child functions, each handling a complete workflow for one command. This keeps children at the same abstraction level (order-level operations) and avoids overlapping responsibilities.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "PlaceOrder",
+      "data": "order_data",
+      "note": "When command is 'place'"
+    },
+    {
+      "from": "parent",
+      "to": "CancelOrder",
+      "data": "order_data",
+      "note": "When command is 'cancel'"
+    },
+    {
+      "from": "parent",
+      "to": "TrackOrder",
+      "data": "order_data",
+      "note": "When command is 'track'"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Result of place operation"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Result of cancel operation"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Result of track operation"
+    }
+  ]
+}

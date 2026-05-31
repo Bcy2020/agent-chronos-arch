@@ -1,0 +1,327 @@
+{
+  "children": [
+    {
+      "name": "ValidateBuildRequest",
+      "purpose": "Validate the build_request JSON for required fields and business rules",
+      "behavior": "Check action is one of trigger/status/list/cancel; for trigger, ensure repo and config.build_steps present; for status/cancel, ensure build_id present; check repo+branch uniqueness for trigger",
+      "inputs": [
+        "build_request"
+      ],
+      "outputs": [
+        "validated_request",
+        "validation_error"
+      ],
+      "signature": "def ValidateBuildRequest(build_request: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "build_request must be a valid JSON object"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Valid request returns validated_request with defaults applied"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Invalid request returns validation_error string"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "RouteAction",
+      "purpose": "Route the validated request to the appropriate action handler based on action field",
+      "behavior": "Examine action field and call the corresponding child function: TriggerBuild, CheckBuildStatus, ListBuildHistory, or CancelBuild",
+      "inputs": [
+        "validated_request"
+      ],
+      "outputs": [
+        "action_result"
+      ],
+      "signature": "def RouteAction(validated_request: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-002",
+          "description": "validated_request must contain a valid action field"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-003",
+          "description": "Routes to correct handler based on action field"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Execute a new build: create record, run compile, run test, package artifacts, update status",
+      "behavior": "Create build record in builds store with status 'running'; run compile steps; run test steps; package artifacts; update status to 'completed' or 'failed'; store logs incrementally",
+      "inputs": [
+        "validated_request",
+        "builds"
+      ],
+      "outputs": [
+        "build_result"
+      ],
+      "signature": "def TriggerBuild(validated_request: dict, builds: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read_write",
+          "description": "Build records store for creating and updating build records"
+        },
+        {
+          "variable": "artifacts",
+          "op": "write",
+          "description": "Artifact store for saving packaged artifacts"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read_write",
+          "description": "Create build record, update status and logs"
+        },
+        {
+          "source_name": "artifacts",
+          "operation_type": "write",
+          "description": "Store packaged artifacts after successful build"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read_write",
+        "artifacts.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "Only one build per repo+branch runs at a time"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-004",
+          "description": "Build record created with status 'running'"
+        },
+        {
+          "ac_id": "AC-005",
+          "description": "Compilation steps executed successfully"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "Test steps executed successfully"
+        },
+        {
+          "ac_id": "AC-007",
+          "description": "Artifacts packaged and stored"
+        },
+        {
+          "ac_id": "AC-008",
+          "description": "Final status updated to 'completed' or 'failed'"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Return current status and logs for a given build_id",
+      "behavior": "Look up build record by build_id in builds store; return status and logs",
+      "inputs": [
+        "validated_request",
+        "builds"
+      ],
+      "outputs": [
+        "build_result"
+      ],
+      "signature": "def CheckBuildStatus(validated_request: dict, builds: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read",
+          "description": "Build records store for reading build status and logs"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Read build record by build_id"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-004",
+          "description": "build_id must exist in builds store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-009",
+          "description": "Returns status and logs for existing build_id"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Returns error for non-existent build_id"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ListBuildHistory",
+      "purpose": "Return all builds filtered by repo/branch/status",
+      "behavior": "Query builds store with optional filters from request; return list of build records",
+      "inputs": [
+        "validated_request",
+        "builds"
+      ],
+      "outputs": [
+        "build_result"
+      ],
+      "signature": "def ListBuildHistory(validated_request: dict, builds: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read",
+          "description": "Build records store for querying build history"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Query builds with optional filters"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-005",
+          "description": "Filters are optional; returns all builds if no filters provided"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-011",
+          "description": "Returns list of builds matching filters"
+        },
+        {
+          "ac_id": "AC-012",
+          "description": "Returns empty list if no builds match"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build: stop execution, update status to 'cancelled'",
+      "behavior": "Look up build by build_id; if status is 'running', update status to 'cancelled' and stop any ongoing processes; if already completed, no-op",
+      "inputs": [
+        "validated_request",
+        "builds"
+      ],
+      "outputs": [
+        "build_result"
+      ],
+      "signature": "def CancelBuild(validated_request: dict, builds: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read_write",
+          "description": "Build records store for reading and updating build status"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read_write",
+          "description": "Read build record by build_id, update status to 'cancelled' if running"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read_write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-006",
+          "description": "build_id must exist in builds store"
+        },
+        {
+          "constraint_id": "C-007",
+          "description": "Only running builds can be cancelled"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-013",
+          "description": "Running build status updated to 'cancelled'"
+        },
+        {
+          "ac_id": "AC-014",
+          "description": "Completed build remains unchanged"
+        },
+        {
+          "ac_id": "AC-015",
+          "description": "Non-existent build_id returns error"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "Parent global vars 'builds' (read_write) and 'artifacts' (read_write) are distributed as follows: 'builds' read is covered by CheckBuildStatus and ListBuildHistory; 'builds' write is covered by TriggerBuild and CancelBuild; 'artifacts' write is covered by TriggerBuild. No child requires 'artifacts' read, which is acceptable as parent only requires read_write and write is covered. All children's global_vars are subsets of parent's global_vars. Data operations and requested capabilities are consistent with global_vars assignments."
+}

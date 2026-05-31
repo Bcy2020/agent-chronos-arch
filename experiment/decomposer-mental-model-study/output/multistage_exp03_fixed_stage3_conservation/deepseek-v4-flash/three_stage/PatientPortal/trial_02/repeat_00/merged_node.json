@@ -1,0 +1,400 @@
+[
+  {
+    "name": "RegisterPatient",
+    "purpose": "Validate required fields, create patient record, and generate unique patient_id",
+    "behavior": "Check that name, dob, contact, insurance are present; generate a new patient_id; store patient data in patients database; return success with patient_id",
+    "boundary": {
+      "in_scope": [
+        "field validation",
+        "patient_id generation",
+        "database write"
+      ],
+      "out_of_scope": [
+        "appointment booking",
+        "record retrieval",
+        "profile updates"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "patient_data",
+        "description": "Patient payload with name, dob, contact, insurance",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "patient_result",
+        "description": "Result dict with success, data (patient_id), message",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "patient_data contains name, dob, contact, insurance"
+    ],
+    "postconditions": [
+      "patient record exists in patients database"
+    ],
+    "guarantees": [
+      "patient_id is unique",
+      "patient record is persisted"
+    ],
+    "composition_role": "mutate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "patient_data",
+        "type": "dict",
+        "description": "Patient payload with name, dob, contact, insurance",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "patient_result",
+        "type": "dict",
+        "description": "Result dict with success, data (patient_id), message",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def RegisterPatient(patient_data: dict) -> dict",
+    "global_vars": [
+      {
+        "variable": "patients",
+        "op": "write",
+        "description": "Write new patient record with generated patient_id"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "patients",
+        "operation_type": "write",
+        "description": "Insert new patient record"
+      }
+    ],
+    "requested_capabilities": [
+      "patients.write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-001",
+        "description": "patient_data must contain name, dob, contact, insurance"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-001",
+        "description": "Patient record is created in patients database with unique patient_id"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "BookAppointment",
+    "purpose": "Check patient exists, check doctor availability, create appointment record, send confirmation",
+    "behavior": "Verify patient_id exists in patients; check doctor availability at requested time; create appointment record in appointments database; return success with appointment_id",
+    "boundary": {
+      "in_scope": [
+        "patient existence check",
+        "doctor availability check",
+        "appointment creation"
+      ],
+      "out_of_scope": [
+        "patient registration",
+        "record retrieval",
+        "profile updates"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "patient_data",
+        "description": "Patient payload with patient_id, doctor_id, appointment_time",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "patient_result",
+        "description": "Result dict with success, data (appointment_id), message",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "patient_id exists in patients",
+      "appointment_time is in the future"
+    ],
+    "postconditions": [
+      "appointment record exists in appointments database"
+    ],
+    "guarantees": [
+      "appointment is not double-booked",
+      "time is validated"
+    ],
+    "composition_role": "mutate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "patient_data",
+        "type": "dict",
+        "description": "Patient payload with patient_id, doctor_id, appointment_time",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "patient_result",
+        "type": "dict",
+        "description": "Result dict with success, data (appointment_id), message",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def BookAppointment(patient_data: dict) -> dict",
+    "global_vars": [
+      {
+        "variable": "patients",
+        "op": "read",
+        "description": "Read patient record to verify patient_id exists"
+      },
+      {
+        "variable": "appointments",
+        "op": "read_write",
+        "description": "Read existing appointments for availability check and write new appointment record"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "patients",
+        "operation_type": "read",
+        "description": "Verify patient existence"
+      },
+      {
+        "source_name": "appointments",
+        "operation_type": "read_write",
+        "description": "Check availability and create appointment"
+      }
+    ],
+    "requested_capabilities": [
+      "patients.read",
+      "appointments.read_write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-002",
+        "description": "patient_id must exist in patients database"
+      },
+      {
+        "constraint_id": "C-003",
+        "description": "appointment_time must be in the future"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-002",
+        "description": "Appointment record created in appointments database with unique appointment_id"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-002"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "RetrieveRecords",
+    "purpose": "Retrieve all medical records for a patient, sorted by date descending",
+    "behavior": "Query records database for all records matching patient_id; sort by timestamp descending; return list of records",
+    "boundary": {
+      "in_scope": [
+        "record retrieval",
+        "sorting"
+      ],
+      "out_of_scope": [
+        "record creation",
+        "record modification",
+        "other operations"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "patient_data",
+        "description": "Patient payload with patient_id",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "patient_result",
+        "description": "Result dict with success, data (list of records), message",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "patient_id exists in patients"
+    ],
+    "postconditions": [
+      "records are returned sorted by date descending"
+    ],
+    "guarantees": [
+      "records are read-only",
+      "no side effects"
+    ],
+    "composition_role": "query",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "patient_data",
+        "type": "dict",
+        "description": "Patient payload with patient_id",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "patient_result",
+        "type": "dict",
+        "description": "Result dict with success, data (list of records), message",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def RetrieveRecords(patient_data: dict) -> dict",
+    "global_vars": [
+      {
+        "variable": "records",
+        "op": "read",
+        "description": "Read all records for the given patient_id"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "records",
+        "operation_type": "read",
+        "description": "Retrieve patient records sorted by date"
+      }
+    ],
+    "requested_capabilities": [
+      "records.read"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-004",
+        "description": "patient_id must exist in patients database"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-003",
+        "description": "All records for patient_id returned sorted by timestamp descending"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-003"
+      ]
+    },
+    "node_type": "pure_function"
+  },
+  {
+    "name": "UpdatePatientProfile",
+    "purpose": "Update patient profile fields; if insurance changed, validate against external system",
+    "behavior": "Update patient record in patients database with provided fields; if insurance field is present and different from current, validate via external system before saving; return success",
+    "boundary": {
+      "in_scope": [
+        "profile field update",
+        "insurance validation"
+      ],
+      "out_of_scope": [
+        "registration",
+        "appointment booking",
+        "record retrieval"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "patient_data",
+        "description": "Patient payload with patient_id and fields to update",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "patient_result",
+        "description": "Result dict with success, data (updated fields), message",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "patient_id exists in patients"
+    ],
+    "postconditions": [
+      "patient record is updated in database"
+    ],
+    "guarantees": [
+      "insurance validation occurs if changed",
+      "other fields updated atomically"
+    ],
+    "composition_role": "mutate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "patient_data",
+        "type": "dict",
+        "description": "Patient payload with patient_id and fields to update",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "patient_result",
+        "type": "dict",
+        "description": "Result dict with success, data (updated fields), message",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def UpdatePatientProfile(patient_data: dict) -> dict",
+    "global_vars": [
+      {
+        "variable": "patients",
+        "op": "read_write",
+        "description": "Read current patient record and write updated fields"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "patients",
+        "operation_type": "read_write",
+        "description": "Read current profile and update with new fields"
+      }
+    ],
+    "requested_capabilities": [
+      "patients.read_write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-005",
+        "description": "patient_id must exist in patients database"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-004",
+        "description": "Patient profile updated in patients database with validated insurance if changed"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-004"
+      ]
+    },
+    "node_type": "atomic_operation"
+  }
+]

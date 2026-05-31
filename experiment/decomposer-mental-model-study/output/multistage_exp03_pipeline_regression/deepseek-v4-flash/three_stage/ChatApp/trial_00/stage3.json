@@ -1,0 +1,344 @@
+{
+  "children": [
+    {
+      "name": "ValidateCommand",
+      "purpose": "Check that the command is one of the allowed four and that required fields in message_data are present",
+      "behavior": "If command is not in ['send','history','create_channel','join'], return error. For each command, verify necessary fields exist in message_data.",
+      "inputs": [
+        "command: str",
+        "message_data: dict"
+      ],
+      "outputs": [
+        "validation_result: dict"
+      ],
+      "signature": "def ValidateCommand(command: str, message_data: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "command must be one of ['send','history','create_channel','join']"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "message_data must contain required fields based on command type"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Invalid command returns error with success=False"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Missing required fields returns error with success=False"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Valid command and complete data returns success=True"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Execute the 'send' command: validate membership, store message, update last_seen, notify members",
+      "behavior": "Check user is member of channel via channels store. If not, return error. Store message in messages store with timestamp. Update user's last_seen in users store. Retrieve channel members and prepare notification data (message details).",
+      "inputs": [
+        "message_data: dict",
+        "channels: Database",
+        "messages: Database"
+      ],
+      "outputs": [
+        "send_result: dict"
+      ],
+      "signature": "def SendMessage(message_data: dict, channels: Database, messages: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "messages",
+          "op": "write",
+          "description": "Write new message entry"
+        },
+        {
+          "variable": "users",
+          "op": "write",
+          "description": "Update user's last_seen timestamp"
+        },
+        {
+          "variable": "channels",
+          "op": "read",
+          "description": "Read channel membership list"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Check if user is member of channel"
+        },
+        {
+          "source_name": "messages",
+          "operation_type": "write",
+          "description": "Store new message with timestamp"
+        },
+        {
+          "source_name": "users",
+          "operation_type": "write",
+          "description": "Update user's last_seen"
+        }
+      ],
+      "requested_capabilities": [
+        "database.channels.read",
+        "database.messages.write",
+        "database.users.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "User must be a member of the specified channel"
+        },
+        {
+          "constraint_id": "C-004",
+          "description": "Message must have non-empty content"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-004",
+          "description": "Non-member user returns error with success=False"
+        },
+        {
+          "ac_id": "AC-005",
+          "description": "Valid message is stored with correct channel_id, user_id, content, and timestamp"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "User's last_seen is updated to current timestamp"
+        },
+        {
+          "ac_id": "AC-007",
+          "description": "Notification data includes message details and list of channel members"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Execute the 'history' command: retrieve last 100 messages from a channel sorted by timestamp descending",
+      "behavior": "Query messages store for all messages with given channel_id, sort by timestamp descending, limit to 100, return list.",
+      "inputs": [
+        "message_data: dict",
+        "messages: Database"
+      ],
+      "outputs": [
+        "history_result: dict"
+      ],
+      "signature": "def GetHistory(message_data: dict, messages: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "messages",
+          "op": "read",
+          "description": "Read messages for the specified channel"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "messages",
+          "operation_type": "read",
+          "description": "Query messages by channel_id, sort by timestamp descending, limit to 100"
+        }
+      ],
+      "requested_capabilities": [
+        "database.messages.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-005",
+          "description": "channel_id must be provided in message_data"
+        },
+        {
+          "constraint_id": "C-006",
+          "description": "Return at most 100 messages"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-008",
+          "description": "Returns list of messages sorted by timestamp descending"
+        },
+        {
+          "ac_id": "AC-009",
+          "description": "Returns at most 100 messages"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Each message contains content, user_id, and timestamp"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Execute the 'create_channel' command: create new channel with unique name, set creator as first member",
+      "behavior": "Check if channel name already exists in channels store. If yes, return error. Generate new channel_id, store channel with name, members=[user_id], created_by=user_id.",
+      "inputs": [
+        "message_data: dict",
+        "channels: Database"
+      ],
+      "outputs": [
+        "create_result: dict"
+      ],
+      "signature": "def CreateChannel(message_data: dict, channels: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "channels",
+          "op": "read_write",
+          "description": "Read to check name uniqueness, write to store new channel"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Check if channel name already exists"
+        },
+        {
+          "source_name": "channels",
+          "operation_type": "write",
+          "description": "Store new channel with generated ID, name, members, created_by"
+        }
+      ],
+      "requested_capabilities": [
+        "database.channels.read",
+        "database.channels.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-007",
+          "description": "Channel name must be unique across all channels"
+        },
+        {
+          "constraint_id": "C-008",
+          "description": "channel_name must be non-empty string"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-011",
+          "description": "Duplicate channel name returns error with success=False"
+        },
+        {
+          "ac_id": "AC-012",
+          "description": "New channel is created with unique ID, provided name, creator as first member"
+        },
+        {
+          "ac_id": "AC-013",
+          "description": "Returns success=True and new channel_id"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Execute the 'join' command: add user to channel member list if not already a member",
+      "behavior": "Check if user_id is already in channel's members list. If yes, return error. Otherwise, append user_id to members list and update channels store.",
+      "inputs": [
+        "message_data: dict",
+        "channels: Database"
+      ],
+      "outputs": [
+        "join_result: dict"
+      ],
+      "signature": "def JoinChannel(message_data: dict, channels: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "channels",
+          "op": "read_write",
+          "description": "Read current members list, write updated members list"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Check if user is already a member of the channel"
+        },
+        {
+          "source_name": "channels",
+          "operation_type": "write",
+          "description": "Update channel's members list with new user"
+        }
+      ],
+      "requested_capabilities": [
+        "database.channels.read",
+        "database.channels.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-009",
+          "description": "User must not already be a member of the channel"
+        },
+        {
+          "constraint_id": "C-010",
+          "description": "channel_id must reference an existing channel"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-014",
+          "description": "Already-member user returns error with success=False"
+        },
+        {
+          "ac_id": "AC-015",
+          "description": "Non-existent channel returns error with success=False"
+        },
+        {
+          "ac_id": "AC-016",
+          "description": "User is added to channel's members list"
+        },
+        {
+          "ac_id": "AC-017",
+          "description": "Returns success=True and updated member count"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-005"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children inherit parent's global variable access scopes. ValidateCommand is a pure function with no data store access. SendMessage requires write access to messages and users, and read access to channels. GetHistory requires read access to messages. CreateChannel and JoinChannel require read/write access to channels. No child requires write access to users except SendMessage. All children must respect the parent's constraint that only valid commands proceed to execution."
+}

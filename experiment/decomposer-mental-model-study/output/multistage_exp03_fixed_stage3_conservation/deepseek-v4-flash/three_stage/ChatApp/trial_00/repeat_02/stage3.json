@@ -1,0 +1,327 @@
+{
+  "children": [
+    {
+      "name": "ValidateCommand",
+      "purpose": "Check that the command is one of the allowed four and that required fields in message_data are present",
+      "behavior": "If command is not in ['send','history','create_channel','join'], return error. For each command, verify necessary fields exist in message_data.",
+      "inputs": [
+        "command",
+        "message_data"
+      ],
+      "outputs": [
+        "validation_result"
+      ],
+      "signature": "def ValidateCommand(command: str, message_data: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must not modify any data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Returns error for invalid command"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Returns error for missing required fields"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": true,
+      "stop_reason": "Pure validation logic, no further decomposition needed"
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Execute the 'send' command: validate membership, store message, update last_seen, notify members",
+      "behavior": "Check user is member of channel via channels store. If not, return error. Store message in messages store with timestamp. Update user's last_seen in users store. Retrieve channel members and prepare notification data (message details).",
+      "inputs": [
+        "message_data",
+        "channels",
+        "messages"
+      ],
+      "outputs": [
+        "send_result"
+      ],
+      "signature": "def SendMessage(message_data: dict, channels: Database, messages: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "messages",
+          "op": "write",
+          "description": "Store new message"
+        },
+        {
+          "variable": "users",
+          "op": "write",
+          "description": "Update last_seen for user"
+        },
+        {
+          "variable": "channels",
+          "op": "read",
+          "description": "Check membership and get member list"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Check user membership and retrieve member list"
+        },
+        {
+          "source_name": "messages",
+          "operation_type": "write",
+          "description": "Store new message with timestamp"
+        },
+        {
+          "source_name": "users",
+          "operation_type": "write",
+          "description": "Update user's last_seen timestamp"
+        }
+      ],
+      "requested_capabilities": [
+        "database.read",
+        "database.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-002",
+          "description": "Must verify user is member of channel before storing message"
+        },
+        {
+          "constraint_id": "C-003",
+          "description": "Must update last_seen atomically with message storage"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-003",
+          "description": "Message stored with correct channel_id, user_id, content, timestamp"
+        },
+        {
+          "ac_id": "AC-004",
+          "description": "User's last_seen updated to current timestamp"
+        },
+        {
+          "ac_id": "AC-005",
+          "description": "Returns error if user not in channel"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Execute the 'history' command: retrieve last 100 messages from a channel sorted by timestamp descending",
+      "behavior": "Query messages store for all messages with given channel_id, sort by timestamp descending, limit to 100, return list.",
+      "inputs": [
+        "message_data",
+        "messages"
+      ],
+      "outputs": [
+        "history_result"
+      ],
+      "signature": "def GetHistory(message_data: dict, messages: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "messages",
+          "op": "read",
+          "description": "Query messages by channel_id"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "messages",
+          "operation_type": "read",
+          "description": "Retrieve messages filtered by channel_id, sorted by timestamp descending, limited to 100"
+        }
+      ],
+      "requested_capabilities": [
+        "database.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-004",
+          "description": "Must return at most 100 messages"
+        },
+        {
+          "constraint_id": "C-005",
+          "description": "Must sort by timestamp descending"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-006",
+          "description": "Returns list of messages with correct channel_id"
+        },
+        {
+          "ac_id": "AC-007",
+          "description": "Messages sorted newest first"
+        },
+        {
+          "ac_id": "AC-008",
+          "description": "Returns empty list if no messages in channel"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Simple query operation, no further decomposition needed"
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Execute the 'create_channel' command: create new channel with unique name, set creator as first member",
+      "behavior": "Check if channel name already exists in channels store. If yes, return error. Generate new channel_id, store channel with name, members=[user_id], created_by=user_id.",
+      "inputs": [
+        "message_data",
+        "channels"
+      ],
+      "outputs": [
+        "create_result"
+      ],
+      "signature": "def CreateChannel(message_data: dict, channels: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "channels",
+          "op": "read_write",
+          "description": "Check name uniqueness and store new channel"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Check if channel name already exists"
+        },
+        {
+          "source_name": "channels",
+          "operation_type": "write",
+          "description": "Store new channel with name, members, created_by"
+        }
+      ],
+      "requested_capabilities": [
+        "database.read",
+        "database.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-006",
+          "description": "Must ensure channel name is unique"
+        },
+        {
+          "constraint_id": "C-007",
+          "description": "Must set creator as first member"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-009",
+          "description": "New channel created with unique name"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Creator added to members list"
+        },
+        {
+          "ac_id": "AC-011",
+          "description": "Returns error if channel name already exists"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Simple create operation, no further decomposition needed"
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Execute the 'join' command: add user to channel member list if not already a member",
+      "behavior": "Check if user_id is already in channel's members list. If yes, return error. Otherwise, append user_id to members list and update channels store.",
+      "inputs": [
+        "message_data",
+        "channels"
+      ],
+      "outputs": [
+        "join_result"
+      ],
+      "signature": "def JoinChannel(message_data: dict, channels: Database) -> dict",
+      "global_vars": [
+        {
+          "variable": "channels",
+          "op": "read_write",
+          "description": "Check membership and update member list"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Check if user is already a member"
+        },
+        {
+          "source_name": "channels",
+          "operation_type": "write",
+          "description": "Append user to members list"
+        }
+      ],
+      "requested_capabilities": [
+        "database.read",
+        "database.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-008",
+          "description": "Must not add duplicate members"
+        },
+        {
+          "constraint_id": "C-009",
+          "description": "Must verify channel exists before adding member"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-012",
+          "description": "User added to channel members list"
+        },
+        {
+          "ac_id": "AC-013",
+          "description": "Returns error if user already member"
+        },
+        {
+          "ac_id": "AC-014",
+          "description": "Returns error if channel does not exist"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-005"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "Simple join operation, no further decomposition needed"
+    }
+  ],
+  "governance_notes": "Parent global_vars conservation verified: messages (read_write) covered by SendMessage (write) and GetHistory (read); users (read) covered by SendMessage (write) for last_seen update; channels (read_write) covered by SendMessage (read), CreateChannel (read_write), JoinChannel (read_write). No parent operation dropped."
+}

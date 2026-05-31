@@ -1,0 +1,255 @@
+{
+  "children": [
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the complete place order workflow: validate, charge, reserve, create record, notify.",
+      "behavior": "Calls validate items, charge payment, reserve inventory, create order record, and send notification in sequence, rolling back on failure.",
+      "boundary": {
+        "in_scope": [
+          "validating items and stock",
+          "charging payment",
+          "reserving inventory",
+          "creating order record",
+          "sending confirmation"
+        ],
+        "out_of_scope": [
+          "cancelling orders",
+          "tracking orders",
+          "handling other commands"
+        ]
+      },
+      "preconditions": [
+        "command is 'place'",
+        "order_data contains items, payment_method, shipping_address"
+      ],
+      "postconditions": [
+        "If success: order record created, payment charged, inventory reserved, notification sent",
+        "If failure: all changes rolled back"
+      ],
+      "guarantees": [
+        "Atomicity: all-or-nothing",
+        "Payment charged before inventory reserved"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'place'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with items (list), payment_method (str), shipping_address (dict)",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success (bool), order_id (str), status (str), message (str)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(command: str, order_data: dict) -> dict"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the complete cancel order workflow: verify, refund, restore inventory, update status.",
+      "behavior": "Calls verify order exists and not shipped, refund payment, restore inventory, update order status to cancelled, rolling back on failure.",
+      "boundary": {
+        "in_scope": [
+          "verifying order exists and not shipped",
+          "refunding payment",
+          "restoring inventory",
+          "updating order status"
+        ],
+        "out_of_scope": [
+          "placing orders",
+          "tracking orders",
+          "handling other commands"
+        ]
+      },
+      "preconditions": [
+        "command is 'cancel'",
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "If success: order status cancelled, payment refunded, inventory restored",
+        "If failure: no changes made"
+      ],
+      "guarantees": [
+        "Atomicity: all-or-nothing",
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'cancel'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with order_id (str)",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success (bool), order_id (str), status (str), message (str)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(command: str, order_data: dict) -> dict"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Return current order status and estimated delivery time.",
+      "behavior": "Queries the orders data store for the given order_id and returns status and estimated delivery time.",
+      "boundary": {
+        "in_scope": [
+          "reading order status",
+          "reading estimated delivery time"
+        ],
+        "out_of_scope": [
+          "modifying orders",
+          "placing or cancelling orders"
+        ]
+      },
+      "preconditions": [
+        "command is 'track'",
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "Order status and estimated delivery returned without side effects"
+      ],
+      "guarantees": [
+        "Read-only operation",
+        "No state changes"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'track'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with order_id (str)",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success (bool), order_id (str), status (str), message (str), estimated_delivery (str)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(command: str, order_data: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "command": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ],
+      "order_data": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ]
+    },
+    "parent_outputs_produced_by": {
+      "order_result": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ]
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "PlaceOrder",
+      "to_input": "command",
+      "note": "Route command to place workflow"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "PlaceOrder",
+      "to_input": "order_data",
+      "note": "Pass order data to place workflow"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "CancelOrder",
+      "to_input": "command",
+      "note": "Route command to cancel workflow"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "CancelOrder",
+      "to_input": "order_data",
+      "note": "Pass order data to cancel workflow"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "TrackOrder",
+      "to_input": "command",
+      "note": "Route command to track workflow"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "TrackOrder",
+      "to_input": "order_data",
+      "note": "Pass order data to track workflow"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return place result to parent"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return cancel result to parent"
+    },
+    {
+      "from_node": "TrackOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return track result to parent"
+    }
+  ]
+}

@@ -1,0 +1,530 @@
+[
+  {
+    "name": "IngestData",
+    "purpose": "Read raw data from source, parse records, store in raw_data, and log ingestion",
+    "behavior": "Based on source type, read from CSV/JSON/API, parse into records, store in raw_data, and append log entry",
+    "boundary": {
+      "in_scope": [
+        "reading source",
+        "parsing records",
+        "storing to raw_data",
+        "logging ingestion"
+      ],
+      "out_of_scope": [
+        "transformation",
+        "validation",
+        "export"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "pipeline_request",
+        "description": "Contains action and source details",
+        "source": "parent input"
+      },
+      {
+        "name": "raw_data",
+        "description": "Database to store ingested records",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "ingest_result",
+        "description": "Dict with success, records_processed, errors, and raw_records list",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "pipeline_request.action == 'ingest'",
+      "source is valid"
+    ],
+    "postconditions": [
+      "raw_data contains ingested records",
+      "pipeline_log has ingestion entry"
+    ],
+    "guarantees": [
+      "records are parsed",
+      "errors are captured"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "pipeline_request",
+        "type": "dict",
+        "description": "JSON with action, source, transform_config",
+        "source": "parent input"
+      },
+      {
+        "name": "raw_data",
+        "type": "database",
+        "description": "Data store for raw records",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "ingest_result",
+        "type": "dict",
+        "description": "Result with success, records_processed, errors, raw_records",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def IngestData(pipeline_request: dict, raw_data: database) -> dict",
+    "global_vars": [
+      {
+        "variable": "raw_data",
+        "op": "write",
+        "description": "Store parsed records"
+      },
+      {
+        "variable": "pipeline_log",
+        "op": "write",
+        "description": "Log ingestion step"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "raw_data",
+        "operation_type": "write",
+        "description": "Write parsed records to raw_data"
+      },
+      {
+        "source_name": "pipeline_log",
+        "operation_type": "write",
+        "description": "Append ingestion log entry"
+      }
+    ],
+    "requested_capabilities": [
+      "database.write",
+      "database.append"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-001",
+        "description": "Must parse all records before writing to raw_data"
+      },
+      {
+        "constraint_id": "C-002",
+        "description": "Log entry must include step name, timestamp, records_in, records_out, errors"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-001",
+        "description": "raw_data contains all parsed records after ingestion"
+      },
+      {
+        "ac_id": "AC-002",
+        "description": "pipeline_log contains an ingestion entry with correct fields"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "TransformData",
+    "purpose": "Apply transformation rules to raw_data, store in processed_data, skip malformed records",
+    "behavior": "Read raw_data, apply each rule to each record, skip and log malformed records, store valid results in processed_data",
+    "boundary": {
+      "in_scope": [
+        "reading raw_data",
+        "applying transformation rules",
+        "skipping malformed records",
+        "storing to processed_data"
+      ],
+      "out_of_scope": [
+        "ingestion",
+        "validation",
+        "export"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "pipeline_request",
+        "description": "Contains transform_config",
+        "source": "parent input"
+      },
+      {
+        "name": "raw_data",
+        "description": "Source of raw records",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "transform_result",
+        "description": "Dict with success, records_processed, errors, and processed_records list",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "pipeline_request.action == 'transform'",
+      "raw_data is populated"
+    ],
+    "postconditions": [
+      "processed_data contains transformed records",
+      "malformed records are logged"
+    ],
+    "guarantees": [
+      "transformation rules applied",
+      "errors captured"
+    ],
+    "composition_role": "transform",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "pipeline_request",
+        "type": "dict",
+        "description": "JSON with action, source, transform_config",
+        "source": "parent input"
+      },
+      {
+        "name": "raw_data",
+        "type": "database",
+        "description": "Data store for raw records",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "transform_result",
+        "type": "dict",
+        "description": "Result with success, records_processed, errors, processed_records",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def TransformData(pipeline_request: dict, raw_data: database) -> dict",
+    "global_vars": [
+      {
+        "variable": "raw_data",
+        "op": "read",
+        "description": "Read raw records for transformation"
+      },
+      {
+        "variable": "processed_data",
+        "op": "write",
+        "description": "Store transformed records"
+      },
+      {
+        "variable": "pipeline_log",
+        "op": "write",
+        "description": "Log transformation step"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "raw_data",
+        "operation_type": "read",
+        "description": "Read raw records"
+      },
+      {
+        "source_name": "processed_data",
+        "operation_type": "write",
+        "description": "Write transformed records"
+      },
+      {
+        "source_name": "pipeline_log",
+        "operation_type": "write",
+        "description": "Append transformation log entry"
+      }
+    ],
+    "requested_capabilities": [
+      "database.read",
+      "database.write",
+      "database.append"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-003",
+        "description": "Must skip malformed records without failing entire batch"
+      },
+      {
+        "constraint_id": "C-004",
+        "description": "Log entry must include step name, timestamp, records_in, records_out, errors"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-003",
+        "description": "processed_data contains all valid transformed records"
+      },
+      {
+        "ac_id": "AC-004",
+        "description": "pipeline_log contains a transformation entry with correct fields"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-002"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "ValidateData",
+    "purpose": "Check processed_data against quality rules, mark invalid records, compute quality_score",
+    "behavior": "Read processed_data, apply quality rules to each record, compute quality_score, mark invalid records, store results back to processed_data",
+    "boundary": {
+      "in_scope": [
+        "reading processed_data",
+        "applying quality rules",
+        "computing quality_score",
+        "marking invalid records"
+      ],
+      "out_of_scope": [
+        "ingestion",
+        "transformation",
+        "export"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "pipeline_request",
+        "description": "May contain validation rules (if any)",
+        "source": "parent input"
+      },
+      {
+        "name": "processed_data",
+        "description": "Data to validate",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "validate_result",
+        "description": "Dict with success, records_processed, errors, and validated_records list",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "pipeline_request.action == 'validate'",
+      "processed_data is populated"
+    ],
+    "postconditions": [
+      "processed_data has quality_score per record",
+      "invalid records marked"
+    ],
+    "guarantees": [
+      "quality_score computed",
+      "errors captured"
+    ],
+    "composition_role": "validate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "pipeline_request",
+        "type": "dict",
+        "description": "JSON with action, source, transform_config",
+        "source": "parent input"
+      },
+      {
+        "name": "processed_data",
+        "type": "database",
+        "description": "Data store for processed records",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "validate_result",
+        "type": "dict",
+        "description": "Result with success, records_processed, errors, validated_records",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ValidateData(pipeline_request: dict, processed_data: database) -> dict",
+    "global_vars": [
+      {
+        "variable": "processed_data",
+        "op": "read_write",
+        "description": "Read records for validation, write back with quality_score and invalid marks"
+      },
+      {
+        "variable": "pipeline_log",
+        "op": "write",
+        "description": "Log validation step"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "processed_data",
+        "operation_type": "read_write",
+        "description": "Read records, update with quality_score and invalid marks"
+      },
+      {
+        "source_name": "pipeline_log",
+        "operation_type": "write",
+        "description": "Append validation log entry"
+      }
+    ],
+    "requested_capabilities": [
+      "database.read",
+      "database.write",
+      "database.append"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-005",
+        "description": "Must compute quality_score for each record"
+      },
+      {
+        "constraint_id": "C-006",
+        "description": "Log entry must include step name, timestamp, records_in, records_out, errors"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-005",
+        "description": "processed_data records have quality_score and invalid marks"
+      },
+      {
+        "ac_id": "AC-006",
+        "description": "pipeline_log contains a validation entry with correct fields"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-003"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "ExportData",
+    "purpose": "Format validated records as output and log export",
+    "behavior": "Read processed_data, filter only validated records, format as CSV or JSON, return as data list, log export",
+    "boundary": {
+      "in_scope": [
+        "reading processed_data",
+        "filtering validated records",
+        "formatting output",
+        "logging export"
+      ],
+      "out_of_scope": [
+        "ingestion",
+        "transformation",
+        "validation"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "pipeline_request",
+        "description": "Contains export_format",
+        "source": "parent input"
+      },
+      {
+        "name": "processed_data",
+        "description": "Data to export",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "export_result",
+        "description": "Dict with success, records_processed, errors, and data list",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "pipeline_request.action == 'export'",
+      "processed_data is populated"
+    ],
+    "postconditions": [
+      "output data contains only validated records",
+      "pipeline_log has export entry"
+    ],
+    "guarantees": [
+      "formatting correct",
+      "errors captured"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "pipeline_request",
+        "type": "dict",
+        "description": "JSON with action, source, transform_config",
+        "source": "parent input"
+      },
+      {
+        "name": "processed_data",
+        "type": "database",
+        "description": "Data store for processed records",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "export_result",
+        "type": "dict",
+        "description": "Result with success, records_processed, errors, data",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ExportData(pipeline_request: dict, processed_data: database) -> dict",
+    "global_vars": [
+      {
+        "variable": "processed_data",
+        "op": "read",
+        "description": "Read validated records for export"
+      },
+      {
+        "variable": "pipeline_log",
+        "op": "write",
+        "description": "Log export step"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "processed_data",
+        "operation_type": "read",
+        "description": "Read records for formatting"
+      },
+      {
+        "source_name": "pipeline_log",
+        "operation_type": "write",
+        "description": "Append export log entry"
+      }
+    ],
+    "requested_capabilities": [
+      "database.read",
+      "database.append"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-007",
+        "description": "Must filter only validated records before export"
+      },
+      {
+        "constraint_id": "C-008",
+        "description": "Log entry must include step name, timestamp, records_in, records_out, errors"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-007",
+        "description": "export_result contains only validated records in correct format"
+      },
+      {
+        "ac_id": "AC-008",
+        "description": "pipeline_log contains an export entry with correct fields"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-004"
+      ]
+    },
+    "node_type": "atomic_operation"
+  }
+]

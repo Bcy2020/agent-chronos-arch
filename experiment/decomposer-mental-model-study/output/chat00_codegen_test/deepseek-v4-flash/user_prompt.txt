@@ -1,0 +1,48 @@
+Verify and implement the following parent function by composing its children.
+
+Parent Function: ChatApp
+Purpose: Handle real-time messaging operations
+
+Inputs:
+  - command: str - Command to execute (send/history/create_channel/join)
+  - message_data: dict - JSON with content, channel_id, user_id, channel_name fields
+
+Outputs:
+  - result: dict - JSON with success, data, and message fields
+
+Children:
+  - RouteCommand: Determine which command to execute based on the input command field
+    Behavior: Reads the 'command' field from the input JSON and calls the appropriate child function (SendMessage, GetHistory, CreateChannel, or JoinChannel) with the message_data
+    Signature: def RouteCommand(message_data: dict) -> dict
+
+  - SendMessage: Validate user membership, store the message, and update user's last_seen
+    Behavior: Checks if user_id is in the channel's member list from channels store; if valid, creates a message record with content, channel_id, user_id, and timestamp, stores it in messages store, and updates the user's last_seen in the channel's metadata
+    Signature: def SendMessage(message_data: dict) -> dict
+
+  - GetHistory: Retrieve the last 100 messages from a channel sorted by timestamp descending
+    Behavior: Queries the messages store for all messages with the given channel_id, sorts them by timestamp descending, and returns the first 100 messages
+    Signature: def GetHistory(message_data: dict) -> dict
+
+  - CreateChannel: Create a new channel with the caller as creator and first member
+    Behavior: Generates a new channel_id, creates a channel record with channel_name, creator (user_id), and member list containing user_id, stores it in channels store
+    Signature: def CreateChannel(message_data: dict) -> dict
+
+  - JoinChannel: Add a user to an existing channel's member list
+    Behavior: Checks if the channel exists in channels store, then appends the user_id to the channel's member list if not already present
+    Signature: def JoinChannel(message_data: dict) -> dict
+
+Dataflow Edges:
+  parent:input.command -> RouteCommand:command (RouteCommand needs the command string to decide which child to call)
+  parent:input.message_data -> RouteCommand:message_data (RouteCommand passes message_data to the appropriate child)
+  RouteCommand:message_data -> SendMessage:message_data (SendMessage receives the message data for validation and storage)
+  RouteCommand:message_data -> GetHistory:message_data (GetHistory uses channel_id from message_data to retrieve messages)
+  RouteCommand:message_data -> CreateChannel:message_data (CreateChannel uses channel_name and user_id from message_data)
+  RouteCommand:message_data -> JoinChannel:message_data (JoinChannel uses channel_id and user_id from message_data)
+  SendMessage:result -> parent:output (SendMessage returns success/failure and data to the parent)
+  GetHistory:result -> parent:output (GetHistory returns the list of messages to the parent)
+  CreateChannel:result -> parent:output (CreateChannel returns the new channel info to the parent)
+  JoinChannel:result -> parent:output (JoinChannel returns success/failure to the parent)
+
+Available Data Stores:
+  - messages (memory, read_write): Stores messages keyed by message_id.
+  - channels (memory, read_write): Stores channel info keyed by channel_id.

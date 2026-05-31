@@ -1,0 +1,458 @@
+[
+  {
+    "name": "TriggerBuild",
+    "purpose": "Create a new build record and run the build pipeline for a given repo and branch",
+    "behavior": "Check no running build for repo+branch, create build record with status 'running', execute compile step, execute test step, package artifacts, update status to 'success' or 'failed', store logs incrementally",
+    "boundary": {
+      "in_scope": [
+        "build record creation",
+        "compile execution",
+        "test execution",
+        "artifact packaging",
+        "status update",
+        "log storage"
+      ],
+      "out_of_scope": [
+        "status retrieval",
+        "build listing",
+        "build cancellation"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "JSON with action='trigger', repo, branch, config",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "JSON with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "No running build for the same repo+branch"
+    ],
+    "postconditions": [
+      "Build record created with final status",
+      "Artifacts stored if successful"
+    ],
+    "guarantees": [
+      "Only one build per repo+branch runs at a time",
+      "Logs stored incrementally"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "repo",
+        "type": "str",
+        "description": "Repository name",
+        "source": "parent input build_request.repo"
+      },
+      {
+        "name": "branch",
+        "type": "str",
+        "description": "Branch name",
+        "source": "parent input build_request.branch"
+      },
+      {
+        "name": "config",
+        "type": "dict",
+        "description": "Build configuration",
+        "source": "parent input build_request.config"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "JSON with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def TriggerBuild(repo: str, branch: str, config: dict) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read_write",
+        "description": "Create build record, update status, store logs"
+      },
+      {
+        "variable": "artifacts",
+        "op": "write",
+        "description": "Store packaged artifacts after successful build"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read_write",
+        "description": "Check for running builds, create record, update status, append logs"
+      },
+      {
+        "source_name": "artifacts",
+        "operation_type": "write",
+        "description": "Store artifact metadata after packaging"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read_write",
+      "artifacts.write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-001",
+        "description": "Must check no running build for same repo+branch before creating new build"
+      },
+      {
+        "constraint_id": "C-002",
+        "description": "Artifacts must be stored only on successful build"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-001",
+        "description": "Build record created with status 'running'"
+      },
+      {
+        "ac_id": "AC-002",
+        "description": "Final status updated to 'success' or 'failed'"
+      },
+      {
+        "ac_id": "AC-003",
+        "description": "Logs stored incrementally during build"
+      },
+      {
+        "ac_id": "AC-004",
+        "description": "Artifacts stored if build succeeded"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001",
+        "FR-004"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "CheckBuildStatus",
+    "purpose": "Return the current status and logs of a specific build",
+    "behavior": "Look up build by build_id in builds store, return its status and logs",
+    "boundary": {
+      "in_scope": [
+        "build lookup",
+        "status retrieval",
+        "log retrieval"
+      ],
+      "out_of_scope": [
+        "build creation",
+        "build listing",
+        "build cancellation"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "JSON with action='status', build_id",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "JSON with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "Build exists"
+    ],
+    "postconditions": [
+      "No state change"
+    ],
+    "guarantees": [
+      "Returns current status and logs"
+    ],
+    "composition_role": "query",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "build_id",
+        "type": "str",
+        "description": "Unique build identifier",
+        "source": "parent input build_request.build_id"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "JSON with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def CheckBuildStatus(build_id: str) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read",
+        "description": "Read build record by build_id"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read",
+        "description": "Lookup build by build_id and return status and logs"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-003",
+        "description": "Must return existing build data or error if build_id not found"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-005",
+        "description": "Returns status and logs for valid build_id"
+      },
+      {
+        "ac_id": "AC-006",
+        "description": "Returns error for non-existent build_id"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-002"
+      ]
+    },
+    "node_type": "pure_function"
+  },
+  {
+    "name": "ListBuilds",
+    "purpose": "Return all builds filtered by optional repo, branch, or status",
+    "behavior": "Query builds store with optional filters, return list of build records",
+    "boundary": {
+      "in_scope": [
+        "build query",
+        "filtering by repo/branch/status"
+      ],
+      "out_of_scope": [
+        "build creation",
+        "status retrieval for single build",
+        "build cancellation"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "JSON with action='list', optional repo, branch, status",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "JSON with success, builds list (each with build_id, repo, branch, status, started_at, finished_at)",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [],
+    "postconditions": [
+      "No state change"
+    ],
+    "guarantees": [
+      "Returns filtered list of builds"
+    ],
+    "composition_role": "query",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "repo",
+        "type": "Optional[str]",
+        "description": "Filter by repository name",
+        "source": "parent input build_request.repo (optional)"
+      },
+      {
+        "name": "branch",
+        "type": "Optional[str]",
+        "description": "Filter by branch name",
+        "source": "parent input build_request.branch (optional)"
+      },
+      {
+        "name": "status",
+        "type": "Optional[str]",
+        "description": "Filter by build status",
+        "source": "parent input build_request.status (optional)"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "JSON with success, builds list",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ListBuilds(repo: Optional[str] = None, branch: Optional[str] = None, status: Optional[str] = None) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read",
+        "description": "Query builds with optional filters"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read",
+        "description": "Query builds store with optional repo/branch/status filters"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-004",
+        "description": "Filters must be optional and applied only when provided"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-007",
+        "description": "Returns all builds when no filters provided"
+      },
+      {
+        "ac_id": "AC-008",
+        "description": "Returns filtered builds when filters provided"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-003"
+      ]
+    },
+    "node_type": "pure_function"
+  },
+  {
+    "name": "CancelBuild",
+    "purpose": "Stop a running build and update its status to 'cancelled'",
+    "behavior": "Look up build by build_id, if status is 'running', stop the build process, update status to 'cancelled', store cancellation log; if already completed, no-op",
+    "boundary": {
+      "in_scope": [
+        "build lookup",
+        "build cancellation",
+        "status update",
+        "log append"
+      ],
+      "out_of_scope": [
+        "build creation",
+        "status retrieval",
+        "build listing"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "JSON with action='cancel', build_id",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "JSON with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "Build exists"
+    ],
+    "postconditions": [
+      "If build was running, status changed to 'cancelled'",
+      "Logs updated"
+    ],
+    "guarantees": [
+      "Cancelling a completed build is a no-op"
+    ],
+    "composition_role": "mutate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "build_id",
+        "type": "str",
+        "description": "Unique build identifier",
+        "source": "parent input build_request.build_id"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "JSON with success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def CancelBuild(build_id: str) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read_write",
+        "description": "Read build record, update status to cancelled, append cancellation log"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read_write",
+        "description": "Lookup build by build_id, update status to 'cancelled', append log"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read_write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-005",
+        "description": "Only running builds can be cancelled; completed builds are no-op"
+      },
+      {
+        "constraint_id": "C-006",
+        "description": "Cancellation log must be appended to existing logs"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-009",
+        "description": "Running build status changed to 'cancelled'"
+      },
+      {
+        "ac_id": "AC-010",
+        "description": "Cancellation log appended"
+      },
+      {
+        "ac_id": "AC-011",
+        "description": "Completed build remains unchanged"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-004"
+      ]
+    },
+    "node_type": "atomic_operation"
+  }
+]

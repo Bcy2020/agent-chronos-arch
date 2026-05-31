@@ -1,0 +1,571 @@
+[
+  {
+    "name": "IngestData",
+    "purpose": "Read raw data from source, parse records, store in raw_data, and log ingestion",
+    "behavior": "Based on source type (csv/json/api), read from path/url, parse into list of dicts, store in raw_data, and append log entry to pipeline_log",
+    "boundary": {
+      "in_scope": [
+        "reading source",
+        "parsing records",
+        "storing in raw_data",
+        "logging ingestion"
+      ],
+      "out_of_scope": [
+        "transformation",
+        "validation",
+        "export"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "pipeline_request",
+        "description": "Contains action='ingest' and source dict",
+        "source": "parent input"
+      },
+      {
+        "name": "raw_data",
+        "description": "Global data store for raw records",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "pipeline_log",
+        "description": "Global log store",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "ingest_result",
+        "description": "Dict with success, records_processed, errors",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "pipeline_request action is 'ingest'",
+      "source path/url is accessible"
+    ],
+    "postconditions": [
+      "raw_data contains parsed records",
+      "pipeline_log has ingestion entry"
+    ],
+    "guarantees": [
+      "Records are parsed into list of dicts",
+      "Errors are captured without crashing"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "pipeline_request",
+        "type": "dict",
+        "description": "JSON with action='ingest' and source dict containing type, path/url",
+        "source": "parent input"
+      },
+      {
+        "name": "raw_data",
+        "type": "list",
+        "description": "Global data store for raw records (read/write access)",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "pipeline_log",
+        "type": "list",
+        "description": "Global log store (append access)",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "ingest_result",
+        "type": "dict",
+        "description": "Dict with success (bool), records_processed (int), errors (list)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def IngestData(pipeline_request: dict, raw_data: list, pipeline_log: list) -> dict",
+    "global_vars": [
+      {
+        "variable": "raw_data",
+        "op": "write",
+        "description": "Write parsed records into raw_data store"
+      },
+      {
+        "variable": "pipeline_log",
+        "op": "write",
+        "description": "Append ingestion log entry"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "raw_data",
+        "operation_type": "write",
+        "description": "Store parsed records"
+      },
+      {
+        "source_name": "pipeline_log",
+        "operation_type": "write",
+        "description": "Log ingestion step"
+      }
+    ],
+    "requested_capabilities": [
+      "database.write",
+      "database.append"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-001",
+        "description": "Must not modify processed_data or any other global store beyond raw_data and pipeline_log"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-001",
+        "description": "raw_data contains all parsed records from source"
+      },
+      {
+        "ac_id": "AC-002",
+        "description": "pipeline_log contains an entry for the ingestion step with timestamp and record count"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "TransformData",
+    "purpose": "Apply transformation rules to raw_data, store in processed_data, skip malformed records",
+    "behavior": "Read raw_data, apply each rule (field, operation, value) to each record, skip records that cause errors, store valid results in processed_data, log transformation",
+    "boundary": {
+      "in_scope": [
+        "applying transformation rules",
+        "skipping malformed records",
+        "storing in processed_data",
+        "logging transformation"
+      ],
+      "out_of_scope": [
+        "ingestion",
+        "validation",
+        "export"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "pipeline_request",
+        "description": "Contains action='transform' and transform_config",
+        "source": "parent input"
+      },
+      {
+        "name": "raw_data",
+        "description": "Global data store with raw records",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "pipeline_log",
+        "description": "Global log store",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "transform_result",
+        "description": "Dict with success, records_processed, errors",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "pipeline_request action is 'transform'",
+      "raw_data is not empty"
+    ],
+    "postconditions": [
+      "processed_data contains transformed records",
+      "malformed records are skipped and logged"
+    ],
+    "guarantees": [
+      "Each rule is applied to each record",
+      "Errors do not stop processing"
+    ],
+    "composition_role": "transform",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "pipeline_request",
+        "type": "dict",
+        "description": "JSON with action='transform' and transform_config containing list of rules",
+        "source": "parent input"
+      },
+      {
+        "name": "raw_data",
+        "type": "list",
+        "description": "Global data store with raw records (read access)",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "processed_data",
+        "type": "list",
+        "description": "Global data store for transformed records (write access)",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "pipeline_log",
+        "type": "list",
+        "description": "Global log store (append access)",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "transform_result",
+        "type": "dict",
+        "description": "Dict with success (bool), records_processed (int), errors (list)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def TransformData(pipeline_request: dict, raw_data: list, processed_data: list, pipeline_log: list) -> dict",
+    "global_vars": [
+      {
+        "variable": "raw_data",
+        "op": "read",
+        "description": "Read raw records for transformation"
+      },
+      {
+        "variable": "processed_data",
+        "op": "write",
+        "description": "Write transformed records into processed_data store"
+      },
+      {
+        "variable": "pipeline_log",
+        "op": "write",
+        "description": "Append transformation log entry"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "raw_data",
+        "operation_type": "read",
+        "description": "Read raw records"
+      },
+      {
+        "source_name": "processed_data",
+        "operation_type": "write",
+        "description": "Store transformed records"
+      },
+      {
+        "source_name": "pipeline_log",
+        "operation_type": "write",
+        "description": "Log transformation step"
+      }
+    ],
+    "requested_capabilities": [
+      "database.read",
+      "database.write",
+      "database.append"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-002",
+        "description": "Must not modify raw_data or any other global store beyond processed_data and pipeline_log"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-003",
+        "description": "processed_data contains all successfully transformed records"
+      },
+      {
+        "ac_id": "AC-004",
+        "description": "pipeline_log contains an entry for the transformation step with timestamp and record counts"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-002"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "ValidateData",
+    "purpose": "Check processed_data against quality rules, mark invalid records, compute quality_score",
+    "behavior": "Read processed_data, apply quality rules to each record, compute quality_score (e.g., based on missing fields or rule violations), mark invalid records, log validation",
+    "boundary": {
+      "in_scope": [
+        "applying quality rules",
+        "computing quality_score",
+        "marking invalid records",
+        "logging validation"
+      ],
+      "out_of_scope": [
+        "ingestion",
+        "transformation",
+        "export"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "pipeline_request",
+        "description": "Contains action='validate'",
+        "source": "parent input"
+      },
+      {
+        "name": "processed_data",
+        "description": "Global data store with transformed records",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "pipeline_log",
+        "description": "Global log store",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "validate_result",
+        "description": "Dict with success, records_processed, errors, quality_scores",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "pipeline_request action is 'validate'",
+      "processed_data is not empty"
+    ],
+    "postconditions": [
+      "Each record has quality_score",
+      "Invalid records are marked"
+    ],
+    "guarantees": [
+      "Quality rules are applied consistently",
+      "Scores are computed"
+    ],
+    "composition_role": "validate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "pipeline_request",
+        "type": "dict",
+        "description": "JSON with action='validate' and quality_rules (optional)",
+        "source": "parent input"
+      },
+      {
+        "name": "processed_data",
+        "type": "list",
+        "description": "Global data store with transformed records (read/write access)",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "pipeline_log",
+        "type": "list",
+        "description": "Global log store (append access)",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "validate_result",
+        "type": "dict",
+        "description": "Dict with success (bool), records_processed (int), errors (list), quality_scores (list)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ValidateData(pipeline_request: dict, processed_data: list, pipeline_log: list) -> dict",
+    "global_vars": [
+      {
+        "variable": "processed_data",
+        "op": "read_write",
+        "description": "Read and update processed_data with validation marks and quality scores"
+      },
+      {
+        "variable": "pipeline_log",
+        "op": "write",
+        "description": "Append validation log entry"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "processed_data",
+        "operation_type": "read_write",
+        "description": "Read records, mark invalid, compute quality_score"
+      },
+      {
+        "source_name": "pipeline_log",
+        "operation_type": "write",
+        "description": "Log validation step"
+      }
+    ],
+    "requested_capabilities": [
+      "database.read",
+      "database.write",
+      "database.append"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-003",
+        "description": "Must not modify raw_data or any other global store beyond processed_data and pipeline_log"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-005",
+        "description": "Each record in processed_data has a quality_score field"
+      },
+      {
+        "ac_id": "AC-006",
+        "description": "Invalid records are marked with a validation_status field"
+      },
+      {
+        "ac_id": "AC-007",
+        "description": "pipeline_log contains an entry for the validation step with timestamp and record counts"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-003"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "ExportData",
+    "purpose": "Format validated records as output in requested format, log export",
+    "behavior": "Read processed_data, filter only records that passed validation, format as csv or json, store in pipeline_result data field, log export",
+    "boundary": {
+      "in_scope": [
+        "filtering validated records",
+        "formatting output",
+        "logging export"
+      ],
+      "out_of_scope": [
+        "ingestion",
+        "transformation",
+        "validation"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "pipeline_request",
+        "description": "Contains action='export' and export_format",
+        "source": "parent input"
+      },
+      {
+        "name": "processed_data",
+        "description": "Global data store with validated records",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "pipeline_log",
+        "description": "Global log store",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "export_result",
+        "description": "Dict with success, records_processed, errors, data",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "pipeline_request action is 'export'",
+      "processed_data contains validated records"
+    ],
+    "postconditions": [
+      "Output data is formatted correctly",
+      "Only validated records are included"
+    ],
+    "guarantees": [
+      "Format matches export_format",
+      "Log entry is created"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "pipeline_request",
+        "type": "dict",
+        "description": "JSON with action='export' and export_format (csv/json)",
+        "source": "parent input"
+      },
+      {
+        "name": "processed_data",
+        "type": "list",
+        "description": "Global data store with validated records (read access)",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "pipeline_log",
+        "type": "list",
+        "description": "Global log store (append access)",
+        "source": "internal leaf access"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "export_result",
+        "type": "dict",
+        "description": "Dict with success (bool), records_processed (int), errors (list), data (list)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ExportData(pipeline_request: dict, processed_data: list, pipeline_log: list) -> dict",
+    "global_vars": [
+      {
+        "variable": "processed_data",
+        "op": "read",
+        "description": "Read processed_data to filter validated records for export"
+      },
+      {
+        "variable": "pipeline_log",
+        "op": "write",
+        "description": "Append export log entry"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "processed_data",
+        "operation_type": "read",
+        "description": "Read validated records"
+      },
+      {
+        "source_name": "pipeline_log",
+        "operation_type": "write",
+        "description": "Log export step"
+      }
+    ],
+    "requested_capabilities": [
+      "database.read",
+      "database.append"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-004",
+        "description": "Must not modify raw_data, processed_data, or any other global store beyond pipeline_log"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-008",
+        "description": "Output data contains only records that passed validation"
+      },
+      {
+        "ac_id": "AC-009",
+        "description": "Output format matches the requested export_format (csv or json)"
+      },
+      {
+        "ac_id": "AC-010",
+        "description": "pipeline_log contains an entry for the export step with timestamp and record count"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-004"
+      ]
+    },
+    "node_type": "atomic_operation"
+  }
+]

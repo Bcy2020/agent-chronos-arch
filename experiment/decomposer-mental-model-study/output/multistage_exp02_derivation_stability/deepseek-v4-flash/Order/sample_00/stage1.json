@@ -1,0 +1,272 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Parse and validate the incoming JSON input to extract command and order data",
+      "behavior": "Parse the input JSON, validate its structure, and return the command and order_data fields",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "input validation",
+          "extraction of command and order_data"
+        ],
+        "out_of_scope": [
+          "Business logic",
+          "Data store access"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "command",
+          "description": "The command string (place/cancel/track)",
+          "consumer": "parent"
+        },
+        {
+          "name": "order_data",
+          "description": "The order data object",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command and order_data are extracted"
+      ],
+      "guarantees": [
+        "Returns error if input is malformed"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the place order operation",
+      "behavior": "Validate inventory, create order record, process payment, update inventory, and return order details",
+      "boundary": {
+        "in_scope": [
+          "Inventory check",
+          "Order creation",
+          "Payment processing",
+          "Inventory update"
+        ],
+        "out_of_scope": [
+          "Cancellation",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order details including items and payment info",
+          "source": "parent input"
+        },
+        {
+          "name": "orders",
+          "description": "Orders data store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "inventory",
+          "description": "Inventory data store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "payments",
+          "description": "Payments data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Inventory sufficient",
+        "Payment valid"
+      ],
+      "postconditions": [
+        "Order created",
+        "Inventory decremented",
+        "Payment recorded"
+      ],
+      "guarantees": [
+        "Atomic operation"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the cancel order operation",
+      "behavior": "Check order status, cancel if not shipped, refund payment, restore inventory, and update order status",
+      "boundary": {
+        "in_scope": [
+          "Order status check",
+          "Cancellation",
+          "Payment refund",
+          "Inventory restoration"
+        ],
+        "out_of_scope": [
+          "Placing orders",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order ID and details",
+          "source": "parent input"
+        },
+        {
+          "name": "orders",
+          "description": "Orders data store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "inventory",
+          "description": "Inventory data store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "payments",
+          "description": "Payments data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order exists",
+        "Order not shipped"
+      ],
+      "postconditions": [
+        "Order cancelled",
+        "Payment refunded",
+        "Inventory restored"
+      ],
+      "guarantees": [
+        "Atomic operation",
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the track order operation",
+      "behavior": "Look up order by ID and return current status and details",
+      "boundary": {
+        "in_scope": [
+          "Order lookup",
+          "Status retrieval"
+        ],
+        "out_of_scope": [
+          "Placing orders",
+          "Cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order ID",
+          "source": "parent input"
+        },
+        {
+          "name": "orders",
+          "description": "Orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order exists"
+      ],
+      "postconditions": [
+        "Order status returned"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent OrderSystem handles three distinct commands (place, cancel, track). Each command is delegated to a dedicated child function that performs the specific business logic. ParseInput is a separate child to handle input validation uniformly before routing to the appropriate command handler.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ParseInput",
+      "data": "input JSON",
+      "note": "Parse and validate input"
+    },
+    {
+      "from": "ParseInput",
+      "to": "parent",
+      "data": "command and order_data",
+      "note": "Return parsed data"
+    },
+    {
+      "from": "parent",
+      "to": "PlaceOrder",
+      "data": "order_data",
+      "note": "If command is 'place'"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "parent",
+      "data": "result JSON",
+      "note": "Return order result"
+    },
+    {
+      "from": "parent",
+      "to": "CancelOrder",
+      "data": "order_data",
+      "note": "If command is 'cancel'"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "parent",
+      "data": "result JSON",
+      "note": "Return cancellation result"
+    },
+    {
+      "from": "parent",
+      "to": "TrackOrder",
+      "data": "order_data",
+      "note": "If command is 'track'"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "parent",
+      "data": "result JSON",
+      "note": "Return tracking result"
+    }
+  ]
+}

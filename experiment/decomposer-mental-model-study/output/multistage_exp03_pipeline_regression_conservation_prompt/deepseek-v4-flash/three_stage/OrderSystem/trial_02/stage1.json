@@ -1,0 +1,743 @@
+{
+  "children": [
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the 'place' command: validate items, charge payment, reserve inventory, create order, send notification",
+      "behavior": "Validates item existence and stock, charges payment via payment gateway, reserves inventory, creates order record, sends confirmation notification",
+      "boundary": {
+        "in_scope": [
+          "item validation",
+          "stock check",
+          "payment charge",
+          "inventory reservation",
+          "order creation",
+          "notification"
+        ],
+        "out_of_scope": [
+          "cancel",
+          "track",
+          "rollback logic"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "command",
+          "description": "Must be 'place'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "description": "Order payload with items, payment_method, shipping_address",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'place'",
+        "order_data contains items, payment_method, shipping_address"
+      ],
+      "postconditions": [
+        "order record created if successful",
+        "payment charged if successful",
+        "inventory reserved if successful"
+      ],
+      "guarantees": [
+        "atomicity: rollback on failure",
+        "payment charged before inventory reserved"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the 'cancel' command: verify order exists and not shipped, refund payment, restore inventory, update status",
+      "behavior": "Checks order existence and shipping status, refunds payment, restores reserved inventory, updates order status to cancelled",
+      "boundary": {
+        "in_scope": [
+          "order existence check",
+          "shipping status check",
+          "payment refund",
+          "inventory restoration",
+          "status update"
+        ],
+        "out_of_scope": [
+          "place",
+          "track",
+          "rollback logic"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "command",
+          "description": "Must be 'cancel'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'cancel'",
+        "order_data contains order_id",
+        "order exists",
+        "order not shipped"
+      ],
+      "postconditions": [
+        "payment refunded if applicable",
+        "inventory restored",
+        "order status set to cancelled"
+      ],
+      "guarantees": [
+        "atomicity: rollback on failure",
+        "cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the 'track' command: return current order status and estimated delivery time",
+      "behavior": "Queries order record for status and calculates estimated delivery time based on order data",
+      "boundary": {
+        "in_scope": [
+          "order status retrieval",
+          "delivery time estimation"
+        ],
+        "out_of_scope": [
+          "place",
+          "cancel",
+          "modifications"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "command",
+          "description": "Must be 'track'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message (including delivery time)",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'track'",
+        "order_data contains order_id",
+        "order exists"
+      ],
+      "postconditions": [
+        "order status and delivery time returned"
+      ],
+      "guarantees": [
+        "read-only operation",
+        "no side effects"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateItems",
+      "purpose": "Check that all items in the order exist and have sufficient stock",
+      "behavior": "Iterates over items, checks inventory for existence and stock_count >= requested quantity",
+      "boundary": {
+        "in_scope": [
+          "item existence check",
+          "stock sufficiency check"
+        ],
+        "out_of_scope": [
+          "payment",
+          "reservation",
+          "order creation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "items",
+          "description": "List of items with product_id and quantity",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "inventory",
+          "description": "Global inventory data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "validation_result",
+          "description": "Boolean indicating if all items valid and in stock",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "preconditions": [
+        "items list is non-empty"
+      ],
+      "postconditions": [
+        "validation result returned"
+      ],
+      "guarantees": [
+        "no side effects on data stores"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure validation function"
+    },
+    {
+      "name": "ChargePayment",
+      "purpose": "Charge the customer's payment via payment gateway",
+      "behavior": "Calls payment gateway with amount and payment_method, records payment in payments store",
+      "boundary": {
+        "in_scope": [
+          "payment gateway call",
+          "payment record creation"
+        ],
+        "out_of_scope": [
+          "inventory",
+          "order creation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payment_method",
+          "description": "Payment method from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "total_amount",
+          "description": "Total amount calculated from items and inventory prices",
+          "source": "PlaceOrder (calculated)"
+        },
+        {
+          "name": "payments",
+          "description": "Global payments data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "payment_result",
+          "description": "Dict with success, payment_id, amount",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "preconditions": [
+        "items validated",
+        "total amount computed"
+      ],
+      "postconditions": [
+        "payment charged if successful",
+        "payment record created"
+      ],
+      "guarantees": [
+        "payment gateway called exactly once"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with external dependency"
+    },
+    {
+      "name": "ReserveInventory",
+      "purpose": "Reserve stock for each item in the order",
+      "behavior": "Updates inventory reserved_count for each product by the ordered quantity",
+      "boundary": {
+        "in_scope": [
+          "inventory reservation"
+        ],
+        "out_of_scope": [
+          "payment",
+          "order creation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "items",
+          "description": "List of items with product_id and quantity",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "inventory",
+          "description": "Global inventory data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "reservation_result",
+          "description": "Boolean indicating success",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "preconditions": [
+        "items validated",
+        "payment charged"
+      ],
+      "postconditions": [
+        "inventory reserved_count incremented for each item"
+      ],
+      "guarantees": [
+        "atomic update per product"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation"
+    },
+    {
+      "name": "CreateOrderRecord",
+      "purpose": "Create a new order record in the orders database",
+      "behavior": "Inserts order data with status 'placed' and timestamp into orders store",
+      "boundary": {
+        "in_scope": [
+          "order record creation"
+        ],
+        "out_of_scope": [
+          "inventory",
+          "payment"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload with items, payment_method, shipping_address",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "payment_id",
+          "description": "Payment ID from ChargePayment",
+          "source": "PlaceOrder"
+        },
+        {
+          "name": "orders",
+          "description": "Global orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_id",
+          "description": "Generated order ID",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "preconditions": [
+        "payment charged",
+        "inventory reserved"
+      ],
+      "postconditions": [
+        "order record created with status 'placed'"
+      ],
+      "guarantees": [
+        "order_id is unique"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data insertion"
+    },
+    {
+      "name": "SendConfirmationNotification",
+      "purpose": "Send order confirmation notification to customer",
+      "behavior": "Sends email or push notification with order details",
+      "boundary": {
+        "in_scope": [
+          "notification sending"
+        ],
+        "out_of_scope": [
+          "data store updates"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_id",
+          "description": "Order ID from CreateOrderRecord",
+          "source": "PlaceOrder"
+        },
+        {
+          "name": "shipping_address",
+          "description": "Shipping address from order_data",
+          "source": "parent input order_data"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "notification_result",
+          "description": "Boolean indicating success",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "preconditions": [
+        "order record created"
+      ],
+      "postconditions": [
+        "notification sent"
+      ],
+      "guarantees": [
+        "non-blocking if possible"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "External side effect"
+    },
+    {
+      "name": "VerifyOrderExistsAndNotShipped",
+      "purpose": "Check that the order exists and has not been shipped",
+      "behavior": "Queries orders store for order_id, checks status is not 'shipped'",
+      "boundary": {
+        "in_scope": [
+          "order existence check",
+          "shipping status check"
+        ],
+        "out_of_scope": [
+          "refund",
+          "inventory restoration"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_id",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "orders",
+          "description": "Global orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "verification_result",
+          "description": "Dict with exists (bool), is_shipped (bool)",
+          "consumer": "CancelOrder"
+        }
+      ],
+      "preconditions": [
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "verification result returned"
+      ],
+      "guarantees": [
+        "read-only operation"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure query function"
+    },
+    {
+      "name": "RefundPayment",
+      "purpose": "Refund the payment associated with the order",
+      "behavior": "Calls payment gateway to refund, updates payment record status to refunded",
+      "boundary": {
+        "in_scope": [
+          "payment refund",
+          "payment record update"
+        ],
+        "out_of_scope": [
+          "inventory",
+          "order status"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_id",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "payments",
+          "description": "Global payments data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "refund_result",
+          "description": "Boolean indicating success",
+          "consumer": "CancelOrder"
+        }
+      ],
+      "preconditions": [
+        "order exists and not shipped",
+        "payment exists for order"
+      ],
+      "postconditions": [
+        "payment refunded",
+        "payment record status updated"
+      ],
+      "guarantees": [
+        "payment gateway called exactly once"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with external dependency"
+    },
+    {
+      "name": "RestoreInventory",
+      "purpose": "Restore reserved inventory for the cancelled order",
+      "behavior": "Decrements reserved_count for each item in the order",
+      "boundary": {
+        "in_scope": [
+          "inventory restoration"
+        ],
+        "out_of_scope": [
+          "payment",
+          "order status"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_id",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "orders",
+          "description": "Global orders data store to retrieve items",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "inventory",
+          "description": "Global inventory data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "restore_result",
+          "description": "Boolean indicating success",
+          "consumer": "CancelOrder"
+        }
+      ],
+      "preconditions": [
+        "order exists and not shipped",
+        "payment refunded"
+      ],
+      "postconditions": [
+        "inventory reserved_count decremented for each item"
+      ],
+      "guarantees": [
+        "atomic update per product"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation"
+    },
+    {
+      "name": "UpdateOrderStatusToCancelled",
+      "purpose": "Update order status to 'cancelled'",
+      "behavior": "Sets order status to 'cancelled' in orders store",
+      "boundary": {
+        "in_scope": [
+          "order status update"
+        ],
+        "out_of_scope": [
+          "payment",
+          "inventory"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_id",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "orders",
+          "description": "Global orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "update_result",
+          "description": "Boolean indicating success",
+          "consumer": "CancelOrder"
+        }
+      ],
+      "preconditions": [
+        "order exists and not shipped",
+        "payment refunded",
+        "inventory restored"
+      ],
+      "postconditions": [
+        "order status set to 'cancelled'"
+      ],
+      "guarantees": [
+        "status updated exactly once"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation"
+    },
+    {
+      "name": "GetOrderStatusAndDelivery",
+      "purpose": "Retrieve order status and estimate delivery time",
+      "behavior": "Queries orders store for status, calculates estimated delivery based on order creation time and shipping address",
+      "boundary": {
+        "in_scope": [
+          "status retrieval",
+          "delivery estimation"
+        ],
+        "out_of_scope": [
+          "modifications"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_id",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "orders",
+          "description": "Global orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "track_result",
+          "description": "Dict with status and estimated_delivery",
+          "consumer": "TrackOrder"
+        }
+      ],
+      "preconditions": [
+        "order exists"
+      ],
+      "postconditions": [
+        "status and delivery time returned"
+      ],
+      "guarantees": [
+        "read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Pure query function"
+    }
+  ],
+  "decomposition_rationale": "The parent OrderSystem function is decomposed into three main command handlers (PlaceOrder, CancelOrder, TrackOrder) that each encapsulate the full workflow for their respective command. Each handler is further decomposed into atomic sub-functions (ValidateItems, ChargePayment, ReserveInventory, CreateOrderRecord, SendConfirmationNotification for place; VerifyOrderExistsAndNotShipped, RefundPayment, RestoreInventory, UpdateOrderStatusToCancelled for cancel; GetOrderStatusAndDelivery for track) that perform single responsibilities. This ensures each child is a self-contained function without sibling calls, and the parent orchestrates by command routing.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "PlaceOrder",
+      "data": "command, order_data",
+      "note": "Route to place handler"
+    },
+    {
+      "from": "parent",
+      "to": "CancelOrder",
+      "data": "command, order_data",
+      "note": "Route to cancel handler"
+    },
+    {
+      "from": "parent",
+      "to": "TrackOrder",
+      "data": "command, order_data",
+      "note": "Route to track handler"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "ValidateItems",
+      "data": "items, inventory",
+      "note": "Validate items and stock"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "ChargePayment",
+      "data": "payment_method, total_amount, payments",
+      "note": "Charge payment"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "ReserveInventory",
+      "data": "items, inventory",
+      "note": "Reserve stock"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "CreateOrderRecord",
+      "data": "order_data, payment_id, orders",
+      "note": "Create order record"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "SendConfirmationNotification",
+      "data": "order_id, shipping_address",
+      "note": "Send notification"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "VerifyOrderExistsAndNotShipped",
+      "data": "order_id, orders",
+      "note": "Verify order"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "RefundPayment",
+      "data": "order_id, payments",
+      "note": "Refund payment"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "RestoreInventory",
+      "data": "order_id, orders, inventory",
+      "note": "Restore inventory"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "UpdateOrderStatusToCancelled",
+      "data": "order_id, orders",
+      "note": "Update status"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "GetOrderStatusAndDelivery",
+      "data": "order_id, orders",
+      "note": "Get status and delivery"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result"
+    }
+  ]
+}

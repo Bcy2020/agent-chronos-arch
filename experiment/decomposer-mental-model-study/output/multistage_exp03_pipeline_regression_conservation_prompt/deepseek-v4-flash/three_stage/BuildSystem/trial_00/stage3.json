@@ -1,0 +1,497 @@
+{
+  "children": [
+    {
+      "name": "ValidateBuildRequest",
+      "purpose": "Validate the build_request JSON structure and required fields based on action",
+      "behavior": "Check action is one of trigger/status/list/cancel; for trigger, ensure repo and config present; for status/cancel, ensure build_id present; return validation result",
+      "inputs": [
+        {
+          "name": "build_request",
+          "type": "dict",
+          "description": "the incoming request JSON",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validation_result",
+          "type": "dict",
+          "description": "validated request or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateBuildRequest(build_request: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must not access any data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Returns error for invalid action"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Returns error for missing required fields"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Returns validated request for valid input"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": true,
+      "stop_reason": "pure validation function"
+    },
+    {
+      "name": "CheckConcurrentBuild",
+      "purpose": "Check if a build is already running for the given repo+branch",
+      "behavior": "Query builds data store for any build with same repo and branch and status 'running' or 'queued'; return boolean",
+      "inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "repository name",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "branch name",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "is_concurrent",
+          "type": "bool",
+          "description": "true if a build is already running",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CheckConcurrentBuild(repo: str, branch: str) -> bool",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read",
+          "description": "Read builds to check for concurrent running builds"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Query builds by repo and branch for running/queued status"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-002",
+          "description": "Must not modify any data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-004",
+          "description": "Returns true if a running or queued build exists for the repo+branch"
+        },
+        {
+          "ac_id": "AC-005",
+          "description": "Returns false if no such build exists"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "atomic database query"
+    },
+    {
+      "name": "CreateBuildRecord",
+      "purpose": "Create a new build record in the builds data store",
+      "behavior": "Generate a unique build_id, set status to 'queued', store repo, branch, config, started_at, empty logs, return build_id",
+      "inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "repository name",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "branch name",
+          "source": "parent input"
+        },
+        {
+          "name": "config",
+          "type": "dict",
+          "description": "build configuration with steps",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "unique identifier for the build",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CreateBuildRecord(repo: str, branch: str, config: dict) -> str",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "write",
+          "description": "Write new build record to builds data store"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "write",
+          "description": "Insert new build record with generated build_id"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "Must not read any data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-006",
+          "description": "Build record is created with status 'queued'"
+        },
+        {
+          "ac_id": "AC-007",
+          "description": "build_id is unique and returned"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "atomic database write"
+    },
+    {
+      "name": "ExecuteBuildSteps",
+      "purpose": "Run the build steps: compile, test, package artifacts, update status and logs incrementally",
+      "behavior": "Iterate over config.build_steps, execute each step, append logs, update status to 'running' then 'completed' or 'failed', store artifacts",
+      "inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "the build to execute",
+          "source": "previous child output"
+        },
+        {
+          "name": "config",
+          "type": "dict",
+          "description": "build configuration with steps",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "execution_result",
+          "type": "dict",
+          "description": "final status and logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ExecuteBuildSteps(build_id: str, config: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read_write",
+          "description": "Read and update build status and logs during execution"
+        },
+        {
+          "variable": "artifacts",
+          "op": "write",
+          "description": "Write artifact records for packaged artifacts"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read_write",
+          "description": "Read build record, update status and logs incrementally"
+        },
+        {
+          "source_name": "artifacts",
+          "operation_type": "write",
+          "description": "Store artifact metadata after packaging"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read_write",
+        "artifacts.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-004",
+          "description": "Must update status and logs atomically per step"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-008",
+          "description": "Build status transitions from 'running' to 'completed' or 'failed'"
+        },
+        {
+          "ac_id": "AC-009",
+          "description": "Logs are appended incrementally for each step"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Artifacts are stored with correct build_id reference"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": "can be further decomposed into compile, test, package"
+    },
+    {
+      "name": "QueryBuildStatus",
+      "purpose": "Return current status and logs for a given build_id",
+      "behavior": "Look up build record by build_id, return status and logs",
+      "inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "the build to query",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "status",
+          "type": "str",
+          "description": "current build status",
+          "consumer": "parent"
+        },
+        {
+          "name": "logs",
+          "type": "list",
+          "description": "build logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def QueryBuildStatus(build_id: str) -> tuple[str, list]",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read",
+          "description": "Read build record by build_id"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Query build record by build_id"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-005",
+          "description": "Must not modify any data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-011",
+          "description": "Returns status and logs for existing build_id"
+        },
+        {
+          "ac_id": "AC-012",
+          "description": "Returns error for non-existent build_id"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-005"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "atomic database query"
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "Return all builds filtered by optional repo, branch, status",
+      "behavior": "Query builds data store, apply filters if provided, return list of build records",
+      "inputs": [
+        {
+          "name": "repo",
+          "type": "Optional[str]",
+          "description": "optional filter",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "type": "Optional[str]",
+          "description": "optional filter",
+          "source": "parent input"
+        },
+        {
+          "name": "status",
+          "type": "Optional[str]",
+          "description": "optional filter",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "builds_list",
+          "type": "list",
+          "description": "list of build records",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ListBuilds(repo: Optional[str] = None, branch: Optional[str] = None, status: Optional[str] = None) -> list",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read",
+          "description": "Read builds with optional filters"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read",
+          "description": "Query builds with optional repo/branch/status filters"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-006",
+          "description": "Must not modify any data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-013",
+          "description": "Returns all builds when no filters provided"
+        },
+        {
+          "ac_id": "AC-014",
+          "description": "Returns filtered builds when filters provided"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-006"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "atomic database query"
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build: stop execution, update status to 'cancelled'",
+      "behavior": "Check build status; if 'running' or 'queued', update status to 'cancelled' and append cancellation log; if already completed, no-op",
+      "inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "the build to cancel",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "cancel_result",
+          "type": "dict",
+          "description": "success or no-op indication",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelBuild(build_id: str) -> dict",
+      "global_vars": [
+        {
+          "variable": "builds",
+          "op": "read_write",
+          "description": "Read build status and update to 'cancelled' with log"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "builds",
+          "operation_type": "read_write",
+          "description": "Read build record, update status to 'cancelled', append log"
+        }
+      ],
+      "requested_capabilities": [
+        "builds.read_write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-007",
+          "description": "Must not modify artifacts data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-015",
+          "description": "Running or queued build status changed to 'cancelled'"
+        },
+        {
+          "ac_id": "AC-016",
+          "description": "Cancellation log appended"
+        },
+        {
+          "ac_id": "AC-017",
+          "description": "Completed build remains unchanged"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-007"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": true,
+      "stop_reason": "atomic state update"
+    }
+  ],
+  "governance_notes": "Parent global vars coverage verified: builds (read_write) covered by CheckConcurrentBuild (read), CreateBuildRecord (write), ExecuteBuildSteps (read_write), QueryBuildStatus (read), ListBuilds (read), CancelBuild (read_write). artifacts (read_write) covered by ExecuteBuildSteps (write). Note: artifacts read is not required by any child as no child reads artifacts; parent's read requirement on artifacts is satisfied by the fact that artifacts are only written and never read within this decomposition (parent may read externally). If parent requires artifacts read internally, a new child would be needed."
+}

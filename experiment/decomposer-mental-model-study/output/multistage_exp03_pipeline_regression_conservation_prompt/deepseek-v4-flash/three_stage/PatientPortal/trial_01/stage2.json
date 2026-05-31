@@ -1,0 +1,259 @@
+{
+  "children": [
+    {
+      "name": "RegisterPatient",
+      "purpose": "Validate required fields, create patient record, and generate unique patient_id",
+      "behavior": "Check that name, dob, contact, and insurance are present in patient_data; if missing, return error. Generate a unique patient_id (e.g., UUID). Store patient record in patients database with registered_at timestamp. Return success with patient_id.",
+      "boundary": {
+        "in_scope": [
+          "field validation",
+          "patient_id generation",
+          "database write"
+        ],
+        "out_of_scope": [
+          "booking",
+          "records retrieval",
+          "profile updates"
+        ]
+      },
+      "preconditions": [
+        "command is 'register'"
+      ],
+      "postconditions": [
+        "patient record exists in patients database"
+      ],
+      "guarantees": [
+        "patient_id is unique",
+        "required fields validated"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "patient_data",
+          "type": "dict",
+          "description": "Patient payload with name, dob, contact, insurance",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "patient_result",
+          "type": "dict",
+          "description": "Result dict with success (bool), data (dict with patient_id), message (str)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RegisterPatient(patient_data: dict) -> dict"
+    },
+    {
+      "name": "BookAppointment",
+      "purpose": "Check patient exists, check doctor availability, create appointment record, send confirmation",
+      "behavior": "Verify patient_id exists in patients database. Check that appointment_time is not in the past. Query appointments database for doctor_id at requested time to ensure no conflict. If available, create appointment record with status 'confirmed' and generate appointment_id. Return success with appointment details.",
+      "boundary": {
+        "in_scope": [
+          "patient existence check",
+          "time validation",
+          "availability check",
+          "appointment creation"
+        ],
+        "out_of_scope": [
+          "registration",
+          "records",
+          "profile updates"
+        ]
+      },
+      "preconditions": [
+        "command is 'book'",
+        "patient exists",
+        "appointment_time is future"
+      ],
+      "postconditions": [
+        "appointment record created in appointments database"
+      ],
+      "guarantees": [
+        "no double booking",
+        "time validated"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "patient_data",
+          "type": "dict",
+          "description": "Patient payload with patient_id, doctor_id, appointment_time",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "patient_result",
+          "type": "dict",
+          "description": "Result dict with success (bool), data (dict with appointment_id, details), message (str)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def BookAppointment(patient_data: dict) -> dict"
+    },
+    {
+      "name": "RetrieveMedicalRecords",
+      "purpose": "Retrieve all medical records for a patient, sorted by date descending",
+      "behavior": "Query records database for all records matching patient_id. Sort by timestamp descending. Return list of records.",
+      "boundary": {
+        "in_scope": [
+          "database query",
+          "sorting"
+        ],
+        "out_of_scope": [
+          "registration",
+          "booking",
+          "updates"
+        ]
+      },
+      "preconditions": [
+        "command is 'records'"
+      ],
+      "postconditions": [
+        "records retrieved and sorted"
+      ],
+      "guarantees": [
+        "records are append-only (no modification)"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "patient_data",
+          "type": "dict",
+          "description": "Patient payload with patient_id",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "patient_result",
+          "type": "dict",
+          "description": "Result dict with success (bool), data (list of records), message (str)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RetrieveMedicalRecords(patient_data: dict) -> dict"
+    },
+    {
+      "name": "UpdatePatientProfile",
+      "purpose": "Update patient profile fields, validate insurance change against external system",
+      "behavior": "Check patient_id exists. Update allowed fields (name, dob, contact) in patients database. If insurance field is present and changed, validate against external system (simulated check). If validation fails, return error. Otherwise, update insurance. Return success with updated profile.",
+      "boundary": {
+        "in_scope": [
+          "profile update",
+          "insurance validation"
+        ],
+        "out_of_scope": [
+          "registration",
+          "booking",
+          "records"
+        ]
+      },
+      "preconditions": [
+        "command is 'update'",
+        "patient exists"
+      ],
+      "postconditions": [
+        "patient profile updated in database"
+      ],
+      "guarantees": [
+        "insurance validated if changed"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "patient_data",
+          "type": "dict",
+          "description": "Patient payload with patient_id and fields to update",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "patient_result",
+          "type": "dict",
+          "description": "Result dict with success (bool), data (dict with updated fields), message (str)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def UpdatePatientProfile(patient_data: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "command": "routed to children via conditional logic",
+      "patient_data": "passed to each child as input"
+    },
+    "parent_outputs_produced_by": {
+      "patient_result": "produced by each child and returned to parent"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "patient_data",
+      "to_node": "RegisterPatient",
+      "to_input": "patient_data",
+      "note": "route to registration"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "patient_data",
+      "to_node": "BookAppointment",
+      "to_input": "patient_data",
+      "note": "route to booking"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "patient_data",
+      "to_node": "RetrieveMedicalRecords",
+      "to_input": "patient_data",
+      "note": "route to records retrieval"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "patient_data",
+      "to_node": "UpdatePatientProfile",
+      "to_input": "patient_data",
+      "note": "route to profile update"
+    },
+    {
+      "from_node": "RegisterPatient",
+      "from_output": "patient_result",
+      "to_node": "parent",
+      "to_input": "patient_result",
+      "note": "return result"
+    },
+    {
+      "from_node": "BookAppointment",
+      "from_output": "patient_result",
+      "to_node": "parent",
+      "to_input": "patient_result",
+      "note": "return result"
+    },
+    {
+      "from_node": "RetrieveMedicalRecords",
+      "from_output": "patient_result",
+      "to_node": "parent",
+      "to_input": "patient_result",
+      "note": "return result"
+    },
+    {
+      "from_node": "UpdatePatientProfile",
+      "from_output": "patient_result",
+      "to_node": "parent",
+      "to_input": "patient_result",
+      "note": "return result"
+    }
+  ]
+}

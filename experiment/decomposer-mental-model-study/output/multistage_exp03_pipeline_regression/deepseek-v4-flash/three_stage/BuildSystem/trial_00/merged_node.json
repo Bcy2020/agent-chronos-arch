@@ -1,0 +1,477 @@
+[
+  {
+    "name": "TriggerBuild",
+    "purpose": "Create a new build record and start the build process",
+    "behavior": "Validate that no build is running for the same repo+branch, create a new build record with status 'running', run compile, test, and package steps sequentially, update status to 'completed' or 'failed', and store artifacts",
+    "boundary": {
+      "in_scope": [
+        "create build record",
+        "run build steps",
+        "store artifacts",
+        "update status"
+      ],
+      "out_of_scope": [
+        "check status",
+        "list builds",
+        "cancel builds"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "Contains repo, branch, config with build_steps",
+        "source": "parent input"
+      },
+      {
+        "name": "builds",
+        "description": "Database to check for existing running builds and store new record",
+        "source": "internal leaf access"
+      },
+      {
+        "name": "artifacts",
+        "description": "Database to store build artifacts",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "Contains success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "No running build for the same repo+branch"
+    ],
+    "postconditions": [
+      "Build record created with final status",
+      "Artifacts stored if build succeeded"
+    ],
+    "guarantees": [
+      "Only one build per repo+branch runs at a time",
+      "Logs are stored incrementally"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "build_request",
+        "type": "dict",
+        "description": "JSON with action='trigger', repo (str), branch (str), config (dict with build_steps list)",
+        "source": "parent input"
+      },
+      {
+        "name": "builds_db",
+        "type": "Database",
+        "description": "Builds database for reading/writing build records",
+        "source": "internal data store"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "JSON with success (bool), build_id (str), status (str), logs (list)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def TriggerBuild(build_request: dict, builds_db: Database) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read_write",
+        "description": "Read existing builds to check for duplicates, write new build records and update status/logs"
+      },
+      {
+        "variable": "artifacts",
+        "op": "write",
+        "description": "Write artifact metadata when build completes successfully"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read_write",
+        "description": "Read to check for running builds, write to create/update build records"
+      },
+      {
+        "source_name": "artifacts",
+        "operation_type": "write",
+        "description": "Write artifact metadata after successful build"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read",
+      "builds.write",
+      "artifacts.write",
+      "process.execute"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-001",
+        "description": "Must not trigger a build if a build with same repo+branch is already running"
+      },
+      {
+        "constraint_id": "C-002",
+        "description": "Build steps (compile, test, package) must execute sequentially"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-001",
+        "description": "New build record created with status 'running'"
+      },
+      {
+        "ac_id": "AC-002",
+        "description": "Build status updated to 'completed' or 'failed' after steps"
+      },
+      {
+        "ac_id": "AC-003",
+        "description": "Artifacts stored if build succeeded"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001",
+        "FR-002"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "CheckBuildStatus",
+    "purpose": "Return the current status and logs of a specific build",
+    "behavior": "Look up the build by build_id in the builds database, return its status and logs",
+    "boundary": {
+      "in_scope": [
+        "read build record",
+        "return status and logs"
+      ],
+      "out_of_scope": [
+        "trigger builds",
+        "list builds",
+        "cancel builds"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "Contains build_id",
+        "source": "parent input"
+      },
+      {
+        "name": "builds",
+        "description": "Database to read build record",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "Contains success, build_id, status, logs",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "build_id exists in builds"
+    ],
+    "postconditions": [
+      "No state change"
+    ],
+    "guarantees": [
+      "Returns current status and logs"
+    ],
+    "composition_role": "query",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "build_request",
+        "type": "dict",
+        "description": "JSON with action='status', build_id (str)",
+        "source": "parent input"
+      },
+      {
+        "name": "builds_db",
+        "type": "Database",
+        "description": "Builds database for reading build records",
+        "source": "internal data store"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "JSON with success (bool), build_id (str), status (str), logs (list)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def CheckBuildStatus(build_request: dict, builds_db: Database) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read",
+        "description": "Read build record by build_id"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read",
+        "description": "Read build record to retrieve status and logs"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-003",
+        "description": "Must return error if build_id does not exist"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-004",
+        "description": "Returns current status and logs for existing build_id"
+      },
+      {
+        "ac_id": "AC-005",
+        "description": "Returns error for non-existent build_id"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-003"
+      ]
+    },
+    "node_type": "pure_function"
+  },
+  {
+    "name": "ListBuildHistory",
+    "purpose": "Return all builds filtered by optional repo, branch, or status",
+    "behavior": "Query the builds database with optional filters (repo, branch, status) and return matching build records",
+    "boundary": {
+      "in_scope": [
+        "query builds with filters",
+        "return list of builds"
+      ],
+      "out_of_scope": [
+        "trigger builds",
+        "check status",
+        "cancel builds"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "May contain repo, branch, status filters",
+        "source": "parent input"
+      },
+      {
+        "name": "builds",
+        "description": "Database to query build records",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "Contains success, list of builds with details",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [],
+    "postconditions": [
+      "No state change"
+    ],
+    "guarantees": [
+      "Returns filtered build history"
+    ],
+    "composition_role": "query",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "build_request",
+        "type": "dict",
+        "description": "JSON with action='list', optional repo (str), branch (str), status (str)",
+        "source": "parent input"
+      },
+      {
+        "name": "builds_db",
+        "type": "Database",
+        "description": "Builds database for querying build records",
+        "source": "internal data store"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "JSON with success (bool), builds (list of dicts with build_id, repo, branch, status, logs)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ListBuildHistory(build_request: dict, builds_db: Database) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read",
+        "description": "Read all builds and apply filters"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read",
+        "description": "Read builds collection and filter by provided criteria"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-004",
+        "description": "Filters (repo, branch, status) are optional; if none provided, return all builds"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-006",
+        "description": "Returns list of builds matching provided filters"
+      },
+      {
+        "ac_id": "AC-007",
+        "description": "Returns all builds if no filters provided"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-004"
+      ]
+    },
+    "node_type": "pure_function"
+  },
+  {
+    "name": "CancelBuild",
+    "purpose": "Stop a running build and update its status to cancelled",
+    "behavior": "Check if build is running, if so stop it and update status to 'cancelled'; if already completed, no-op",
+    "boundary": {
+      "in_scope": [
+        "stop running build",
+        "update status to cancelled"
+      ],
+      "out_of_scope": [
+        "trigger builds",
+        "check status",
+        "list builds"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "build_request",
+        "description": "Contains build_id",
+        "source": "parent input"
+      },
+      {
+        "name": "builds",
+        "description": "Database to read and update build record",
+        "source": "internal leaf access"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "build_result",
+        "description": "Contains success, build_id, status",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "build_id exists"
+    ],
+    "postconditions": [
+      "If build was running, status changed to cancelled"
+    ],
+    "guarantees": [
+      "Cancelling a completed build is a no-op"
+    ],
+    "composition_role": "mutate",
+    "stop_decompose": false,
+    "stop_reason": "",
+    "inputs": [
+      {
+        "name": "build_request",
+        "type": "dict",
+        "description": "JSON with action='cancel', build_id (str)",
+        "source": "parent input"
+      },
+      {
+        "name": "builds_db",
+        "type": "Database",
+        "description": "Builds database for reading/writing build records",
+        "source": "internal data store"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "build_result",
+        "type": "dict",
+        "description": "JSON with success (bool), build_id (str), status (str)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def CancelBuild(build_request: dict, builds_db: Database) -> dict",
+    "global_vars": [
+      {
+        "variable": "builds",
+        "op": "read_write",
+        "description": "Read build status, write updated status to 'cancelled'"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "builds",
+        "operation_type": "read_write",
+        "description": "Read build record to check status, write updated status if running"
+      }
+    ],
+    "requested_capabilities": [
+      "builds.read",
+      "builds.write",
+      "process.terminate"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-005",
+        "description": "Only running builds can be cancelled; completed/failed builds are no-op"
+      },
+      {
+        "constraint_id": "C-006",
+        "description": "Must terminate underlying build process if running"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-008",
+        "description": "Running build status updated to 'cancelled'"
+      },
+      {
+        "ac_id": "AC-009",
+        "description": "Completed/failed build remains unchanged"
+      },
+      {
+        "ac_id": "AC-010",
+        "description": "Error returned for non-existent build_id"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-005"
+      ]
+    },
+    "node_type": "atomic_operation"
+  }
+]

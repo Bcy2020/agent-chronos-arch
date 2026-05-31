@@ -2,25 +2,107 @@
 
 研究 LLM decomposer 在系统分解中产生**路由模式**的因果机制。
 
-## 核心问题（已修正）
+## 核心问题（三次修正 — 解决方案验证）
 
-LLM decomposer 经常生成 `ParseInput → RouteCommand → [Handler A, Handler B, ...]` 的分解模式。我们曾认为这违反了树结构规则（子节点调用兄弟节点），但**访谈证实这是误解**：
+**三次修正结论（2026-05-28）**：通过"两阶段分离 + 不相信传统模式"规则，成功将 routing 率从 100% 降至 0-17%。
 
-**LLM 意图的是父节点编排的流水线（parent-orchestrated pipeline），而非子节点直接互调：**
+### 解决方案
 
+1. **两阶段分离**：Phase 1 仅输出结构（name、purpose、behavior），Phase 2 再推导接口。分离本身不能修复 routing，但证明了注意力稀释不是根因。
+
+2. **"不相信传统模式"规则**：在 Phase 1 prompt 中显式拒绝常见软件模式（dispatcher、router、controller、命令模式、策略模式等），覆盖训练数据先验。
+
+### 实验结果
+
+| 实验 | Phase 1 Routing | 说明 |
+|------|:-:|------|
+| 基线（仅分离） | 5/5 (100%) | 分离本身无效 |
+| + 不相信传统模式（Order） | 0/5 (0%) | routing 完全消除 |
+| + 不相信传统模式（Chat） | 1/3 (33%) | 唯一触发的是名称误判 |
+| + 不相信传统模式（Patient） | 0/3 (0%) | 完全有效 |
+| **跨域总计** | **1/6 (17%)** | |
+
+### 树结构审查器
+
+独立 LLM 审查器（只给定树结构规则）在已知违规和正确分解上测试：
+- 正确检测违规：10/10 (100%)
+- 正确通过合规分解：10/10 (100%)
+- 假阳性：0/10
+
+详见 `improve/复现与改进方案.md`。
+
+### Step 2 Codegen 树结构审查（2026-05-28）
+
+**问题**：Phase 2 codegen 没有检出 Chat_00 的 routing 违规，接受了 RouteCommand → handlers 的兄弟调用关系。
+
+**解决方案**：在 codegen 的 system prompt 中添加树结构审查规则（STAGE 1），包括：
+1. **Tree Structure Rules**（4 条）：Child independence, Sibling invisibility, Parent as sole orchestrator, Data flow goes through parent
+2. **Trust the Structure, Not the Description**：结构事实优先于行为描述
+3. **Do Not Trust the Decomposer's Description**：分解器的叙述不覆盖结构现实
+4. **Do Not Trust Traditional Software Engineering Patterns**：传统软件模式在树分解中无效
+
+**结果**：codegen 成功检出 Chat_00 的 routing 过拟合分析**：后两条规则可能过拟合（枚举具体模式名称），需要精化。
+
+**过拟合风险**：
+- "Do Not Trust Traditional Software Engineering Patterns" 明确列出了具体模式名称（Command Pattern, Strategy Pattern, Dispatcher, Router, Controller），如果未来有其他类似模式，这个规则无法覆盖
+- "Do Not Trust the Decomposer's Description" 说 "coordinating" or "routing" are red flags，但 "coordinating" 在某些情况下可能是合法的（如协调自己的子树）
+
+---
+
+## 核心问题（二次修正）
+
+LLM decomposer 经常生成 `ParseInput → RouteCommand → [Handler A, Handler B, ...]` 的分解模式。
+
+**二次修正结论（2026-05-28）**：通过重新审查原始数据流（dataflow_edges）和 sibling_calls 检测结果，确认**路由确实是违规**，之前基于访谈的"认知修正是误解"的结论本身是错误的。
+
+### 原始数据流分析
+
+所有 trial 的 dataflow_edges 都是：
 ```
-父节点 → ParseCommand (解析) → 返回父节点
-      → RouteCommand (路由判断) → 返回父节点  
-      → Handler (执行) → 返回父节点
+parent → ParseInput (input)
+ParseInput → RouteCommand (command, order_data)
+RouteCommand → parent (output)
 ```
 
-每个子节点执行后**返回父节点**，父节点决定下一个调谁。这完全符合树结构规则。真正的路由违规发生在 **codegen 层**——它把兄弟节点关系理解为"直接调用"，而不是模型意图的"父节点编排"。
+**关键缺失**：没有 RouteCommand → CreateOrder/PayOrder/... 的边！
+
+但 RouteCommand 的 behavior 明确声明它要调用其他 handlers：
+> "Based on the command string, calls the appropriate child handler (CreateOrder, PayOrder, ...) with order_data and returns the result."
+
+### sibling_calls 检测结果
+
+检测器正确识别了结构性违规：
+- ParseInput → RouteCommand (structural_router)
+- ParseInput → CreateOrder (structural_router)
+- ParseInput → PayOrder (structural_router)
+- ...
+- RouteCommand → CreateOrder (structural_router)
+- RouteCommand → PayOrder (structural_router)
+- ...
+
+这说明 RouteCommand **在结构上**声明了对 handlers 的调用关系，但这种关系**违反了树结构规则**（兄弟节点不能互相调用）。
+
+### 访谈是事后合理化
+
+当被问到"ParseInput 会调用其他子节点"时，模型都澄清说：
+> "ParseInput 并不会调用其他子节点"
+> "调用链是：ParseInput → RouteCommand → (CreateOrder / PayOrder / ...)"
+
+**但原始数据中没有这些边**！这是模型的事后合理化。
+
+当被问到"如果要求所有子节点只能被父节点直接调用"时，模型承认需要"扁平化"结构，说明它**知道**自己的分解违反了树结构规则。
+
+### 结论
+
+1. **路由模式天然违规**：RouteCommand 作为兄弟节点不能调用其他兄弟节点，这违反了树结构的根本规则
+2. **访谈是事后合理化**：模型在访谈中解释的"调用链"与原始数据流不符
+3. **真正的违规发生在 decomposer 层**：不是 codegen 层的误解，而是 decomposer 本身就生成了违规的结构
 
 因此本实验的**实际问题**是：
 
 1. **什么导致 LLM 选择"CommandRouter + Handler"分解模式？** — 提示词因素分析
-2. **这种模式是否天然违规？** — 否，违规发生在 codegen 层，而非 decomposer 层
-3. **如何让 codegen 正确理解父节点编排意图？** — 后续需解决的问题
+2. **这种模式是否天然违规？** — 是，RouteCommand 作为兄弟节点调用其他兄弟节点违反树结构规则
+3. **如何抑制这种违规模式？** — SubPRD Context 是唯一有效的提示词级抑制因素（对部分模型有效）
 
 ## 实验设计：Routing Ablation
 

@@ -1,0 +1,56 @@
+{
+  "label": "single_stage_notraditional/BuildSystem/trial_01",
+  "condition": "single_stage_notraditional",
+  "case": "BuildSystem",
+  "trial": 1,
+  "n_children": 9,
+  "child_names": [
+    "ParseBuildRequest",
+    "CheckRunningBuild",
+    "CreateBuildRecord",
+    "RunBuildSteps",
+    "UpdateBuildStatus",
+    "GetBuildStatus",
+    "ListBuilds",
+    "CancelBuild",
+    "FormatBuildResult"
+  ],
+  "has_routing": false,
+  "sibling_calls": [],
+  "child_count_violation": true,
+  "missing_required_fields": [],
+  "dangling_inputs": [
+    "ParseBuildRequest.build_request: source 'parent input' not traceable",
+    "CheckRunningBuild.repo: source 'ParseBuildRequest output' not traceable",
+    "CheckRunningBuild.branch: source 'ParseBuildRequest output' not traceable",
+    "CreateBuildRecord.repo: source 'ParseBuildRequest output' not traceable",
+    "CreateBuildRecord.branch: source 'ParseBuildRequest output' not traceable",
+    "CreateBuildRecord.config: source 'ParseBuildRequest output' not traceable",
+    "RunBuildSteps.build_id: source 'CreateBuildRecord output' not traceable",
+    "RunBuildSteps.config: source 'ParseBuildRequest output' not traceable",
+    "UpdateBuildStatus.build_id: source 'CreateBuildRecord output' not traceable",
+    "UpdateBuildStatus.new_status: source 'Parent' not traceable"
+  ],
+  "global_var_subset_violations": [],
+  "global_var_union_gap": [
+    "artifacts: read not covered"
+  ],
+  "cannot_compose": true,
+  "composition_feedback": {
+    "reason": "missing_child_input_source",
+    "offending_child": "CheckRunningBuild",
+    "violations": [
+      {
+        "from_node": "ParseBuildRequest",
+        "to_node": "CheckRunningBuild",
+        "rule": "data_flow",
+        "details": "ParseBuildRequest outputs (action, repo, branch, config, build_id). CheckRunningBuild expects repo and branch, but the parent must pass these from ParseBuildRequest. However, the parent's input is build_request, and ParseBuildRequest is the only child that extracts repo and branch. The parent can call ParseBuildRequest first and then pass repo and branch to CheckRunningBuild, so this is not a violation per se. The real issue is that the parent's output build_result must be produced by FormatBuildResult, but FormatBuildResult requires action, success, build_id, status, logs. The parent must orchestrate multiple children to produce these, but the children are independent and the parent can sequence them. However, the parent's purpose includes multiple actions (trigger, status, list, cancel), and the children are designed for specific actions. The parent must decide which action to perform based on the parsed action. The children do not provide a way to select the action flow. The parent must implement conditional logic to choose which children to call. Since the children are independent and the parent can call them in sequence, the missing piece is that the parent's input does not specify the action, but ParseBuildRequest extracts it. The parent can then use that action to decide which children to call. However, the parent's output build_result is a dict, and FormatBuildResult can produce it for trigger, status, cancel actions. For list action, FormatBuildResult expects action, success, build_id, status, logs, but ListBuilds returns a list of records, not a single build. So the parent cannot use FormatBuildResult for list action. Therefore, the parent cannot satisfy the output for all actions."
+      }
+    ],
+    "suggested_fix": "Add a child that formats the list of builds into a dict, or modify FormatBuildResult to handle list action, or split the parent into separate parents for each action.",
+    "requires_redecomposition": true
+  },
+  "parse_error": false,
+  "elapsed": 32.6,
+  "llm_calls": 2
+}

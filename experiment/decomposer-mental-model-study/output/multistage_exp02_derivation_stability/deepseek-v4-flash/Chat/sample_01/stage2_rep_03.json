@@ -1,0 +1,552 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Parse the incoming JSON input to extract the command type and parameters",
+      "behavior": "Extract command field from input JSON and validate its presence",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "command extraction"
+        ],
+        "out_of_scope": [
+          "command execution",
+          "data validation"
+        ]
+      },
+      "semantic_inputs": [
+        "input: Any - Raw JSON input from user"
+      ],
+      "semantic_outputs": [
+        "command: str - Parsed command string (send/history/create_channel/join)",
+        "params: dict - Remaining parameters from input"
+      ],
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "command is one of the four allowed values"
+      ],
+      "guarantees": [
+        "Returns error if command missing or invalid"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from user",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Parsed command string (send/history/create_channel/join)",
+          "consumer": "parent"
+        },
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Remaining parameters from input",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(input: Any) -> tuple[str, dict]"
+    },
+    {
+      "name": "ValidateSendMessage",
+      "purpose": "Validate send message request: check channel membership and message content",
+      "behavior": "Verify user is member of target channel and message is non-empty",
+      "boundary": {
+        "in_scope": [
+          "channel membership check",
+          "message content validation"
+        ],
+        "out_of_scope": [
+          "message storage",
+          "history retrieval"
+        ]
+      },
+      "semantic_inputs": [
+        "params: dict - Contains channel_id and message text",
+        "channels: list - Channel data store for membership check"
+      ],
+      "semantic_outputs": [
+        "validation_result: bool - Boolean indicating if send is allowed",
+        "error_message: str - Error description if validation fails"
+      ],
+      "preconditions": [
+        "params contain channel_id and message"
+      ],
+      "postconditions": [
+        "Returns true only if user is member and message non-empty"
+      ],
+      "guarantees": [
+        "Does not modify any data store"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_id and message text",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "list",
+          "description": "Channel data store for membership check",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validation_result",
+          "type": "bool",
+          "description": "Boolean indicating if send is allowed",
+          "consumer": "parent"
+        },
+        {
+          "name": "error_message",
+          "type": "str",
+          "description": "Error description if validation fails",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateSendMessage(params: dict, channels: list) -> tuple[bool, str]"
+    },
+    {
+      "name": "StoreMessage",
+      "purpose": "Store a new message in the messages data store",
+      "behavior": "Append message with timestamp and user info to messages store",
+      "boundary": {
+        "in_scope": [
+          "message persistence",
+          "timestamp generation"
+        ],
+        "out_of_scope": [
+          "channel membership",
+          "history retrieval"
+        ]
+      },
+      "semantic_inputs": [
+        "params: dict - Contains channel_id, message, user_id",
+        "messages: list - Messages data store for writing"
+      ],
+      "semantic_outputs": [
+        "stored_message: dict - The stored message object with id and timestamp"
+      ],
+      "preconditions": [
+        "Validation passed",
+        "messages store is writable"
+      ],
+      "postconditions": [
+        "Message is appended to messages store"
+      ],
+      "guarantees": [
+        "Message is stored with unique id and current timestamp"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_id, message, user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "messages",
+          "type": "list",
+          "description": "Messages data store for writing",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "stored_message",
+          "type": "dict",
+          "description": "The stored message object with id and timestamp",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def StoreMessage(params: dict, messages: list) -> dict"
+    },
+    {
+      "name": "RetrieveHistory",
+      "purpose": "Retrieve recent message history for a channel, limited to 100 messages",
+      "behavior": "Query messages store for channel_id, return last 100 messages in chronological order",
+      "boundary": {
+        "in_scope": [
+          "message retrieval",
+          "pagination (limit 100)"
+        ],
+        "out_of_scope": [
+          "message storage",
+          "channel creation"
+        ]
+      },
+      "semantic_inputs": [
+        "params: dict - Contains channel_id",
+        "messages: list - Messages data store for reading"
+      ],
+      "semantic_outputs": [
+        "history: list - Array of up to 100 message objects"
+      ],
+      "preconditions": [
+        "channel_id is valid"
+      ],
+      "postconditions": [
+        "Returns array of messages sorted by timestamp"
+      ],
+      "guarantees": [
+        "Returns at most 100 messages"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_id",
+          "source": "parent input"
+        },
+        {
+          "name": "messages",
+          "type": "list",
+          "description": "Messages data store for reading",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "history",
+          "type": "list",
+          "description": "Array of up to 100 message objects",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RetrieveHistory(params: dict, messages: list) -> list"
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel in the channels data store",
+      "behavior": "Add new channel entry with unique id and name, initialize member list with creator",
+      "boundary": {
+        "in_scope": [
+          "channel creation",
+          "member initialization"
+        ],
+        "out_of_scope": [
+          "message storage",
+          "history retrieval"
+        ]
+      },
+      "semantic_inputs": [
+        "params: dict - Contains channel_name and creator_user_id",
+        "channels: list - Channels data store for writing"
+      ],
+      "semantic_outputs": [
+        "created_channel: dict - The new channel object with id and members"
+      ],
+      "preconditions": [
+        "channel_name is non-empty and unique"
+      ],
+      "postconditions": [
+        "New channel exists in channels store"
+      ],
+      "guarantees": [
+        "Creator is added as first member"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_name and creator_user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "list",
+          "description": "Channels data store for writing",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "created_channel",
+          "type": "dict",
+          "description": "The new channel object with id and members",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CreateChannel(params: dict, channels: list) -> dict"
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Add a user to an existing channel's member list",
+      "behavior": "Update channels store to include user_id in channel's members array",
+      "boundary": {
+        "in_scope": [
+          "membership update"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "message operations"
+        ]
+      },
+      "semantic_inputs": [
+        "params: dict - Contains channel_id and user_id",
+        "channels: list - Channels data store for reading and writing"
+      ],
+      "semantic_outputs": [
+        "join_result: bool - Boolean indicating success"
+      ],
+      "preconditions": [
+        "channel exists and user not already member"
+      ],
+      "postconditions": [
+        "User is added to channel's member list"
+      ],
+      "guarantees": [
+        "Does not duplicate membership"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_id and user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "list",
+          "description": "Channels data store for reading and writing",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "join_result",
+          "type": "bool",
+          "description": "Boolean indicating success",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def JoinChannel(params: dict, channels: list) -> bool"
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Format the final output JSON with success status, data, and message",
+      "behavior": "Construct response object based on command execution result",
+      "boundary": {
+        "in_scope": [
+          "response formatting"
+        ],
+        "out_of_scope": [
+          "command execution",
+          "data validation"
+        ]
+      },
+      "semantic_inputs": [
+        "success: bool - Boolean indicating operation success",
+        "data: Any - Result data from command execution",
+        "message: str - Human-readable status message"
+      ],
+      "semantic_outputs": [
+        "output: Any - Formatted JSON response"
+      ],
+      "preconditions": [
+        "success, data, message are provided"
+      ],
+      "postconditions": [
+        "Output is valid JSON with expected structure"
+      ],
+      "guarantees": [
+        "Response always contains success, data, message fields"
+      ],
+      "composition_role": "aggregate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "success",
+          "type": "bool",
+          "description": "Boolean indicating operation success",
+          "source": "parent input"
+        },
+        {
+          "name": "data",
+          "type": "Any",
+          "description": "Result data from command execution",
+          "source": "parent input"
+        },
+        {
+          "name": "message",
+          "type": "str",
+          "description": "Human-readable status message",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "Any",
+          "description": "Formatted JSON response",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def FormatResponse(success: bool, data: Any, message: str) -> Any"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseCommand"
+    },
+    "parent_outputs_produced_by": {
+      "output": "FormatResponse"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseCommand",
+      "to_input": "input",
+      "note": "Parent passes raw input to ParseCommand"
+    },
+    {
+      "from_node": "ParseCommand",
+      "from_output": "command",
+      "to_node": "parent",
+      "to_input": "command",
+      "note": "ParseCommand returns command to parent for routing"
+    },
+    {
+      "from_node": "ParseCommand",
+      "from_output": "params",
+      "to_node": "parent",
+      "to_input": "params",
+      "note": "ParseCommand returns params to parent for routing"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "params",
+      "to_node": "ValidateSendMessage",
+      "to_input": "params",
+      "note": "Parent passes params to ValidateSendMessage for send command"
+    },
+    {
+      "from_node": "ValidateSendMessage",
+      "from_output": "validation_result",
+      "to_node": "parent",
+      "to_input": "validation_result",
+      "note": "ValidateSendMessage returns validation result to parent"
+    },
+    {
+      "from_node": "ValidateSendMessage",
+      "from_output": "error_message",
+      "to_node": "parent",
+      "to_input": "error_message",
+      "note": "ValidateSendMessage returns error message to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "params",
+      "to_node": "StoreMessage",
+      "to_input": "params",
+      "note": "Parent passes params to StoreMessage for send command"
+    },
+    {
+      "from_node": "StoreMessage",
+      "from_output": "stored_message",
+      "to_node": "parent",
+      "to_input": "stored_message",
+      "note": "StoreMessage returns stored message to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "params",
+      "to_node": "RetrieveHistory",
+      "to_input": "params",
+      "note": "Parent passes params to RetrieveHistory for history command"
+    },
+    {
+      "from_node": "RetrieveHistory",
+      "from_output": "history",
+      "to_node": "parent",
+      "to_input": "history",
+      "note": "RetrieveHistory returns history to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "params",
+      "to_node": "CreateChannel",
+      "to_input": "params",
+      "note": "Parent passes params to CreateChannel for create_channel command"
+    },
+    {
+      "from_node": "CreateChannel",
+      "from_output": "created_channel",
+      "to_node": "parent",
+      "to_input": "created_channel",
+      "note": "CreateChannel returns created channel to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "params",
+      "to_node": "JoinChannel",
+      "to_input": "params",
+      "note": "Parent passes params to JoinChannel for join command"
+    },
+    {
+      "from_node": "JoinChannel",
+      "from_output": "join_result",
+      "to_node": "parent",
+      "to_input": "join_result",
+      "note": "JoinChannel returns join result to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "success",
+      "to_node": "FormatResponse",
+      "to_input": "success",
+      "note": "Parent passes success status to FormatResponse"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "data",
+      "to_node": "FormatResponse",
+      "to_input": "data",
+      "note": "Parent passes result data to FormatResponse"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "message",
+      "to_node": "FormatResponse",
+      "to_input": "message",
+      "note": "Parent passes status message to FormatResponse"
+    },
+    {
+      "from_node": "FormatResponse",
+      "from_output": "output",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "FormatResponse returns final output to parent"
+    }
+  ]
+}

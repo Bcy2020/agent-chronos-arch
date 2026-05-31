@@ -1,0 +1,197 @@
+{
+  "children": [
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the complete place order workflow: validate, charge, reserve, create record, notify.",
+      "behavior": "Calls validate items, charge payment, reserve inventory, create order record, and send notification in sequence, rolling back on failure.",
+      "boundary": {
+        "in_scope": [
+          "validating items and stock",
+          "charging payment",
+          "reserving inventory",
+          "creating order record",
+          "sending confirmation"
+        ],
+        "out_of_scope": [
+          "cancelling orders",
+          "tracking orders",
+          "handling other commands"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload with items, payment_method, shipping_address",
+          "source": "parent input"
+        },
+        {
+          "name": "command",
+          "description": "Must be 'place'",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'place'",
+        "order_data contains items, payment_method, shipping_address"
+      ],
+      "postconditions": [
+        "If success: order record created, payment charged, inventory reserved, notification sent",
+        "If failure: all changes rolled back"
+      ],
+      "guarantees": [
+        "Atomicity: all-or-nothing",
+        "Payment charged before inventory reserved"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the complete cancel order workflow: verify, refund, restore inventory, update status.",
+      "behavior": "Calls verify order exists and not shipped, refund payment, restore inventory, update order status to cancelled, rolling back on failure.",
+      "boundary": {
+        "in_scope": [
+          "verifying order exists and not shipped",
+          "refunding payment",
+          "restoring inventory",
+          "updating order status"
+        ],
+        "out_of_scope": [
+          "placing orders",
+          "tracking orders",
+          "handling other commands"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        },
+        {
+          "name": "command",
+          "description": "Must be 'cancel'",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'cancel'",
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "If success: order status cancelled, payment refunded, inventory restored",
+        "If failure: no changes made"
+      ],
+      "guarantees": [
+        "Atomicity: all-or-nothing",
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Return current order status and estimated delivery time.",
+      "behavior": "Queries the orders data store for the given order_id and returns status and estimated delivery time.",
+      "boundary": {
+        "in_scope": [
+          "reading order status",
+          "reading estimated delivery time"
+        ],
+        "out_of_scope": [
+          "modifying orders",
+          "placing or cancelling orders"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        },
+        {
+          "name": "command",
+          "description": "Must be 'track'",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_result",
+          "description": "Result dict with success, order_id, status, message, estimated_delivery",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "command is 'track'",
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "Order status and estimated delivery returned without side effects"
+      ],
+      "guarantees": [
+        "Read-only operation",
+        "No state changes"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent OrderSystem function routes based on command to one of three independent child functions: PlaceOrder, CancelOrder, or TrackOrder. Each child encapsulates the full workflow for its respective command, ensuring atomicity and proper rollback. No child calls another; the parent orchestrates by selecting the appropriate child based on the command input.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "PlaceOrder",
+      "data": "command='place', order_data",
+      "note": "Route to place workflow"
+    },
+    {
+      "from": "parent",
+      "to": "CancelOrder",
+      "data": "command='cancel', order_data",
+      "note": "Route to cancel workflow"
+    },
+    {
+      "from": "parent",
+      "to": "TrackOrder",
+      "data": "command='track', order_data",
+      "note": "Route to track workflow"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result of place operation"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result of cancel operation"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "parent",
+      "data": "order_result",
+      "note": "Return result of track operation"
+    }
+  ]
+}

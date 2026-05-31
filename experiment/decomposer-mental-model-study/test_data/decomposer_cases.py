@@ -71,8 +71,9 @@ CASE_01_ORDER = _make_case(
          "description": "Dict mapping payment_id to {order_id, amount, method, status}"},
     ],
     data_sources=[
-        {"name": "orders", "description": "Order records storage"},
-        {"name": "inventory", "description": "Product stock data"},
+        {"name": "orders", "access": "read_write", "description": "Order records storage"},
+        {"name": "inventory", "access": "read_write", "description": "Product stock data"},
+        {"name": "payments", "access": "read_write", "description": "Payment records"},
     ],
     subprd_desc=(
         "The OrderSystem function is called as: process_order(command, order_data)\n\n"
@@ -120,14 +121,15 @@ CASE_02_CHAT = _make_case(
     global_vars=[
         {"variable": "messages", "op": "read_write",
          "description": "Dict mapping message_id to {channel_id, user_id, content, timestamp}"},
-        {"variable": "users", "op": "read",
+        {"variable": "users", "op": "write",
          "description": "Dict mapping user_id to {username, status, last_seen}"},
         {"variable": "channels", "op": "read_write",
          "description": "Dict mapping channel_id to {name, members, created_by}"},
     ],
     data_sources=[
-        {"name": "messages", "description": "Message store"},
-        {"name": "channels", "description": "Channel data"},
+        {"name": "messages", "access": "read_write", "description": "Message store"},
+        {"name": "users", "access": "write", "description": "User profiles and last_seen"},
+        {"name": "channels", "access": "read_write", "description": "Channel data"},
     ],
     subprd_desc=(
         "The ChatApp function is called as: handle_chat(command, message_data)\n\n"
@@ -168,10 +170,13 @@ CASE_03_BUILD = _make_case(
     global_vars=[
         {"variable": "builds", "op": "read_write",
          "description": "Dict mapping build_id to {repo, branch, status, started_at, finished_at, logs}"},
-        {"variable": "artifacts", "op": "read_write",
+        {"variable": "artifacts", "op": "write",
          "description": "Dict mapping artifact_id to {build_id, path, size, created_at}"},
     ],
-    data_sources=[{"name": "builds", "description": "Build records"}],
+    data_sources=[
+        {"name": "builds", "access": "read_write", "description": "Build records"},
+        {"name": "artifacts", "access": "write", "description": "Build artifacts"},
+    ],
     subprd_desc=(
         "INPUT FORMAT: build_request is a JSON object.\n"
         "  - action: 'trigger' | 'status' | 'list' | 'cancel'\n"
@@ -273,12 +278,13 @@ CASE_05_PATIENT = _make_case(
          "description": "Dict mapping patient_id to {name, dob, contact, insurance, registered_at}"},
         {"variable": "appointments", "op": "read_write",
          "description": "Dict mapping appointment_id to {patient_id, doctor_id, time, status, notes}"},
-        {"variable": "records", "op": "read_write",
+        {"variable": "records", "op": "read",
          "description": "Dict mapping record_id to {patient_id, type, data, created_by, timestamp}"},
     ],
     data_sources=[
-        {"name": "patients", "description": "Patient records"},
-        {"name": "appointments", "description": "Appointment records"},
+        {"name": "patients", "access": "read_write", "description": "Patient records"},
+        {"name": "appointments", "access": "read_write", "description": "Appointment records"},
+        {"name": "records", "access": "read", "description": "Medical records"},
     ],
     subprd_desc=(
         "The PatientPortal function is called as: handle_patient_request(command, patient_data)\n\n"
@@ -423,12 +429,13 @@ CASE_08_PIPELINE = _make_case(
     global_vars=[
         {"variable": "raw_data", "op": "read_write", "description": "List of raw records from source ingestion"},
         {"variable": "processed_data", "op": "read_write", "description": "List of transformed and validated records"},
-        {"variable": "pipeline_log", "op": "read_write",
+        {"variable": "pipeline_log", "op": "write",
          "description": "List of {step, timestamp, records_in, records_out, errors}"},
     ],
     data_sources=[
-        {"name": "raw_data", "description": "Raw ingested data"},
-        {"name": "processed_data", "description": "Transformed data"},
+        {"name": "raw_data", "access": "read_write", "description": "Raw ingested data"},
+        {"name": "processed_data", "access": "read_write", "description": "Transformed data"},
+        {"name": "pipeline_log", "access": "write", "description": "Pipeline execution log"},
     ],
     subprd_desc=(
         "INPUT FORMAT: pipeline_request is a JSON object.\n"

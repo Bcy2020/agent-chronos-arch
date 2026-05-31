@@ -1,0 +1,469 @@
+[
+  {
+    "name": "ParseCommand",
+    "purpose": "Validate and parse the command string to determine the operation type.",
+    "behavior": "Check that command is one of 'place', 'cancel', 'track'. If invalid, return error.",
+    "boundary": {
+      "in_scope": [
+        "command validation",
+        "command type extraction"
+      ],
+      "out_of_scope": [
+        "order data validation",
+        "execution of command logic"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "command",
+        "description": "Order command string",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "parsed_command",
+        "description": "Validated command type",
+        "consumer": "parent"
+      },
+      {
+        "name": "error",
+        "description": "Error message if command invalid",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "command is a string"
+    ],
+    "postconditions": [
+      "parsed_command is one of 'place', 'cancel', 'track' or error is set"
+    ],
+    "guarantees": [
+      "Returns error for invalid command"
+    ],
+    "composition_role": "validate",
+    "stop_decompose": true,
+    "stop_reason": "Pure validation function",
+    "inputs": [
+      {
+        "name": "command",
+        "type": "str",
+        "description": "Order command string",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "parsed_command",
+        "type": "str",
+        "description": "Validated command type ('place', 'cancel', 'track')",
+        "consumer": "parent"
+      },
+      {
+        "name": "error",
+        "type": "Optional[str]",
+        "description": "Error message if command invalid, None otherwise",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def ParseCommand(command: str) -> tuple[str, Optional[str]]",
+    "global_vars": [],
+    "data_operations": [],
+    "requested_capabilities": [],
+    "constraints": [
+      {
+        "constraint_id": "C-001",
+        "description": "Command must be one of 'place', 'cancel', 'track'"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-001",
+        "description": "Valid command returns parsed_command and None error"
+      },
+      {
+        "ac_id": "AC-002",
+        "description": "Invalid command returns None parsed_command and error message"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-001"
+      ]
+    },
+    "node_type": "pure_function"
+  },
+  {
+    "name": "PlaceOrder",
+    "purpose": "Execute the 'place' command: validate items, charge payment, reserve inventory, create order, send notification.",
+    "behavior": "Sequentially call child functions for each step; if any fails, rollback previous steps.",
+    "boundary": {
+      "in_scope": [
+        "item validation",
+        "payment charging",
+        "inventory reservation",
+        "order creation",
+        "notification"
+      ],
+      "out_of_scope": [
+        "cancel logic",
+        "track logic"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "order_data",
+        "description": "Order payload with items, payment_method, shipping_address",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "order_result",
+        "description": "Result with success, order_id, status, message",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "command is 'place'",
+      "order_data contains required fields"
+    ],
+    "postconditions": [
+      "If success, order created and payment charged; if fail, all changes rolled back"
+    ],
+    "guarantees": [
+      "Atomic execution with rollback"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "Complex multi-step operation",
+    "inputs": [
+      {
+        "name": "order_data",
+        "type": "dict",
+        "description": "Order payload with items (list), payment_method (str), shipping_address (dict)",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "order_result",
+        "type": "dict",
+        "description": "Result with success (bool), order_id (str), status (str), message (str)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def PlaceOrder(order_data: dict) -> dict",
+    "global_vars": [
+      {
+        "variable": "orders",
+        "op": "write",
+        "description": "Create new order record"
+      },
+      {
+        "variable": "inventory",
+        "op": "read_write",
+        "description": "Read stock levels, write reserved_count"
+      },
+      {
+        "variable": "payments",
+        "op": "write",
+        "description": "Create payment record"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "orders",
+        "operation_type": "write",
+        "description": "Insert new order document"
+      },
+      {
+        "source_name": "inventory",
+        "operation_type": "read_write",
+        "description": "Read product stock, decrement available, increment reserved"
+      },
+      {
+        "source_name": "payments",
+        "operation_type": "write",
+        "description": "Insert payment transaction record"
+      }
+    ],
+    "requested_capabilities": [
+      "orders.write",
+      "inventory.read",
+      "inventory.write",
+      "payments.write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-002",
+        "description": "All items must exist in inventory with sufficient stock"
+      },
+      {
+        "constraint_id": "C-003",
+        "description": "Payment must be successfully processed before order creation"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-003",
+        "description": "Order is created with status 'confirmed'"
+      },
+      {
+        "ac_id": "AC-004",
+        "description": "Inventory reserved_count incremented for each item"
+      },
+      {
+        "ac_id": "AC-005",
+        "description": "Payment record created with status 'completed'"
+      },
+      {
+        "ac_id": "AC-006",
+        "description": "On failure, all changes are rolled back (no partial state)"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-002",
+        "FR-003"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "CancelOrder",
+    "purpose": "Execute the 'cancel' command: verify order exists and not shipped, refund payment, restore inventory, update status.",
+    "behavior": "Sequentially call child functions; rollback on failure.",
+    "boundary": {
+      "in_scope": [
+        "order existence check",
+        "shipped status check",
+        "payment refund",
+        "inventory restoration",
+        "status update"
+      ],
+      "out_of_scope": [
+        "place logic",
+        "track logic"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "order_data",
+        "description": "Order payload with order_id",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "order_result",
+        "description": "Result with success, order_id, status, message",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "command is 'cancel'",
+      "order_data contains order_id"
+    ],
+    "postconditions": [
+      "If success, order cancelled and refunded; if fail, no changes"
+    ],
+    "guarantees": [
+      "Atomic execution with rollback"
+    ],
+    "composition_role": "execute",
+    "stop_decompose": false,
+    "stop_reason": "Complex multi-step operation",
+    "inputs": [
+      {
+        "name": "order_data",
+        "type": "dict",
+        "description": "Order payload with order_id (str)",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "order_result",
+        "type": "dict",
+        "description": "Result with success (bool), order_id (str), status (str), message (str)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def CancelOrder(order_data: dict) -> dict",
+    "global_vars": [
+      {
+        "variable": "orders",
+        "op": "read_write",
+        "description": "Read order status, update status to 'cancelled'"
+      },
+      {
+        "variable": "inventory",
+        "op": "read_write",
+        "description": "Read reserved_count, restore stock"
+      },
+      {
+        "variable": "payments",
+        "op": "read_write",
+        "description": "Read payment record, update status to 'refunded'"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "orders",
+        "operation_type": "read_write",
+        "description": "Read order details, update status to cancelled"
+      },
+      {
+        "source_name": "inventory",
+        "operation_type": "read_write",
+        "description": "Read reserved items, decrement reserved, increment available"
+      },
+      {
+        "source_name": "payments",
+        "operation_type": "read_write",
+        "description": "Read payment record, update status to refunded"
+      }
+    ],
+    "requested_capabilities": [
+      "orders.read",
+      "orders.write",
+      "inventory.read",
+      "inventory.write",
+      "payments.read",
+      "payments.write"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-004",
+        "description": "Order must exist and not be in 'shipped' or 'cancelled' status"
+      },
+      {
+        "constraint_id": "C-005",
+        "description": "Payment must exist and be refundable"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-007",
+        "description": "Order status updated to 'cancelled'"
+      },
+      {
+        "ac_id": "AC-008",
+        "description": "Inventory stock restored (reserved decremented, available incremented)"
+      },
+      {
+        "ac_id": "AC-009",
+        "description": "Payment status updated to 'refunded'"
+      },
+      {
+        "ac_id": "AC-010",
+        "description": "On failure, no changes are persisted"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-004"
+      ]
+    },
+    "node_type": "atomic_operation"
+  },
+  {
+    "name": "TrackOrder",
+    "purpose": "Execute the 'track' command: retrieve order status and estimated delivery time.",
+    "behavior": "Query orders database for order_id, return status and delivery estimate.",
+    "boundary": {
+      "in_scope": [
+        "order status retrieval",
+        "delivery time estimation"
+      ],
+      "out_of_scope": [
+        "place logic",
+        "cancel logic"
+      ]
+    },
+    "semantic_inputs": [
+      {
+        "name": "order_data",
+        "description": "Order payload with order_id",
+        "source": "parent input"
+      }
+    ],
+    "semantic_outputs": [
+      {
+        "name": "order_result",
+        "description": "Result with success, order_id, status, message (includes delivery time)",
+        "consumer": "parent"
+      }
+    ],
+    "preconditions": [
+      "command is 'track'",
+      "order_data contains order_id"
+    ],
+    "postconditions": [
+      "Order status and delivery time returned"
+    ],
+    "guarantees": [
+      "Read-only operation, no side effects"
+    ],
+    "composition_role": "query",
+    "stop_decompose": false,
+    "stop_reason": "Simple query but may involve multiple data sources",
+    "inputs": [
+      {
+        "name": "order_data",
+        "type": "dict",
+        "description": "Order payload with order_id (str)",
+        "source": "parent input"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "order_result",
+        "type": "dict",
+        "description": "Result with success (bool), order_id (str), status (str), message (str, includes delivery time)",
+        "consumer": "parent"
+      }
+    ],
+    "signature": "def TrackOrder(order_data: dict) -> dict",
+    "global_vars": [
+      {
+        "variable": "orders",
+        "op": "read",
+        "description": "Read order status and delivery info"
+      }
+    ],
+    "data_operations": [
+      {
+        "source_name": "orders",
+        "operation_type": "read",
+        "description": "Query order document by order_id"
+      }
+    ],
+    "requested_capabilities": [
+      "orders.read"
+    ],
+    "constraints": [
+      {
+        "constraint_id": "C-006",
+        "description": "Order must exist in the database"
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "ac_id": "AC-011",
+        "description": "Returns order status and estimated delivery time"
+      },
+      {
+        "ac_id": "AC-012",
+        "description": "Returns error if order_id not found"
+      }
+    ],
+    "traceability": {
+      "parent_requirement_ids": [
+        "FR-005"
+      ]
+    },
+    "node_type": "pure_function"
+  }
+]

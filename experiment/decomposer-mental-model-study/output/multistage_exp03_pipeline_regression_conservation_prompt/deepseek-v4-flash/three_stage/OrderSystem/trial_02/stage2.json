@@ -1,0 +1,917 @@
+{
+  "children": [
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the 'place' command: validate items, charge payment, reserve inventory, create order, send notification",
+      "behavior": "Validates item existence and stock, charges payment via payment gateway, reserves inventory, creates order record, sends confirmation notification",
+      "boundary": {
+        "in_scope": [
+          "item validation",
+          "stock check",
+          "payment charge",
+          "inventory reservation",
+          "order creation",
+          "notification"
+        ],
+        "out_of_scope": [
+          "cancel",
+          "track",
+          "rollback logic"
+        ]
+      },
+      "preconditions": [
+        "command is 'place'",
+        "order_data contains items, payment_method, shipping_address"
+      ],
+      "postconditions": [
+        "order record created if successful",
+        "payment charged if successful",
+        "inventory reserved if successful"
+      ],
+      "guarantees": [
+        "atomicity: rollback on failure",
+        "payment charged before inventory reserved"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'place'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with items, payment_method, shipping_address",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(command: str, order_data: dict) -> dict"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the 'cancel' command: verify order exists and not shipped, refund payment, restore inventory, update status",
+      "behavior": "Checks order existence and shipping status, refunds payment, restores reserved inventory, updates order status to cancelled",
+      "boundary": {
+        "in_scope": [
+          "order existence check",
+          "shipping status check",
+          "payment refund",
+          "inventory restoration",
+          "status update"
+        ],
+        "out_of_scope": [
+          "place",
+          "track",
+          "rollback logic"
+        ]
+      },
+      "preconditions": [
+        "command is 'cancel'",
+        "order_data contains order_id",
+        "order exists",
+        "order not shipped"
+      ],
+      "postconditions": [
+        "payment refunded if applicable",
+        "inventory restored",
+        "order status set to cancelled"
+      ],
+      "guarantees": [
+        "atomicity: rollback on failure",
+        "cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'cancel'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(command: str, order_data: dict) -> dict"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the 'track' command: return current order status and estimated delivery time",
+      "behavior": "Queries order record for status and calculates estimated delivery time based on order data",
+      "boundary": {
+        "in_scope": [
+          "order status retrieval",
+          "delivery time estimation"
+        ],
+        "out_of_scope": [
+          "place",
+          "cancel",
+          "modifications"
+        ]
+      },
+      "preconditions": [
+        "command is 'track'",
+        "order_data contains order_id",
+        "order exists"
+      ],
+      "postconditions": [
+        "order status and delivery time returned"
+      ],
+      "guarantees": [
+        "read-only operation",
+        "no side effects"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Must be 'track'",
+          "source": "parent input"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with order_id",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_result",
+          "type": "dict",
+          "description": "Result dict with success, order_id, status, message (including delivery time)",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(command: str, order_data: dict) -> dict"
+    },
+    {
+      "name": "ValidateItems",
+      "purpose": "Check that all items in the order exist and have sufficient stock",
+      "behavior": "Iterates over items, checks inventory for existence and stock_count >= requested quantity",
+      "boundary": {
+        "in_scope": [
+          "item existence check",
+          "stock sufficiency check"
+        ],
+        "out_of_scope": [
+          "payment",
+          "reservation",
+          "order creation"
+        ]
+      },
+      "preconditions": [
+        "items list is non-empty"
+      ],
+      "postconditions": [
+        "validation result returned"
+      ],
+      "guarantees": [
+        "no side effects on data stores"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure validation function",
+      "inputs": [
+        {
+          "name": "items",
+          "type": "list",
+          "description": "List of items with product_id and quantity",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "inventory",
+          "type": "dict",
+          "description": "Global inventory data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validation_result",
+          "type": "bool",
+          "description": "Boolean indicating if all items valid and in stock",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "signature": "def ValidateItems(items: list, inventory: dict) -> bool"
+    },
+    {
+      "name": "ChargePayment",
+      "purpose": "Charge the customer's payment via payment gateway",
+      "behavior": "Calls payment gateway with amount and payment_method, records payment in payments store",
+      "boundary": {
+        "in_scope": [
+          "payment gateway call",
+          "payment record creation"
+        ],
+        "out_of_scope": [
+          "inventory",
+          "order creation"
+        ]
+      },
+      "preconditions": [
+        "items validated",
+        "total amount computed"
+      ],
+      "postconditions": [
+        "payment charged if successful",
+        "payment record created"
+      ],
+      "guarantees": [
+        "payment gateway called exactly once"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with external dependency",
+      "inputs": [
+        {
+          "name": "payment_method",
+          "type": "str",
+          "description": "Payment method from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "total_amount",
+          "type": "float",
+          "description": "Total amount calculated from items and inventory prices",
+          "source": "PlaceOrder (calculated)"
+        },
+        {
+          "name": "payments",
+          "type": "dict",
+          "description": "Global payments data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "payment_result",
+          "type": "dict",
+          "description": "Dict with success, payment_id, amount",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "signature": "def ChargePayment(payment_method: str, total_amount: float, payments: dict) -> dict"
+    },
+    {
+      "name": "ReserveInventory",
+      "purpose": "Reserve stock for each item in the order",
+      "behavior": "Updates inventory reserved_count for each product by the ordered quantity",
+      "boundary": {
+        "in_scope": [
+          "inventory reservation"
+        ],
+        "out_of_scope": [
+          "payment",
+          "order creation"
+        ]
+      },
+      "preconditions": [
+        "items validated",
+        "payment charged"
+      ],
+      "postconditions": [
+        "inventory reserved_count incremented for each item"
+      ],
+      "guarantees": [
+        "atomic update per product"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation",
+      "inputs": [
+        {
+          "name": "items",
+          "type": "list",
+          "description": "List of items with product_id and quantity",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "inventory",
+          "type": "dict",
+          "description": "Global inventory data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "reservation_result",
+          "type": "bool",
+          "description": "Boolean indicating success",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "signature": "def ReserveInventory(items: list, inventory: dict) -> bool"
+    },
+    {
+      "name": "CreateOrderRecord",
+      "purpose": "Create a new order record in the orders database",
+      "behavior": "Inserts order data with status 'placed' and timestamp into orders store",
+      "boundary": {
+        "in_scope": [
+          "order record creation"
+        ],
+        "out_of_scope": [
+          "inventory",
+          "payment"
+        ]
+      },
+      "preconditions": [
+        "payment charged",
+        "inventory reserved"
+      ],
+      "postconditions": [
+        "order record created with status 'placed'"
+      ],
+      "guarantees": [
+        "order_id is unique"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data insertion",
+      "inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order payload with items, payment_method, shipping_address",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "payment_id",
+          "type": "str",
+          "description": "Payment ID from ChargePayment",
+          "source": "PlaceOrder"
+        },
+        {
+          "name": "orders",
+          "type": "dict",
+          "description": "Global orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "order_id",
+          "type": "str",
+          "description": "Generated order ID",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "signature": "def CreateOrderRecord(order_data: dict, payment_id: str, orders: dict) -> str"
+    },
+    {
+      "name": "SendConfirmationNotification",
+      "purpose": "Send order confirmation notification to customer",
+      "behavior": "Sends email or push notification with order details",
+      "boundary": {
+        "in_scope": [
+          "notification sending"
+        ],
+        "out_of_scope": [
+          "data store updates"
+        ]
+      },
+      "preconditions": [
+        "order record created"
+      ],
+      "postconditions": [
+        "notification sent"
+      ],
+      "guarantees": [
+        "non-blocking if possible"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "External side effect",
+      "inputs": [
+        {
+          "name": "order_id",
+          "type": "str",
+          "description": "Order ID from CreateOrderRecord",
+          "source": "PlaceOrder"
+        },
+        {
+          "name": "shipping_address",
+          "type": "dict",
+          "description": "Shipping address from order_data",
+          "source": "parent input order_data"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "notification_result",
+          "type": "bool",
+          "description": "Boolean indicating success",
+          "consumer": "PlaceOrder"
+        }
+      ],
+      "signature": "def SendConfirmationNotification(order_id: str, shipping_address: dict) -> bool"
+    },
+    {
+      "name": "VerifyOrderExistsAndNotShipped",
+      "purpose": "Check that the order exists and has not been shipped",
+      "behavior": "Queries orders store for order_id, checks status is not 'shipped'",
+      "boundary": {
+        "in_scope": [
+          "order existence check",
+          "shipping status check"
+        ],
+        "out_of_scope": [
+          "refund",
+          "inventory restoration"
+        ]
+      },
+      "preconditions": [
+        "order_data contains order_id"
+      ],
+      "postconditions": [
+        "verification result returned"
+      ],
+      "guarantees": [
+        "read-only operation"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure query function",
+      "inputs": [
+        {
+          "name": "order_id",
+          "type": "str",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "orders",
+          "type": "dict",
+          "description": "Global orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "verification_result",
+          "type": "dict",
+          "description": "Dict with exists (bool), is_shipped (bool)",
+          "consumer": "CancelOrder"
+        }
+      ],
+      "signature": "def VerifyOrderExistsAndNotShipped(order_id: str, orders: dict) -> dict"
+    },
+    {
+      "name": "RefundPayment",
+      "purpose": "Refund the payment associated with the order",
+      "behavior": "Calls payment gateway to refund, updates payment record status to refunded",
+      "boundary": {
+        "in_scope": [
+          "payment refund",
+          "payment record update"
+        ],
+        "out_of_scope": [
+          "inventory",
+          "order status"
+        ]
+      },
+      "preconditions": [
+        "order exists and not shipped",
+        "payment exists for order"
+      ],
+      "postconditions": [
+        "payment refunded",
+        "payment record status updated"
+      ],
+      "guarantees": [
+        "payment gateway called exactly once"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with external dependency",
+      "inputs": [
+        {
+          "name": "order_id",
+          "type": "str",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "payments",
+          "type": "dict",
+          "description": "Global payments data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "refund_result",
+          "type": "bool",
+          "description": "Boolean indicating success",
+          "consumer": "CancelOrder"
+        }
+      ],
+      "signature": "def RefundPayment(order_id: str, payments: dict) -> bool"
+    },
+    {
+      "name": "RestoreInventory",
+      "purpose": "Restore reserved inventory for the cancelled order",
+      "behavior": "Decrements reserved_count for each item in the order",
+      "boundary": {
+        "in_scope": [
+          "inventory restoration"
+        ],
+        "out_of_scope": [
+          "payment",
+          "order status"
+        ]
+      },
+      "preconditions": [
+        "order exists and not shipped",
+        "payment refunded"
+      ],
+      "postconditions": [
+        "inventory reserved_count decremented for each item"
+      ],
+      "guarantees": [
+        "atomic update per product"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation",
+      "inputs": [
+        {
+          "name": "order_id",
+          "type": "str",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "orders",
+          "type": "dict",
+          "description": "Global orders data store to retrieve items",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "inventory",
+          "type": "dict",
+          "description": "Global inventory data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "restore_result",
+          "type": "bool",
+          "description": "Boolean indicating success",
+          "consumer": "CancelOrder"
+        }
+      ],
+      "signature": "def RestoreInventory(order_id: str, orders: dict, inventory: dict) -> bool"
+    },
+    {
+      "name": "UpdateOrderStatusToCancelled",
+      "purpose": "Update order status to 'cancelled'",
+      "behavior": "Sets order status to 'cancelled' in orders store",
+      "boundary": {
+        "in_scope": [
+          "order status update"
+        ],
+        "out_of_scope": [
+          "payment",
+          "inventory"
+        ]
+      },
+      "preconditions": [
+        "order exists and not shipped",
+        "payment refunded",
+        "inventory restored"
+      ],
+      "postconditions": [
+        "order status set to 'cancelled'"
+      ],
+      "guarantees": [
+        "status updated exactly once"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data mutation",
+      "inputs": [
+        {
+          "name": "order_id",
+          "type": "str",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "orders",
+          "type": "dict",
+          "description": "Global orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "update_result",
+          "type": "bool",
+          "description": "Boolean indicating success",
+          "consumer": "CancelOrder"
+        }
+      ],
+      "signature": "def UpdateOrderStatusToCancelled(order_id: str, orders: dict) -> bool"
+    },
+    {
+      "name": "GetOrderStatusAndDelivery",
+      "purpose": "Retrieve order status and estimate delivery time",
+      "behavior": "Queries orders store for status, calculates estimated delivery based on order creation time and shipping address",
+      "boundary": {
+        "in_scope": [
+          "status retrieval",
+          "delivery estimation"
+        ],
+        "out_of_scope": [
+          "modifications"
+        ]
+      },
+      "preconditions": [
+        "order exists"
+      ],
+      "postconditions": [
+        "status and delivery time returned"
+      ],
+      "guarantees": [
+        "read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Pure query function",
+      "inputs": [
+        {
+          "name": "order_id",
+          "type": "str",
+          "description": "Order ID from order_data",
+          "source": "parent input order_data"
+        },
+        {
+          "name": "orders",
+          "type": "dict",
+          "description": "Global orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "track_result",
+          "type": "dict",
+          "description": "Dict with status and estimated_delivery",
+          "consumer": "TrackOrder"
+        }
+      ],
+      "signature": "def GetOrderStatusAndDelivery(order_id: str, orders: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "command": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ],
+      "order_data": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ]
+    },
+    "parent_outputs_produced_by": {
+      "order_result": [
+        "PlaceOrder",
+        "CancelOrder",
+        "TrackOrder"
+      ]
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "PlaceOrder",
+      "to_input": "command",
+      "note": "Route to place handler"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "PlaceOrder",
+      "to_input": "order_data",
+      "note": "Pass order data"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "CancelOrder",
+      "to_input": "command",
+      "note": "Route to cancel handler"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "CancelOrder",
+      "to_input": "order_data",
+      "note": "Pass order data"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "command",
+      "to_node": "TrackOrder",
+      "to_input": "command",
+      "note": "Route to track handler"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "TrackOrder",
+      "to_input": "order_data",
+      "note": "Pass order data"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "items",
+      "to_node": "ValidateItems",
+      "to_input": "items",
+      "note": "Extract items from order_data"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "total_amount",
+      "to_node": "ChargePayment",
+      "to_input": "total_amount",
+      "note": "Calculated total"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "payment_id",
+      "to_node": "CreateOrderRecord",
+      "to_input": "payment_id",
+      "note": "Payment ID from charge"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "order_id",
+      "to_node": "SendConfirmationNotification",
+      "to_input": "order_id",
+      "note": "Order ID from creation"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_id",
+      "to_node": "VerifyOrderExistsAndNotShipped",
+      "to_input": "order_id",
+      "note": "Extract order_id from order_data"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_id",
+      "to_node": "RefundPayment",
+      "to_input": "order_id",
+      "note": "Extract order_id from order_data"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_id",
+      "to_node": "RestoreInventory",
+      "to_input": "order_id",
+      "note": "Extract order_id from order_data"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_id",
+      "to_node": "UpdateOrderStatusToCancelled",
+      "to_input": "order_id",
+      "note": "Extract order_id from order_data"
+    },
+    {
+      "from_node": "TrackOrder",
+      "from_output": "order_id",
+      "to_node": "GetOrderStatusAndDelivery",
+      "to_input": "order_id",
+      "note": "Extract order_id from order_data"
+    },
+    {
+      "from_node": "ValidateItems",
+      "from_output": "validation_result",
+      "to_node": "PlaceOrder",
+      "to_input": "validation_result",
+      "note": "Validation outcome"
+    },
+    {
+      "from_node": "ChargePayment",
+      "from_output": "payment_result",
+      "to_node": "PlaceOrder",
+      "to_input": "payment_result",
+      "note": "Payment outcome"
+    },
+    {
+      "from_node": "ReserveInventory",
+      "from_output": "reservation_result",
+      "to_node": "PlaceOrder",
+      "to_input": "reservation_result",
+      "note": "Reservation outcome"
+    },
+    {
+      "from_node": "CreateOrderRecord",
+      "from_output": "order_id",
+      "to_node": "PlaceOrder",
+      "to_input": "order_id",
+      "note": "Created order ID"
+    },
+    {
+      "from_node": "SendConfirmationNotification",
+      "from_output": "notification_result",
+      "to_node": "PlaceOrder",
+      "to_input": "notification_result",
+      "note": "Notification outcome"
+    },
+    {
+      "from_node": "VerifyOrderExistsAndNotShipped",
+      "from_output": "verification_result",
+      "to_node": "CancelOrder",
+      "to_input": "verification_result",
+      "note": "Verification outcome"
+    },
+    {
+      "from_node": "RefundPayment",
+      "from_output": "refund_result",
+      "to_node": "CancelOrder",
+      "to_input": "refund_result",
+      "note": "Refund outcome"
+    },
+    {
+      "from_node": "RestoreInventory",
+      "from_output": "restore_result",
+      "to_node": "CancelOrder",
+      "to_input": "restore_result",
+      "note": "Restore outcome"
+    },
+    {
+      "from_node": "UpdateOrderStatusToCancelled",
+      "from_output": "update_result",
+      "to_node": "CancelOrder",
+      "to_input": "update_result",
+      "note": "Update outcome"
+    },
+    {
+      "from_node": "GetOrderStatusAndDelivery",
+      "from_output": "track_result",
+      "to_node": "TrackOrder",
+      "to_input": "track_result",
+      "note": "Track outcome"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return result to parent"
+    },
+    {
+      "from_node": "TrackOrder",
+      "from_output": "order_result",
+      "to_node": "parent",
+      "to_input": "order_result",
+      "note": "Return result to parent"
+    }
+  ]
+}

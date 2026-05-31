@@ -1,0 +1,345 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Parse and validate the incoming JSON input to extract command and order data",
+      "behavior": "Parse the input JSON, validate its structure, and return the command and order_data fields",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "input validation",
+          "extraction of command and order_data"
+        ],
+        "out_of_scope": [
+          "Business logic",
+          "Data store access"
+        ]
+      },
+      "semantic_inputs": [
+        "input: Any - Raw JSON input from parent"
+      ],
+      "semantic_outputs": [
+        "command: str - The command string (place/cancel/track)",
+        "order_data: dict - The order data object"
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command and order_data are extracted"
+      ],
+      "guarantees": [
+        "Returns error if input is malformed"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "The command string (place/cancel/track)",
+          "consumer": "parent"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "The order data object",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseInput(input: Any) -> tuple[str, dict]"
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the place order operation",
+      "behavior": "Validate inventory, create order record, process payment, update inventory, and return order details",
+      "boundary": {
+        "in_scope": [
+          "Inventory check",
+          "Order creation",
+          "Payment processing",
+          "Inventory update"
+        ],
+        "out_of_scope": [
+          "Cancellation",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        "order_data: dict - Order details including items and payment info",
+        "orders: DataStore - Orders data store",
+        "inventory: DataStore - Inventory data store",
+        "payments: DataStore - Payments data store"
+      ],
+      "semantic_outputs": [
+        "result: dict - JSON with success, order_id, status, message"
+      ],
+      "preconditions": [
+        "Inventory sufficient",
+        "Payment valid"
+      ],
+      "postconditions": [
+        "Order created",
+        "Inventory decremented",
+        "Payment recorded"
+      ],
+      "guarantees": [
+        "Atomic operation"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order details including items and payment info",
+          "source": "parent input (via ParseOutput)"
+        },
+        {
+          "name": "orders",
+          "type": "DataStore",
+          "description": "Orders data store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "inventory",
+          "type": "DataStore",
+          "description": "Inventory data store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "payments",
+          "type": "DataStore",
+          "description": "Payments data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(order_data: dict, orders: DataStore, inventory: DataStore, payments: DataStore) -> dict"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the cancel order operation",
+      "behavior": "Check order status, cancel if not shipped, refund payment, restore inventory, and update order status",
+      "boundary": {
+        "in_scope": [
+          "Order status check",
+          "Cancellation",
+          "Payment refund",
+          "Inventory restoration"
+        ],
+        "out_of_scope": [
+          "Placing orders",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        "order_data: dict - Order ID and details",
+        "orders: DataStore - Orders data store",
+        "inventory: DataStore - Inventory data store",
+        "payments: DataStore - Payments data store"
+      ],
+      "semantic_outputs": [
+        "result: dict - JSON with success, order_id, status, message"
+      ],
+      "preconditions": [
+        "Order exists",
+        "Order not shipped"
+      ],
+      "postconditions": [
+        "Order cancelled",
+        "Payment refunded",
+        "Inventory restored"
+      ],
+      "guarantees": [
+        "Atomic operation",
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order ID and details",
+          "source": "parent input (via ParseOutput)"
+        },
+        {
+          "name": "orders",
+          "type": "DataStore",
+          "description": "Orders data store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "inventory",
+          "type": "DataStore",
+          "description": "Inventory data store",
+          "source": "internal leaf access"
+        },
+        {
+          "name": "payments",
+          "type": "DataStore",
+          "description": "Payments data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(order_data: dict, orders: DataStore, inventory: DataStore, payments: DataStore) -> dict"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute the track order operation",
+      "behavior": "Look up order by ID and return current status and details",
+      "boundary": {
+        "in_scope": [
+          "Order lookup",
+          "Status retrieval"
+        ],
+        "out_of_scope": [
+          "Placing orders",
+          "Cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        "order_data: dict - Order ID",
+        "orders: DataStore - Orders data store"
+      ],
+      "semantic_outputs": [
+        "result: dict - JSON with success, order_id, status, message"
+      ],
+      "preconditions": [
+        "Order exists"
+      ],
+      "postconditions": [
+        "Order status returned"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order ID",
+          "source": "parent input (via ParseOutput)"
+        },
+        {
+          "name": "orders",
+          "type": "DataStore",
+          "description": "Orders data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(order_data: dict, orders: DataStore) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseInput"
+    },
+    "parent_outputs_produced_by": {
+      "output": "TrackOrder"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseInput",
+      "to_input": "input",
+      "note": "Parent passes raw input to ParseInput for validation"
+    },
+    {
+      "from_node": "ParseInput",
+      "from_output": "command",
+      "to_node": "parent",
+      "to_input": "command",
+      "note": "ParseInput returns command to parent for routing"
+    },
+    {
+      "from_node": "ParseInput",
+      "from_output": "order_data",
+      "to_node": "parent",
+      "to_input": "order_data",
+      "note": "ParseInput returns order_data to parent for routing"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "PlaceOrder",
+      "to_input": "order_data",
+      "note": "Parent routes order_data to PlaceOrder when command is 'place'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "CancelOrder",
+      "to_input": "order_data",
+      "note": "Parent routes order_data to CancelOrder when command is 'cancel'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "TrackOrder",
+      "to_input": "order_data",
+      "note": "Parent routes order_data to TrackOrder when command is 'track'"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "PlaceOrder returns result to parent"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "CancelOrder returns result to parent"
+    },
+    {
+      "from_node": "TrackOrder",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "TrackOrder returns result to parent"
+    }
+  ]
+}

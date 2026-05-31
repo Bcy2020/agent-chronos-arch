@@ -1,0 +1,686 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Parse the incoming JSON input to extract the command type and parameters",
+      "behavior": "Extract command field from input JSON and validate its presence",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "command extraction"
+        ],
+        "out_of_scope": [
+          "command execution",
+          "data validation"
+        ]
+      },
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "command is one of the four allowed values"
+      ],
+      "guarantees": [
+        "Returns error if command missing or invalid"
+      ],
+      "composition_role": "transform",
+      "inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Raw JSON input from user containing command and parameters",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Parsed command string (send/history/create_channel/join)",
+          "consumer": "parent"
+        },
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Remaining parameters from input after extracting command",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(input: dict) -> tuple[str, dict]",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Input must be valid JSON"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Command field must be present and one of: send, history, create_channel, join"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid JSON with command field, returns command and params correctly"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given invalid JSON, returns error"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Given missing command field, returns error"
+        },
+        {
+          "ac_id": "AC-004",
+          "description": "Given invalid command value, returns error"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateSendMessage",
+      "purpose": "Validate send message request: check channel membership and message content",
+      "behavior": "Verify user is member of target channel and message is non-empty",
+      "boundary": {
+        "in_scope": [
+          "channel membership check",
+          "message content validation"
+        ],
+        "out_of_scope": [
+          "message storage",
+          "history retrieval"
+        ]
+      },
+      "preconditions": [
+        "params contain channel_id and message"
+      ],
+      "postconditions": [
+        "Returns true only if user is member and message non-empty"
+      ],
+      "guarantees": [
+        "Does not modify any data store"
+      ],
+      "composition_role": "validate",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_id, message, and user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "dict",
+          "description": "Channel data store for membership check",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validation_result",
+          "type": "bool",
+          "description": "Boolean indicating if send is allowed",
+          "consumer": "parent"
+        },
+        {
+          "name": "error_message",
+          "type": "str",
+          "description": "Error description if validation fails",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateSendMessage(params: dict, channels: dict) -> tuple[bool, str]",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Read channel data to check membership"
+        }
+      ],
+      "requested_capabilities": [
+        "channels.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "Must not modify channels data store"
+        },
+        {
+          "constraint_id": "C-004",
+          "description": "Message must be non-empty string"
+        },
+        {
+          "constraint_id": "C-005",
+          "description": "User must be member of the channel"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-005",
+          "description": "Given valid params and user is member, returns (True, '')"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "Given empty message, returns (False, error message)"
+        },
+        {
+          "ac_id": "AC-007",
+          "description": "Given user not member of channel, returns (False, error message)"
+        },
+        {
+          "ac_id": "AC-008",
+          "description": "Given non-existent channel, returns (False, error message)"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "StoreMessage",
+      "purpose": "Store a new message in the messages data store",
+      "behavior": "Append message with timestamp and user info to messages store",
+      "boundary": {
+        "in_scope": [
+          "message persistence",
+          "timestamp generation"
+        ],
+        "out_of_scope": [
+          "channel membership",
+          "history retrieval"
+        ]
+      },
+      "preconditions": [
+        "Validation passed",
+        "messages store is writable"
+      ],
+      "postconditions": [
+        "Message is appended to messages store"
+      ],
+      "guarantees": [
+        "Message is stored with unique id and current timestamp"
+      ],
+      "composition_role": "execute",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_id, message, and user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "messages",
+          "type": "list",
+          "description": "Messages data store for writing",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "stored_message",
+          "type": "dict",
+          "description": "The stored message object with id and timestamp",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def StoreMessage(params: dict, messages: list) -> dict",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "messages",
+          "operation_type": "write",
+          "description": "Append new message to messages store"
+        }
+      ],
+      "requested_capabilities": [
+        "messages.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-006",
+          "description": "Must generate unique message id"
+        },
+        {
+          "constraint_id": "C-007",
+          "description": "Must include current timestamp"
+        },
+        {
+          "constraint_id": "C-008",
+          "description": "Must not modify channels data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-009",
+          "description": "Given valid params, message is appended to messages store"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Stored message contains id, channel_id, user_id, message, timestamp fields"
+        },
+        {
+          "ac_id": "AC-011",
+          "description": "Message id is unique across all messages"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "RetrieveHistory",
+      "purpose": "Retrieve recent message history for a channel, limited to 100 messages",
+      "behavior": "Query messages store for channel_id, return last 100 messages in chronological order",
+      "boundary": {
+        "in_scope": [
+          "message retrieval",
+          "pagination (limit 100)"
+        ],
+        "out_of_scope": [
+          "message storage",
+          "channel creation"
+        ]
+      },
+      "preconditions": [
+        "channel_id is valid"
+      ],
+      "postconditions": [
+        "Returns array of messages sorted by timestamp"
+      ],
+      "guarantees": [
+        "Returns at most 100 messages"
+      ],
+      "composition_role": "query",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_id",
+          "source": "parent input"
+        },
+        {
+          "name": "messages",
+          "type": "list",
+          "description": "Messages data store for reading",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "history",
+          "type": "list",
+          "description": "Array of up to 100 message objects",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RetrieveHistory(params: dict, messages: list) -> list",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "messages",
+          "operation_type": "read",
+          "description": "Read messages for given channel"
+        }
+      ],
+      "requested_capabilities": [
+        "messages.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-009",
+          "description": "Must not modify any data store"
+        },
+        {
+          "constraint_id": "C-010",
+          "description": "Must return at most 100 messages"
+        },
+        {
+          "constraint_id": "C-011",
+          "description": "Must return messages sorted by timestamp ascending"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-012",
+          "description": "Given valid channel_id, returns messages for that channel"
+        },
+        {
+          "ac_id": "AC-013",
+          "description": "Returns at most 100 messages"
+        },
+        {
+          "ac_id": "AC-014",
+          "description": "Messages are sorted by timestamp ascending"
+        },
+        {
+          "ac_id": "AC-015",
+          "description": "Given non-existent channel_id, returns empty list"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel in the channels data store",
+      "behavior": "Add new channel entry with unique id and name, initialize member list with creator",
+      "boundary": {
+        "in_scope": [
+          "channel creation",
+          "member initialization"
+        ],
+        "out_of_scope": [
+          "message storage",
+          "history retrieval"
+        ]
+      },
+      "preconditions": [
+        "channel_name is non-empty and unique"
+      ],
+      "postconditions": [
+        "New channel exists in channels store"
+      ],
+      "guarantees": [
+        "Creator is added as first member"
+      ],
+      "composition_role": "execute",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_name and creator_user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "dict",
+          "description": "Channels data store for writing",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "created_channel",
+          "type": "dict",
+          "description": "The new channel object with id and members",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CreateChannel(params: dict, channels: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "write",
+          "description": "Add new channel to channels store"
+        }
+      ],
+      "requested_capabilities": [
+        "channels.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-012",
+          "description": "Channel name must be non-empty"
+        },
+        {
+          "constraint_id": "C-013",
+          "description": "Channel name must be unique"
+        },
+        {
+          "constraint_id": "C-014",
+          "description": "Must generate unique channel id"
+        },
+        {
+          "constraint_id": "C-015",
+          "description": "Creator must be added as first member"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-016",
+          "description": "Given valid params, new channel is created in channels store"
+        },
+        {
+          "ac_id": "AC-017",
+          "description": "Created channel contains id, name, members fields"
+        },
+        {
+          "ac_id": "AC-018",
+          "description": "Creator is included in members list"
+        },
+        {
+          "ac_id": "AC-019",
+          "description": "Given duplicate channel name, returns error"
+        },
+        {
+          "ac_id": "AC-020",
+          "description": "Given empty channel name, returns error"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-005"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Add a user to an existing channel's member list",
+      "behavior": "Update channels store to include user_id in channel's members array",
+      "boundary": {
+        "in_scope": [
+          "membership update"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "message operations"
+        ]
+      },
+      "preconditions": [
+        "channel exists and user not already member"
+      ],
+      "postconditions": [
+        "User is added to channel's member list"
+      ],
+      "guarantees": [
+        "Does not duplicate membership"
+      ],
+      "composition_role": "mutate",
+      "inputs": [
+        {
+          "name": "params",
+          "type": "dict",
+          "description": "Contains channel_id and user_id",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "type": "dict",
+          "description": "Channels data store for reading and writing",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "join_result",
+          "type": "bool",
+          "description": "Boolean indicating success",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def JoinChannel(params: dict, channels: dict) -> bool",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read_write",
+          "description": "Read channel data and update member list"
+        }
+      ],
+      "requested_capabilities": [
+        "channels.read",
+        "channels.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-016",
+          "description": "Channel must exist"
+        },
+        {
+          "constraint_id": "C-017",
+          "description": "User must not already be a member"
+        },
+        {
+          "constraint_id": "C-018",
+          "description": "Must not modify messages data store"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-021",
+          "description": "Given valid params and channel exists, user is added to member list"
+        },
+        {
+          "ac_id": "AC-022",
+          "description": "Given non-existent channel, returns False"
+        },
+        {
+          "ac_id": "AC-023",
+          "description": "Given user already member, returns False"
+        },
+        {
+          "ac_id": "AC-024",
+          "description": "Does not create duplicate membership"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-006"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Format the final output JSON with success status, data, and message",
+      "behavior": "Construct response object based on command execution result",
+      "boundary": {
+        "in_scope": [
+          "response formatting"
+        ],
+        "out_of_scope": [
+          "command execution",
+          "data validation"
+        ]
+      },
+      "preconditions": [
+        "success, data, message are provided"
+      ],
+      "postconditions": [
+        "Output is valid JSON with expected structure"
+      ],
+      "guarantees": [
+        "Response always contains success, data, message fields"
+      ],
+      "composition_role": "aggregate",
+      "inputs": [
+        {
+          "name": "success",
+          "type": "bool",
+          "description": "Boolean indicating operation success",
+          "source": "parent input"
+        },
+        {
+          "name": "data",
+          "type": "any",
+          "description": "Result data from command execution",
+          "source": "parent input"
+        },
+        {
+          "name": "message",
+          "type": "str",
+          "description": "Human-readable status message",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "dict",
+          "description": "Formatted JSON response with success, data, message fields",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def FormatResponse(success: bool, data: any, message: str) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-019",
+          "description": "Output must be valid JSON"
+        },
+        {
+          "constraint_id": "C-020",
+          "description": "Output must contain success, data, message fields"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-025",
+          "description": "Given success=True, data, message, returns JSON with success: true"
+        },
+        {
+          "ac_id": "AC-026",
+          "description": "Given success=False, data, message, returns JSON with success: false"
+        },
+        {
+          "ac_id": "AC-027",
+          "description": "Output always contains success, data, message fields"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-007"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children are pure functions or atomic operations. Data store access is limited to read/write as specified. No child has global variables. The parent orchestrator is responsible for routing data between children and managing the overall flow. Each child's data operations are scoped to only the data stores they need, and no child accesses data stores unnecessarily."
+}

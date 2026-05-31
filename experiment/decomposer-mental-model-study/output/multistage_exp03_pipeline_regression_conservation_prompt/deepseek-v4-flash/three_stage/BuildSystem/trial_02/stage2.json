@@ -1,0 +1,332 @@
+{
+  "children": [
+    {
+      "name": "ValidateBuildRequest",
+      "purpose": "Validate the build_request JSON for required fields and business rules",
+      "behavior": "Check action is one of trigger/status/list/cancel; for trigger, ensure repo and config.build_steps present; for status/cancel, ensure build_id present; check repo+branch uniqueness for trigger",
+      "boundary": {
+        "in_scope": [
+          "validation of input fields",
+          "uniqueness check for trigger"
+        ],
+        "out_of_scope": [
+          "executing any build action",
+          "modifying state"
+        ]
+      },
+      "preconditions": [
+        "build_request is a dict"
+      ],
+      "postconditions": [
+        "If valid, validated_request contains all required fields with defaults"
+      ],
+      "guarantees": [
+        "No side effects on data stores"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "build_request",
+          "type": "dict",
+          "description": "Input JSON with action and parameters",
+          "source": "parent input"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validated_request",
+          "type": "dict",
+          "description": "Validated request with defaults applied",
+          "consumer": "parent"
+        },
+        {
+          "name": "validation_error",
+          "type": "str",
+          "description": "Error message if validation fails",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateBuildRequest(build_request: dict) -> dict"
+    },
+    {
+      "name": "RouteAction",
+      "purpose": "Route the validated request to the appropriate action handler based on action field",
+      "behavior": "Examine action field and call the corresponding child function: TriggerBuild, CheckBuildStatus, ListBuildHistory, or CancelBuild",
+      "boundary": {
+        "in_scope": [
+          "dispatching to action-specific functions"
+        ],
+        "out_of_scope": [
+          "performing the actual action logic"
+        ]
+      },
+      "preconditions": [
+        "validated_request has a valid action"
+      ],
+      "postconditions": [
+        "One child function is invoked"
+      ],
+      "guarantees": [
+        "No side effects beyond calling the child"
+      ],
+      "composition_role": "decide",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validated_request",
+          "type": "dict",
+          "description": "Validated build request with action",
+          "source": "ValidateBuildRequest output"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "action_result",
+          "type": "dict",
+          "description": "Result from the executed action",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RouteAction(validated_request: dict) -> dict"
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Execute a new build: create record, run compile, run test, package artifacts, update status",
+      "behavior": "Create build record in builds store with status 'running'; run compile steps; run test steps; package artifacts; update status to 'completed' or 'failed'; store logs incrementally",
+      "boundary": {
+        "in_scope": [
+          "build record creation",
+          "compilation",
+          "testing",
+          "artifact packaging",
+          "log storage"
+        ],
+        "out_of_scope": [
+          "validation",
+          "cancellation",
+          "listing"
+        ]
+      },
+      "preconditions": [
+        "No running build for same repo+branch"
+      ],
+      "postconditions": [
+        "Build record created and updated with final status",
+        "Logs stored incrementally",
+        "Artifacts stored if build succeeded"
+      ],
+      "guarantees": [
+        "Only one build per repo+branch runs at a time"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validated_request",
+          "type": "dict",
+          "description": "Request with repo, branch, config.build_steps",
+          "source": "RouteAction"
+        },
+        {
+          "name": "builds",
+          "type": "Database",
+          "description": "Build records store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "Result with success, build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TriggerBuild(validated_request: dict, builds: Database) -> dict"
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Return current status and logs for a given build_id",
+      "behavior": "Look up build record by build_id in builds store; return status and logs",
+      "boundary": {
+        "in_scope": [
+          "reading build record",
+          "returning status and logs"
+        ],
+        "out_of_scope": [
+          "modifying state",
+          "triggering builds"
+        ]
+      },
+      "preconditions": [
+        "build_id exists in builds store"
+      ],
+      "postconditions": [
+        "No state changes"
+      ],
+      "guarantees": [
+        "Returns current status and logs"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validated_request",
+          "type": "dict",
+          "description": "Request with build_id",
+          "source": "RouteAction"
+        },
+        {
+          "name": "builds",
+          "type": "Database",
+          "description": "Build records store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "Result with success, build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CheckBuildStatus(validated_request: dict, builds: Database) -> dict"
+    },
+    {
+      "name": "ListBuildHistory",
+      "purpose": "Return all builds filtered by repo/branch/status",
+      "behavior": "Query builds store with optional filters from request; return list of build records",
+      "boundary": {
+        "in_scope": [
+          "filtering builds by repo, branch, status"
+        ],
+        "out_of_scope": [
+          "modifying state",
+          "single build status"
+        ]
+      },
+      "preconditions": [
+        "None"
+      ],
+      "postconditions": [
+        "No state changes"
+      ],
+      "guarantees": [
+        "Returns filtered list of builds"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validated_request",
+          "type": "dict",
+          "description": "Request with optional repo, branch, status filters",
+          "source": "RouteAction"
+        },
+        {
+          "name": "builds",
+          "type": "Database",
+          "description": "Build records store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "Result with success, list of builds",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ListBuildHistory(validated_request: dict, builds: Database) -> dict"
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build: stop execution, update status to 'cancelled'",
+      "behavior": "Look up build by build_id; if status is 'running', update status to 'cancelled' and stop any ongoing processes; if already completed, no-op",
+      "boundary": {
+        "in_scope": [
+          "cancelling running builds",
+          "status update"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "listing"
+        ]
+      },
+      "preconditions": [
+        "build_id exists in builds store"
+      ],
+      "postconditions": [
+        "If build was running, status changed to 'cancelled'"
+      ],
+      "guarantees": [
+        "Cancelling a completed build is a no-op"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "inputs": [
+        {
+          "name": "validated_request",
+          "type": "dict",
+          "description": "Request with build_id",
+          "source": "RouteAction"
+        },
+        {
+          "name": "builds",
+          "type": "Database",
+          "description": "Build records store",
+          "source": "internal leaf access"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "Result with success, build_id, status",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelBuild(validated_request: dict, builds: Database) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "build_request": "ValidateBuildRequest"
+    },
+    "parent_outputs_produced_by": {
+      "build_result": "TriggerBuild, CheckBuildStatus, ListBuildHistory, CancelBuild"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "build_request",
+      "to_node": "ValidateBuildRequest",
+      "to_input": "build_request",
+      "note": "initial input validation"
+    },
+    {
+      "from_node": "ValidateBuildRequest",
+      "from_output": "validated_request",
+      "to_node": "RouteAction",
+      "to_input": "validated_request",
+      "note": "pass validated request for routing"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "action_result",
+      "to_node": "parent",
+      "to_input": "build_result",
+      "note": "return action result to parent"
+    }
+  ]
+}
