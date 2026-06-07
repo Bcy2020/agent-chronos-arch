@@ -1,0 +1,1086 @@
+"""
+CodeGenerator LLM: Generates Python code for a node.
+- For parent nodes: composes child node interfaces
+- For leaf nodes: generates complete implementation
+- For leaf nodes with granted capabilities: uses interface-based prompt
+"""
+import json
+import re
+from typing import Any, Dict, List, Optional, Tuple
+
+from config import Config
+from api_client import APIClient
+from models import Node, ChildContract, SubPRD, CapabilityGrant, InterfacePlan, InterfaceSpec, CompositionFeedback, DataflowEdge
+
+
+class CodeGenerator:
+    def __init__(self, config: Config, api_client: APIClient):
+        self.config = config
+        self.api_client = api_client
+        self._interface_map: Dict[str, InterfaceSpec] = {}
+        self._resource_schemas: Dict[str, Dict[str, Any]] = {}
+        self.last_composition_feedback: Optional[CompositionFeedback] = None
+    
+    def _build_system_prompt_for_parent(self) -> str:
+        return """You are a decomposition verifier. Your role is to verify that a parent function CAN be correctly implemented by composing its child functions — and if so, to generate the implementation code. Code generation IS the verification method: if composition succeeds, the decomposition is valid; if it fails, the decomposition must be rejected.
+
+WORKFLOW:
+
+STAGE 1 — TREE STRUCTURE REVIEW (before writing any code):
+
+First, verify the decomposition satisfies tree structure constraints. These are non-negotiable structural rules:
+
+TREE STRUCTURE RULES:
+1. **Child independence**: Each child node is an independent function. A child must NOT call, reference, or depend on any sibling node.
+2. **Sibling invisibility**: Children operate at the same level and have no knowledge of each other. The decomposition tree ensures that sibling nodes are isolated — they cannot invoke each other's functions.
+3. **Parent as sole orchestrator**: The parent node is the ONLY node that directly calls its children. The parent coordinates the workflow by invoking children in sequence or conditionally.
+4. **Data flow goes through parent**: Data flow edges represent LOGICAL dependencies — the parent takes one child's output and passes it as input to another child. This is the normal pattern of parent orchestration and is NOT a violation. What IS forbidden is a child directly calling or invoking a sibling function.
+
+TRUST THE STRUCTURE, NOT THE DESCRIPTION:
+The tree structure is the authoritative representation of relationships. Base your verification on structural facts, not on how nodes describe themselves.
+- Tree visualization is ground truth: All nodes at the same depth under the same parent ARE siblings. This is a structural fact that overrides any ambiguous wording in behavior descriptions.
+- Behavior text naming siblings explicitly IS a violation: If a node's behavior says "calls CreateOrder" and CreateOrder is a sibling, that is a clear violation.
+- Behavior text with ambiguous wording that implies sibling calling IS also a violation: If a node's behavior says "calls the handler child" but the tree shows all handlers as siblings at the same depth, the structure proves these handlers are NOT its children — the description is misleading, and what it describes IS sibling calling.
+- Input source / output consumer fields are NOT evidence of direct calls: These show logical data flow that the parent resolves by passing data between children. Do not flag them.
+- Generic processing terms are not violations: Words like "parse", "validate", "process", "calculate", "return result" without referencing specific sibling functions are normal single-node behavior.
+
+DO NOT TRUST THE DECOMPOSER'S DESCRIPTION:
+If a node's behavior describes calling or invoking other sibling nodes, that IS a violation regardless of how the decomposer frames it. The decomposer's narrative does not override structural reality.
+
+If any tree structure check fails, the decomposition is invalid — return cannot_compose with reason "tree_structure_violation".
+
+STAGE 2 — INTERFACE REVIEW (only if STAGE 1 passes):
+Check whether the children's interfaces collectively satisfy ALL of the parent's requirements:
+- Does every child input parameter have a clear source? (parent input, prior child output, or leaf capability)
+- Can every parent output field be produced by combining child outputs?
+- Is every needed data access covered by at least one child?
+- Do the child signatures fit together without type mismatches?
+If any check fails, the decomposition is invalid — return cannot_compose.
+
+STAGE 2.5 — DATAFLOW EDGE CONFORMANCE (authoritative):
+Check that the declared dataflow edges can be realized with the given child signatures:
+- For each edge where from_node is a child and to_node is "parent": the child must have a matching output.
+- For each edge where from_node is "parent" and to_node is a child: the child must have a matching input.
+- For each child-to-child data dependency (from_node=ChildA, to_node=ChildB): the parent must mediate — the parent calls ChildA, stores its output, then passes it to ChildB. If the child signatures make this impossible, return cannot_compose.
+Do NOT infer hidden routing from child names such as Route*, Dispatch*, Handler*, or Validate*; use the structured dataflow edges.
+
+STAGE 3 — IMPLEMENT (only if STAGE 1, STAGE 2, and STAGE 2.5 pass):
+Write the parent function by composing child calls. Rules:
+1. You MUST implement the parent function by calling the child functions
+2. Child functions are NOT implemented yet - you only have their interfaces
+3. Use the child function signatures exactly as provided
+4. The parent function's inputs/outputs must match the specification
+5. You may use: conditionals, loops, local variables, helper logic
+6. DO NOT directly read or write global state - delegate ALL data operations to child functions
+7. Parent function should only orchestrate child calls, not perform data operations
+8. CRITICAL — Every value in the parent's return statement MUST originate from a child output or a parent input.
+   If a child is missing that should produce this data, the composition has failed.
+9. CRITICAL — For each declared dataflow edge, the parent must realize the transfer:
+   - If edge says ChildA.output -> parent.var, assign ChildA's output to parent.var
+   - If edge says parent.var -> ChildB.input, pass parent.var to ChildB's input
+   - If edge says ChildA.output -> ChildB.input, pass ChildA's output through parent to ChildB
+
+SIGNATURE ENFORCEMENT - YOUR FUNCTION SIGNATURE IS LOCKED:
+- Your function's parameter names, types, and return type are specified and non-negotiable
+- The signature shown in the user prompt is the EXACT contract the caller expects
+- Do NOT add, remove, or rename parameters
+- Do NOT change parameter types or return type
+- The verifier strictly checks signature compliance
+
+DATA SOURCE OPERATIONS:
+- Each child has declared data_operations that specify which data source it operates on
+- The parent must NOT directly access any data source - only children can do that
+- If you need to read/write data, ensure a child is responsible for it
+
+The code you generate will be validated:
+- It must be syntactically correct Python
+- It must use the child function interfaces correctly
+- It must NOT directly read/write any data source (only through child calls)
+- It must preserve the parent's input/output contract
+- It must realize every declared dataflow edge
+
+Return ONLY valid JSON with this structure:
+{
+  "code": "def parent_function(...):\\n    ...",
+  "status": "ok | cannot_compose",
+  "imports": ["import os", "from typing import ..."],
+  "child_calls": ["child1", "child2"],
+  "implementation_notes": "Brief explanation of the logic",
+  "decomposition_feedback": {
+    "reason": "tree_structure_violation | missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | dataflow_conformance_failure | other",
+    "offending_child": "ChildName or empty",
+    "violations": [
+      {
+        "from_node": "name of node that violates",
+        "to_node": "name of node being called/referenced",
+        "rule": "which rule is violated",
+        "details": "why this is a violation"
+      }
+    ],
+    "missing_inputs": [
+      {
+        "child": "ChildName",
+        "param": "param_name",
+        "why_needed": "why this input is needed",
+        "expected_source": "parent input / previous child output / new child output"
+      }
+    ],
+    "direct_resource_accesses": [
+      {
+        "resource": "resource_name",
+        "operation": "read",
+        "why_needed": "why this resource access is needed"
+      }
+    ],
+    "suggested_fix": "Concrete suggestion for re-decomposition",
+    "requires_redecomposition": true
+  }
+}"""
+
+    def _build_system_prompt_for_parent_verify(self) -> str:
+        return """You are a senior code reviewer examining a code submission. The code below was written by another developer. Your job is to review whether the submitted parent function correctly uses the declared child functions — and based on that, judge whether the decomposition (the set of children) is valid.
+
+The decomposition declares a set of child functions. The parent function is supposed to call EACH child directly. Review the code carefully: if any child's name never appears as a DIRECT call in the parent code, the decomposition is INVALID — those children are not actually composed into the parent.
+
+REVIEW CHECKLIST — examine the code and the children list together:
+
+1. RETURN VALUE ORIGIN — Trace every value in every return statement. Each business value must originate from a child function's output or a parent function's input. Acceptable origins include:
+   - A variable assigned from a child call: rows = RunQuery(...)
+   - A field extracted from a child result: user_id = transaction["user_id"]
+   - A parent input parameter: amount, service, etc.
+   - A computation from parent inputs: len(content), quantity * 2
+
+   A return value that is a literal (None, True, False, a quoted string, a number, an empty list [], an empty dict {}) is a VIOLATION if it represents data that should come from a child.
+
+2. CHILD COVERAGE — Compare the children list against the actual code. EVERY child's function name must appear as a direct call site in the parent code. If child names are missing from the code (not called by the parent), that is a FAIL — the decomposition claims these children are needed but the parent doesn't use them.
+
+3. DIRECT ACCESS — The code must NOT directly read or write any global variable or data source. All data operations must go through child function calls.
+
+4. NO CROSS CALLS (TREE STRUCTURE) — The decomposition is a tree, not a graph. Each child should only be called by the parent. If the code shows one child calling another child, that is a tree structure violation — siblings do not call each other.
+
+5. DECLARED DATAFLOW CONFORMANCE — Verify that generated code realizes every declared dataflow edge. For child-to-child data dependency, parent must mediate the transfer. If code uses a different source for a child input than the declared edge requires, return cannot_compose with reason "dataflow_conformance_failure".
+
+If ANY check fails, return status="cannot_compose" with detailed feedback and list which checks failed in failed_checks.
+If ALL checks pass, return status="ok" with empty checks marked passed.
+
+Return ONLY valid JSON with this structure:
+{
+  "status": "ok | cannot_compose",
+  "checks": {
+    "return_value_origin": {"detail": "explanation of the verdict", "passed": true},
+    "child_coverage": {"detail": "explanation of the verdict", "passed": true},
+    "no_direct_access": {"detail": "explanation of the verdict", "passed": true},
+    "no_cross_calls": {"detail": "explanation of the verdict", "passed": true},
+    "dataflow_conformance": {"detail": "explanation of the verdict", "passed": true}
+  },
+  "decomposition_feedback": {
+    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | dataflow_conformance_failure | other",
+    "offending_child": "ChildName or empty",
+    "failed_checks": ["return_value_origin", "child_coverage"],
+    "missing_inputs": [
+      {
+        "child": "ChildName",
+        "param": "param_name",
+        "why_needed": "why this input is needed",
+        "expected_source": "parent input / previous child output / new child output"
+      }
+    ],
+    "direct_resource_accesses": [
+      {
+        "resource": "resource_name",
+        "operation": "read",
+        "why_needed": "why this resource access is needed"
+      }
+    ],
+    "suggested_fix": "Concrete suggestion for re-decomposition",
+    "requires_redecomposition": true
+  }
+}"""
+
+    def _build_system_prompt_for_leaf(self) -> str:
+        return """You are a Python code generator. Your task is to implement a complete function.
+
+CRITICAL RULES:
+1. Generate a complete, working implementation
+2. Use standard Python libraries (os, json, datetime, typing, etc.)
+3. Handle edge cases and errors appropriately
+4. Follow the function's purpose and behavior specification
+5. If this node has data_operations, you are responsible for performing them on the specified data source
+6. Use the declared data source operations EXACTLY as specified - do not invent new operations
+
+SIGNATURE ENFORCEMENT - YOUR FUNCTION SIGNATURE IS LOCKED:
+- Your function's parameter names, types, and return type are specified and non-negotiable
+- The signature shown in the user prompt is the EXACT contract the parent expects
+- Do NOT add, remove, or rename parameters
+- Do NOT change parameter types or return type
+- The verifier strictly checks signature compliance
+
+DATA SOURCE OPERATIONS:
+- If data_operations are declared, you MUST perform them on the specified data source
+- Only use the allowed operations (read, write, read_write) for each data source
+- Access the global variable using its declared name
+- The data type tells you how to structure the data (dict, list, object, etc.)
+
+The code you generate will be validated:
+- It must be syntactically correct Python
+- It must match the specified inputs/outputs
+- It must perform only the declared data operations
+- It should handle the described behavior
+
+Return ONLY valid JSON with this structure:
+{
+  "code": "def function_name(...):\\n    ...",
+  "imports": ["import os", "from typing import ..."],
+  "dependencies": ["os", "json"],
+  "implementation_notes": "Brief explanation"
+}"""
+    
+    def _build_user_prompt_for_parent(
+        self,
+        node: Node,
+        previous_errors: List[str] = None,
+        previous_code: str = None
+    ) -> str:
+        lines = [
+            f"Implement the parent function by composing its child functions.",
+            f"You MUST implement this as a single function, NOT a class.",
+            f"",
+            f"=" * 60,
+            f"PARENT FUNCTION",
+            f"=" * 60,
+            f"Name: {node.name}",
+            f"Purpose: {node.purpose}",
+        ]
+
+        # Add parent SubPRD information if available
+        if node.subprd:
+            if node.subprd.description:
+                lines.append(f"")
+                lines.append(f"Parent Task Description:")
+                for line in node.subprd.description.split("\n"):
+                    lines.append(f"  {line}")
+            if node.subprd.constraints:
+                lines.append(f"")
+                lines.append(f"Parent Constraints:")
+                for c in node.subprd.constraints:
+                    lines.append(f"  - {c}")
+            if node.subprd.global_state_operations:
+                lines.append(f"")
+                lines.append(f"Parent Global State Operations:")
+                for op in node.subprd.global_state_operations:
+                    lines.append(f"  - {op.op_type} on {op.source_id}: {op.op_id}")
+                    if op.target:
+                        lines.append(f"    Target: {op.target}")
+            if node.subprd.traceability.parent_requirement_ids:
+                lines.append(f"")
+                lines.append(f"Parent Traces to: {', '.join(node.subprd.traceability.parent_requirement_ids)}")
+
+        lines.append(f"")
+        lines.append(f"Parent Inputs:")
+
+        for inp in node.inputs:
+            lines.append(f"  - {inp.name}: {inp.type} - {inp.description}")
+
+        lines.append(f"Parent Outputs:")
+        for out in node.outputs:
+            lines.append(f"  - {out.name}: {out.type} - {out.description}")
+
+        if node.data_sources:
+            lines.append(f"")
+            lines.append(f"Data Sources (Available Data Stores):")
+            for ds in node.data_sources:
+                lines.append(f"  - {ds.name} ({ds.category}, {ds.access})")
+                lines.append(f"    Type: {ds.data_type}")
+                lines.append(f"    Description: {ds.description}")
+
+        if node.global_vars:
+            lines.append(f"")
+            lines.append(f"Global Variables:")
+            for gv in node.global_vars:
+                lines.append(f"  - {gv.op} on {gv.variable}: {gv.description}")
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"CHILDREN - INTERFACES AND DATA OPERATIONS")
+        lines.append(f"=" * 60)
+
+        if node.decomposition_rationale:
+            lines.append(f"")
+            lines.append(f"SUPPLEMENTARY RATIONALE (non-authoritative)")
+            lines.append(f"Use this only as explanatory context. If it conflicts with DECLARED DATAFLOW EDGES, follow the structured dataflow edges.")
+            lines.append(f"{node.decomposition_rationale}")
+
+        lines.append(f"")
+        lines.append(f"Child Functions (interfaces only, not implemented):")
+
+        # Use node.children to access child Node objects for SubPRD info
+        for child in (node.children or []):
+            contract = node.children_contracts.get(child.name)
+            if contract:
+                lines.append(f"")
+                lines.append(f"  [{child.name}]")
+                lines.append(f"    Purpose: {contract.purpose}")
+                lines.append(f"    Behavior: {contract.behavior}")
+
+                if contract.signature:
+                    lines.append(f"    Signature: {contract.signature}")
+                else:
+                    inputs_str = ", ".join([f"{i.name}: {i.type}" for i in contract.inputs])
+                    outputs_str = ", ".join([o.type for o in contract.outputs]) if contract.outputs else "None"
+                    lines.append(f"    Signature: def {child.name}({inputs_str}) -> {outputs_str}")
+
+                if contract.inputs:
+                    lines.append(f"    Inputs:")
+                    for inp in contract.inputs:
+                        source = inp.source if inp.source else "unspecified"
+                        lines.append(f"      - {inp.name}: {inp.type} (source: {source}) - {inp.description}")
+
+                if contract.outputs:
+                    lines.append(f"    Outputs:")
+                    for out in contract.outputs:
+                        consumer = out.consumer if out.consumer else "unspecified"
+                        lines.append(f"      - {out.name}: {out.type} (consumer: {consumer}) - {out.description}")
+
+                if contract.data_operations:
+                    lines.append(f"    Data Operations:")
+                    for op in contract.data_operations:
+                        lines.append(f"      - {op.source_name}: {op.operation_type} ({op.description})")
+
+                if contract.preconditions:
+                    lines.append(f"    Preconditions: {contract.preconditions}")
+                if contract.postconditions:
+                    lines.append(f"    Postconditions: {contract.postconditions}")
+
+            # Add child SubPRD information
+            if child.subprd:
+                if child.subprd.global_state_operations:
+                    for op in child.subprd.global_state_operations:
+                        lines.append(f"    State Op: {op.op_type} on {op.source_id}")
+                if child.subprd.acceptance_criteria:
+                    for ac in child.subprd.acceptance_criteria:
+                        lines.append(f"    Acceptance: {ac.description}")
+                if child.subprd.traceability and child.subprd.traceability.parent_requirement_ids:
+                    lines.append(f"    Traces: {', '.join(child.subprd.traceability.parent_requirement_ids)}")
+
+        if node.global_vars:
+            lines.append(f"")
+            lines.append(f"Global Variables:")
+            for gv in node.global_vars:
+                lines.append(f"  - {gv.op} on {gv.variable}: {gv.description}")
+
+        # Add structured dataflow edges — AUTHORITATIVE
+        dataflow_section = self._build_dataflow_edges_table(node)
+        if dataflow_section:
+            lines.append(dataflow_section)
+
+        if previous_errors:
+            lines.append(f"")
+            lines.append(f"=" * 60)
+            lines.append(f"PREVIOUS CODE GENERATION FAILED WITH THESE ERRORS:")
+            lines.append(f"=" * 60)
+            for err in previous_errors:
+                lines.append(f"  - {err}")
+            if previous_code:
+                lines.append(f"")
+                lines.append(f"PREVIOUS CODE (please fix):")
+                lines.append(f"```python")
+                for line in previous_code.strip().split("\n"):
+                    lines.append(f"  {line}")
+                lines.append(f"```")
+            lines.append(f"Please fix these issues in your new code.")
+
+        schema_ref = self._build_schema_reference()
+        if schema_ref:
+            lines.append(schema_ref)
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"PARENT-MEDIATED COMPOSITION RULES")
+        lines.append(f"=" * 60)
+        lines.append(f"- The parent is the only composition coordinator.")
+        lines.append(f"- If a dataflow edge says ChildA -> ChildB, implement it as parent-mediated transfer.")
+        lines.append(f"- A child must not call a sibling.")
+        lines.append(f"- If the declared dataflow cannot be implemented with the declared child signatures, return cannot_compose.")
+        lines.append(f"- Do not infer hidden routing from child names; use the structured dataflow edges.")
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"INTERFACE ENFORCEMENT - LOCKED SIGNATURE")
+        lines.append(f"=" * 60)
+        lines.append(f"Your exact function signature is LOCKED and MUST be:")
+        lines.append(f"  {node.get_interface_signature()}")
+        lines.append(f"Do NOT change parameter names, types, or return type.")
+        lines.append(f"Adding, removing, or renaming parameters will cause verification failure.")
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"IMPLEMENTATION REQUIREMENTS")
+        lines.append(f"=" * 60)
+        lines.append(f"1. Generate ONLY a function definition, no classes")
+        lines.append(f"2. Call the child functions with correct arguments")
+        lines.append(f"3. Handle the return values from child functions")
+        lines.append(f"4. Return a result that matches the parent outputs")
+        lines.append(f"5. Realize every declared dataflow edge through parent-mediated transfer")
+        lines.append(f"")
+
+        return "\n".join(lines)
+
+    def _build_user_prompt_for_parent_verify(
+        self,
+        node: Node,
+        code: str
+    ) -> str:
+        lines = [
+            f"Review the submitted code below. This code was written by another developer.",
+            f"",
+            f"=" * 60,
+            f"SUBMITTED PARENT FUNCTION",
+            f"=" * 60,
+            f"Name: {node.name}",
+            f"Purpose: {node.purpose}",
+            f"",
+            f"Parent Inputs:",
+        ]
+        for inp in node.inputs:
+            lines.append(f"  - {inp.name}: {inp.type} - {inp.description}")
+        lines.append(f"Parent Outputs:")
+        for out in node.outputs:
+            lines.append(f"  - {out.name}: {out.type} - {out.description}")
+
+        if node.data_sources:
+            lines.append(f"")
+            lines.append(f"Data Sources:")
+            for ds in node.data_sources:
+                lines.append(f"  - {ds.name} ({ds.category}, {ds.access})")
+
+        if node.global_vars:
+            lines.append(f"")
+            lines.append(f"Global Variables:")
+            for gv in node.global_vars:
+                lines.append(f"  - {gv.op} on {gv.variable}: {gv.description}")
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"CHILDREN - INTERFACES")
+        lines.append(f"=" * 60)
+        for child in (node.children or []):
+            contract = node.children_contracts.get(child.name)
+            if contract:
+                lines.append(f"")
+                lines.append(f"  [{child.name}]")
+                lines.append(f"    Purpose: {contract.purpose}")
+                lines.append(f"    Behavior: {contract.behavior}")
+                if contract.signature:
+                    lines.append(f"    Signature: {contract.signature}")
+                if contract.inputs:
+                    lines.append(f"    Inputs:")
+                    for inp in contract.inputs:
+                        source = inp.source if inp.source else "unspecified"
+                        lines.append(f"      - {inp.name}: {inp.type} (source: {source})")
+                if contract.outputs:
+                    lines.append(f"    Outputs:")
+                    for out in contract.outputs:
+                        consumer = out.consumer if out.consumer else "unspecified"
+                        lines.append(f"      - {out.name}: {out.type} (consumer: {consumer})")
+                if contract.data_operations:
+                    lines.append(f"    Data Operations:")
+                    for op in contract.data_operations:
+                        lines.append(f"      - {op.source_name}: {op.operation_type} ({op.description})")
+
+        # Add dataflow edges table for verify
+        dataflow_section = self._build_dataflow_edges_table(node)
+        if dataflow_section:
+            lines.append(dataflow_section)
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"GENERATED CODE TO VERIFY")
+        lines.append(f"=" * 60)
+        lines.append(f"```python")
+        lines.append(code.strip())
+        lines.append(f"```")
+        lines.append(f"")
+        lines.append(f"Apply the verification checklist. Return your verdict as valid JSON.")
+        return "\n".join(lines)
+
+    def _build_user_prompt_for_leaf(
+        self, 
+        node: Node, 
+        previous_errors: List[str] = None,
+        previous_code: str = None
+    ) -> str:
+        lines = [
+            f"Implement this function:",
+            f"",
+            f"Function: {node.name}",
+            f"Purpose: {node.purpose}",
+            f"",
+        ]
+
+        if node.subprd:
+            if node.subprd.description:
+                lines.append(f"Task Description:")
+                for line in node.subprd.description.split("\n"):
+                    lines.append(f"  {line}")
+            if node.subprd.constraints:
+                lines.append(f"Constraints:")
+                for c in node.subprd.constraints:
+                    lines.append(f"  - {c}")
+            if node.subprd.global_state_operations:
+                lines.append(f"Global State Operations:")
+                for op in node.subprd.global_state_operations:
+                    lines.append(f"  - {op.op_type} on {op.source_id}: {op.op_id}")
+                    if op.target:
+                        lines.append(f"    Target: {op.target}")
+            if node.subprd.acceptance_criteria:
+                lines.append(f"Acceptance Criteria:")
+                for ac in node.subprd.acceptance_criteria:
+                    lines.append(f"  - {ac.ac_id}: {ac.description}")
+            if node.subprd.traceability.parent_requirement_ids:
+                lines.append(f"Traces to: {', '.join(node.subprd.traceability.parent_requirement_ids)}")
+            lines.append(f"")
+
+        lines.append(f"Inputs:")
+        
+        for inp in node.inputs:
+            lines.append(f"  {inp.name}: {inp.type} - {inp.description}")
+        
+        lines.append(f"Outputs:")
+        for out in node.outputs:
+            lines.append(f"  {out.name}: {out.type} - {out.description}")
+        
+        if node.boundary.in_scope:
+            lines.append(f"In Scope: {node.boundary.in_scope}")
+        if node.boundary.out_of_scope:
+            lines.append(f"Out of Scope: {node.boundary.out_of_scope}")
+        
+        if node.preconditions:
+            lines.append(f"Preconditions: {node.preconditions}")
+        if node.postconditions:
+            lines.append(f"Postconditions: {node.postconditions}")
+
+        if node.data_sources:
+            lines.append(f"")
+            lines.append(f"Data Sources (Available Data Stores):")
+            for ds in node.data_sources:
+                lines.append(f"  - {ds.name} ({ds.category}, {ds.access})")
+                lines.append(f"    Type: {ds.data_type}")
+                lines.append(f"    Description: {ds.description}")
+
+        if node.global_vars:
+            lines.append(f"")
+            lines.append(f"Global Variables:")
+            for gv in node.global_vars:
+                lines.append(f"  - {gv.op} on {gv.variable}: {gv.description}")
+
+        if previous_errors:
+            lines.append(f"")
+            lines.append(f"PREVIOUS CODE GENERATION FAILED WITH THESE ERRORS:")
+            for err in previous_errors:
+                lines.append(f"  - {err}")
+            if previous_code:
+                lines.append(f"")
+                lines.append(f"PREVIOUS CODE (please fix):")
+                lines.append(f"```python")
+                for line in previous_code.strip().split("\n"):
+                    lines.append(f"  {line}")
+                lines.append(f"```")
+            lines.append(f"Please fix these issues in your new code.")
+        
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"INTERFACE ENFORCEMENT - LOCKED SIGNATURE")
+        lines.append(f"=" * 60)
+        lines.append(f"Your exact function signature is LOCKED and MUST be:")
+        lines.append(f"  {node.get_interface_signature()}")
+        lines.append(f"Do NOT change parameter names, types, or return type.")
+        lines.append(f"Adding, removing, or renaming parameters will cause verification failure.")
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"IMPLEMENTATION")
+        lines.append(f"=" * 60)
+        lines.append(f"Generate a complete implementation.")
+        
+        return "\n".join(lines)
+
+    def _build_system_prompt_for_leaf_with_interfaces(self) -> str:
+        return """You are a Python code generator. Your task is to implement a function using only granted data interfaces.
+
+RULES:
+1. You have been granted specific data access interfaces — use ONLY those.
+2. Do NOT declare or access global variables directly (no 'global' keyword).
+3. Do NOT use operation IDs (op_root_*) or source IDs.
+4. Do NOT invent new resource access functions — only use the granted ones.
+5. You can use standard Python libraries (os, json, datetime, typing, etc.).
+6. Call the granted interface functions as normal function calls (they are imported externally).
+7. Handle edge cases and errors appropriately.
+8. Dict key names MUST match the Data Schema Reference exactly (e.g., use order['total_price'], not order['total']).
+
+SIGNATURE ENFORCEMENT - YOUR FUNCTION SIGNATURE IS LOCKED:
+- Your function's parameter names, types, and return type are specified and non-negotiable.
+- The signature shown in the user prompt is the EXACT contract the parent expects.
+- Do NOT add, remove, or rename parameters.
+- Do NOT change parameter types or return type.
+- The verifier strictly checks signature compliance.
+
+The code you generate will be validated:
+- It must be syntactically correct Python.
+- It must match the specified inputs/outputs.
+- It must use only the granted interfaces for data access.
+- It must NOT use the 'global' keyword.
+- It must NOT reference op_root_* or source_id variables.
+
+Return ONLY valid JSON with this structure:
+{
+  "code": "def function_name(...):\\n    ...",
+  "imports": ["import os", "from typing import ..."],
+  "dependencies": ["os", "json"],
+  "implementation_notes": "Brief explanation"
+}"""
+
+    def _build_system_prompt_for_leaf_interface_selection(self) -> str:
+        return """You are an interface selection agent. Choose which candidate data interfaces are needed to implement one leaf function.
+
+RULES:
+1. Select only from the candidate interface ids provided by the user.
+2. Select the minimal set needed to implement the function's stated responsibility.
+3. Do NOT request new interfaces.
+4. Do NOT select an interface just to perform work that is out of scope.
+5. If none of the candidates can satisfy the function, return an empty selected_interface_ids list and explain why.
+
+Return ONLY valid JSON with this structure:
+{
+  "selected_interface_ids": ["interface.id"],
+  "selection_notes": "brief reason for the selection"
+}"""
+
+    def _build_user_prompt_for_leaf_interface_selection(
+        self,
+        node: Node,
+        candidate_interface_ids: List[str],
+        previous_errors: List[str] = None,
+    ) -> str:
+        lines = [
+            "Select data interfaces for this leaf function.",
+            "",
+            f"Function: {node.name}",
+            f"Purpose: {node.purpose}",
+            "",
+        ]
+
+        if node.boundary.in_scope:
+            lines.append(f"In Scope: {node.boundary.in_scope}")
+        if node.boundary.out_of_scope:
+            lines.append(f"Out of Scope: {node.boundary.out_of_scope}")
+        if node.preconditions:
+            lines.append(f"Preconditions: {node.preconditions}")
+        if node.postconditions:
+            lines.append(f"Postconditions: {node.postconditions}")
+        if node.requested_capabilities:
+            lines.append(f"Resource Capability Budget: {node.requested_capabilities}")
+
+        lines.append("")
+        lines.append("Candidate interfaces within the resource budget:")
+        for interface_id in candidate_interface_ids:
+            iface = self._interface_map.get(interface_id)
+            if iface:
+                lines.append(
+                    f"  - id={iface.interface_id}; resource={iface.resource_id}; "
+                    f"operation={iface.operation}; description={iface.description}"
+                )
+            else:
+                lines.append(f"  - id={interface_id}; details unavailable")
+
+        if previous_errors:
+            lines.append("")
+            lines.append("Previous code generation errors to consider:")
+            for err in previous_errors:
+                lines.append(f"  - {err}")
+
+        lines.append("")
+        lines.append("Return selected_interface_ids as a subset of the candidate ids above.")
+        return "\n".join(lines)
+
+    def _build_user_prompt_for_leaf_with_interfaces(
+        self,
+        node: Node,
+        previous_errors: List[str] = None,
+        previous_code: str = None
+    ) -> str:
+        lines = [
+            f"Implement this function using only the granted interfaces:",
+            f"",
+            f"Function: {node.name}",
+            f"Purpose: {node.purpose}",
+            f"",
+        ]
+
+        if node.subprd:
+            if node.subprd.description:
+                lines.append(f"Task Description:")
+                for line in node.subprd.description.split("\n"):
+                    lines.append(f"  {line}")
+            if node.subprd.constraints:
+                lines.append(f"Constraints:")
+                for c in node.subprd.constraints:
+                    lines.append(f"  - {c}")
+            if node.subprd.acceptance_criteria:
+                lines.append(f"Acceptance Criteria:")
+                for ac in node.subprd.acceptance_criteria:
+                    lines.append(f"  - {ac.ac_id}: {ac.description}")
+            lines.append(f"")
+
+        lines.append(f"Inputs:")
+        for inp in node.inputs:
+            lines.append(f"  {inp.name}: {inp.type} - {inp.description}")
+
+        lines.append(f"Outputs:")
+        for out in node.outputs:
+            lines.append(f"  {out.name}: {out.type} - {out.description}")
+
+        if node.boundary.in_scope:
+            lines.append(f"In Scope: {node.boundary.in_scope}")
+        if node.boundary.out_of_scope:
+            lines.append(f"Out of Scope: {node.boundary.out_of_scope}")
+
+        if node.preconditions:
+            lines.append(f"Preconditions: {node.preconditions}")
+        if node.postconditions:
+            lines.append(f"Postconditions: {node.postconditions}")
+
+        if node.granted_capabilities and node.granted_capabilities.granted_interfaces:
+            lines.append(f"")
+            lines.append(f"=" * 60)
+            lines.append(f"GRANTED DATA INTERFACES (use ONLY these):")
+            lines.append(f"=" * 60)
+            for interface_id in node.granted_capabilities.granted_interfaces:
+                iface = self._interface_map.get(interface_id)
+                if iface:
+                    lines.append(f"  - {iface.signature}")
+                    lines.append(f"    Description: {iface.description}")
+                    if iface.signature:
+                        lines.append(f"    Signature: {iface.signature}")
+                else:
+                    lines.append(f"  - {interface_id}")
+            lines.append(f"")
+            lines.append(f" >>> Call these functions directly by name. They are available in scope. <<<")
+            lines.append(f" >>> Do NOT declare 'global' variables. Do NOT use op_root_*. <<<")
+
+        schema_ref = self._build_schema_reference()
+        if schema_ref:
+            lines.append(schema_ref)
+
+        if previous_errors:
+            lines.append(f"")
+            lines.append(f"PREVIOUS CODE GENERATION FAILED WITH THESE ERRORS:")
+            for err in previous_errors:
+                lines.append(f"  - {err}")
+            if previous_code:
+                lines.append(f"")
+                lines.append(f"PREVIOUS CODE (please fix):")
+                lines.append(f"```python")
+                for line in previous_code.strip().split("\n"):
+                    lines.append(f"  {line}")
+                lines.append(f"```")
+            lines.append(f"Please fix these issues in your new code.")
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"INTERFACE ENFORCEMENT - LOCKED SIGNATURE")
+        lines.append(f"=" * 60)
+        lines.append(f"Your exact function signature is LOCKED and MUST be:")
+        lines.append(f"  {node.get_interface_signature()}")
+        lines.append(f"Do NOT change parameter names, types, or return type.")
+        lines.append(f"")
+        lines.append(f"=" * 60)
+        lines.append(f"IMPLEMENTATION")
+        lines.append(f"=" * 60)
+        lines.append(f"Generate a complete implementation using ONLY the granted interfaces above.")
+
+        return "\n".join(lines)
+
+    def _select_leaf_interfaces(
+        self,
+        node: Node,
+        previous_errors: List[str] = None,
+    ) -> List[str]:
+        grant = node.granted_capabilities
+        if not grant or not grant.candidate_interfaces:
+            return []
+
+        candidate_ids = grant.candidate_interfaces
+        messages = [
+            {"role": "system", "content": self._build_system_prompt_for_leaf_interface_selection()},
+            {"role": "user", "content": self._build_user_prompt_for_leaf_interface_selection(
+                node, candidate_ids, previous_errors
+            )},
+        ]
+
+        try:
+            response = self.api_client.chat(messages, max_tokens=1024)
+        except Exception as e:
+            return [f"INTERFACE_SELECTION_GAP: API call failed: {e}"]
+
+        parsed = self._parse_response(response)
+        selected = parsed.get("selected_interface_ids")
+        if not isinstance(selected, list):
+            return [
+                "INTERFACE_SELECTION_GAP: interface selection response must include "
+                "selected_interface_ids as a list."
+            ]
+
+        deduped_selected = []
+        for interface_id in selected:
+            if not isinstance(interface_id, str):
+                return ["INTERFACE_SELECTION_GAP: selected interface ids must be strings."]
+            if interface_id not in deduped_selected:
+                deduped_selected.append(interface_id)
+
+        invalid = sorted(set(deduped_selected) - set(candidate_ids))
+        if invalid:
+            return [
+                f"INTERFACE_SELECTION_GAP: selected interface(s) outside candidate set: {invalid}"
+            ]
+        if not deduped_selected:
+            notes = parsed.get("selection_notes", "no compatible interface selected")
+            return [f"INTERFACE_SELECTION_GAP: {notes}"]
+
+        grant.granted_interfaces = deduped_selected
+        return []
+    
+    def _parse_response(self, content: str) -> Dict[str, Any]:
+        content = content.strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```[a-zA-Z0-9]*\n?", "", content)
+            content = re.sub(r"\n?```$", "", content)
+        
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"JSON parse error: {e}")
+            code_match = re.search(r'"code"\s*:\s*"((?:[^"\\]|\\.)*)"', content, re.DOTALL)
+            if code_match:
+                code = code_match.group(1)
+                code = code.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"').replace('\\\\', '\\')
+                return {"code": code}
+            
+            if 'def ' in content:
+                return {"code": content}
+            
+            return {"code": "", "error": str(e)}
+    
+    def generate_for_parent(
+        self,
+        node: Node,
+        previous_errors: List[str] = None,
+        previous_code: str = None
+    ) -> Tuple[str, List[str]]:
+        """
+        Generate code for a parent node by composing child interfaces.
+        Two-step process:
+          Step 1: REVIEW + IMPLEMENT — generate code via child composition
+          Step 2: VERIFY — send generated code for self-review, chance to reject
+        Returns (code, errors).
+        """
+        if not node.children:
+            return "", ["Cannot generate parent code: no children defined"]
+
+        # Step 1: REVIEW + IMPLEMENT
+        messages = [
+            {"role": "system", "content": self._build_system_prompt_for_parent()},
+            {"role": "user", "content": self._build_user_prompt_for_parent(node, previous_errors, previous_code)}
+        ]
+
+        try:
+            response = self.api_client.chat(messages, max_tokens=2048)
+        except Exception as e:
+            return "", [f"API call failed: {e}"]
+
+        parsed = self._parse_response(response)
+        status = parsed.get("status", "ok")
+        self.last_composition_feedback = None
+
+        if status == "cannot_compose":
+            feedback_data = parsed.get("decomposition_feedback", {})
+            feedback_data["status"] = "cannot_compose"
+            self.last_composition_feedback = CompositionFeedback.from_dict(feedback_data)
+            return "", [f"CANNOT_COMPOSE: {self.last_composition_feedback.reason}"]
+
+        if "error" in parsed or not parsed.get("code"):
+            return "", [f"Failed to parse code: {parsed.get('error', 'No code generated')}"]
+
+        code = parsed.get("code", "")
+
+        # Step 2: VERIFY the generated code
+        verify_messages = [
+            {"role": "system", "content": self._build_system_prompt_for_parent_verify()},
+            {"role": "user", "content": self._build_user_prompt_for_parent_verify(node, code)}
+        ]
+
+        try:
+            verify_response = self.api_client.chat(verify_messages, max_tokens=1024)
+        except Exception as e:
+            print(f"Verification step failed, accepting step 1 code: {e}")
+            return code, []
+
+        verify_parsed = self._parse_response(verify_response)
+        verify_status = verify_parsed.get("status", "ok")
+        verify_checks = verify_parsed.get("checks", {})
+
+        if verify_status == "cannot_compose":
+            feedback_data = verify_parsed.get("decomposition_feedback", {})
+            feedback_data["status"] = "cannot_compose"
+            feedback_data["checks"] = verify_checks
+            self.last_composition_feedback = CompositionFeedback.from_dict(feedback_data)
+            return "", [f"CANNOT_COMPOSE: {feedback_data.get('reason', 'Verification rejected code')}"]
+
+        return code, []
+    
+    def generate_for_leaf(
+        self, 
+        node: Node, 
+        previous_errors: List[str] = None,
+        previous_code: str = None
+    ) -> Tuple[str, List[str]]:
+        """
+        Generate complete code for a leaf node.
+        If node has interface candidates, selects concrete interfaces first,
+        then uses only the selected interfaces in the implementation prompt.
+        Returns (code, errors).
+        """
+        if node.granted_capabilities and node.granted_capabilities.candidate_interfaces:
+            selection_errors = self._select_leaf_interfaces(node, previous_errors)
+            if selection_errors:
+                return "", selection_errors
+
+        if node.granted_capabilities and node.granted_capabilities.granted_interfaces:
+            messages = [
+                {"role": "system", "content": self._build_system_prompt_for_leaf_with_interfaces()},
+                {"role": "user", "content": self._build_user_prompt_for_leaf_with_interfaces(node, previous_errors, previous_code)}
+            ]
+        else:
+            messages = [
+                {"role": "system", "content": self._build_system_prompt_for_leaf()},
+                {"role": "user", "content": self._build_user_prompt_for_leaf(node, previous_errors, previous_code)}
+            ]
+        
+        try:
+            response = self.api_client.chat(messages, max_tokens=2048)
+        except Exception as e:
+            return "", [f"API call failed: {e}"]
+        
+        parsed = self._parse_response(response)
+        
+        if "error" in parsed or not parsed.get("code"):
+            return "", [f"Failed to parse code: {parsed.get('error', 'No code generated')}"]
+        
+        return parsed.get("code", ""), []
+    
+    def set_interface_plan(self, plan: InterfacePlan) -> None:
+        for iface in plan.interfaces:
+            self._interface_map[iface.interface_id] = iface
+        for resource in plan.resources:
+            self._resource_schemas[resource.resource_id] = {
+                "description": resource.description,
+                "storage_model": resource.storage_model,
+                "item_schema": resource.item_schema,
+                "invariants": resource.invariants,
+            }
+
+    def _build_dataflow_edges_table(self, node: Node) -> str:
+        """Render dataflow_edges as a structured markdown table."""
+        edges = node.dataflow_edges if hasattr(node, 'dataflow_edges') and node.dataflow_edges else []
+        if not edges:
+            return ""
+
+        lines = [
+            "",
+            "=" * 60,
+            "DECLARED DATAFLOW EDGES - AUTHORITATIVE COMPOSITION CONTRACT",
+            "=" * 60,
+            "",
+            "Each row is a data transfer that the parent implementation must realize.",
+            "Sibling-to-sibling rows describe data dependency only; they must be implemented by the parent:",
+            "the parent calls the source child, stores its output, then passes the value to the target child.",
+            "Children must never call siblings.",
+            "",
+            "| from_node | from_output | to_node | to_input | note |",
+            "|-----------|-------------|---------|----------|------|",
+        ]
+
+        for e in edges:
+            lines.append(
+                f"| {e.from_node} | {e.from_output} | {e.to_node} | {e.to_input} | {e.note} |"
+            )
+
+        lines.append("")
+        return "\n".join(lines)
+
+    def _build_schema_reference(self) -> str:
+        """Build a schema reference block for LLM prompts."""
+        if not self._resource_schemas:
+            return ""
+        lines = [
+            "",
+            "=" * 60,
+            "DATA SCHEMA REFERENCE (use these EXACT field names when accessing dict keys)",
+            "=" * 60,
+        ]
+        for resource_id, schema_info in self._resource_schemas.items():
+            lines.append(f"  {resource_id} dict fields:")
+            for field, field_type in schema_info.get("item_schema", {}).items():
+                lines.append(f"    - {field}: {field_type}")
+            if schema_info.get("invariants"):
+                for inv in schema_info["invariants"]:
+                    lines.append(f"    (invariant) {inv}")
+        lines.append("")
+        lines.append(">>> When accessing a dict field, ALWAYS use the exact field name from the schema above. <<<")
+        lines.append(">>> If a schema is listed under 'orders dict fields', then 'order' should use those fields. <<<")
+        lines.append("")
+        return "\n".join(lines)
+
+    def generate(
+        self,
+        node: Node,
+        previous_errors: List[str] = None,
+        previous_code: str = None
+    ) -> Tuple[str, List[str]]:
+        """
+        Generate code for any node.
+        Returns (code, errors).
+        """
+        if node.stop_decompose or not node.children:
+            return self.generate_for_leaf(node, previous_errors, previous_code)
+        else:
+            return self.generate_for_parent(node, previous_errors, previous_code)
+    
+    def generate_with_retry(
+        self, 
+        node: Node, 
+        max_retries: int = None,
+        previous_errors: List[str] = None,
+        previous_code: str = None
+    ) -> Tuple[str, List[str]]:
+        """
+        Generate code with retry on failure.
+        When previous_errors/previous_code are provided (from validation feedback),
+        they are injected into the first attempt's prompt.
+        After each failed retry, accumulated errors are passed back.
+        """
+        retries = max_retries if max_retries is not None else self.config.max_decompose_retries
+        all_errors = previous_errors or []
+        all_previous_code = previous_code
+
+        for attempt in range(retries):
+            code, errors = self.generate(node, all_errors if (attempt > 0 or previous_errors) else None, all_previous_code)
+
+            if errors and any(e.startswith("CANNOT_COMPOSE") for e in errors):
+                return "", errors
+
+            if not errors:
+                return code, []
+
+            all_errors = errors
+            all_previous_code = code
+            print(f"Code generation attempt {attempt + 1} failed: {errors}")
+
+        return "", all_errors
