@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from config import Config
 from api_client import APIClient
-from models import Node, ChildContract, SubPRD, CapabilityGrant, InterfacePlan, InterfaceSpec, CompositionFeedback
+from models import Node, ChildContract, SubPRD, CapabilityGrant, InterfacePlan, InterfaceSpec, CompositionFeedback, DataflowEdge
 
 
 class CodeGenerator:
@@ -24,17 +24,47 @@ class CodeGenerator:
     def _build_system_prompt_for_parent(self) -> str:
         return """You are a decomposition verifier. Your role is to verify that a parent function CAN be correctly implemented by composing its child functions — and if so, to generate the implementation code. Code generation IS the verification method: if composition succeeds, the decomposition is valid; if it fails, the decomposition must be rejected.
 
-WORKFLOW — THREE STAGES:
+WORKFLOW:
 
-STAGE 1 — REVIEW (before writing any code):
-Intuitively check whether the children's interfaces collectively satisfy ALL of the parent's requirements:
+STAGE 1 — TREE STRUCTURE REVIEW (before writing any code):
+
+First, verify the decomposition satisfies tree structure constraints. These are non-negotiable structural rules:
+
+TREE STRUCTURE RULES:
+1. **Child independence**: Each child node is an independent function. A child must NOT call, reference, or depend on any sibling node.
+2. **Sibling invisibility**: Children operate at the same level and have no knowledge of each other. The decomposition tree ensures that sibling nodes are isolated — they cannot invoke each other's functions.
+3. **Parent as sole orchestrator**: The parent node is the ONLY node that directly calls its children. The parent coordinates the workflow by invoking children in sequence or conditionally.
+4. **Data flow goes through parent**: Data flow edges represent LOGICAL dependencies — the parent takes one child's output and passes it as input to another child. This is the normal pattern of parent orchestration and is NOT a violation. What IS forbidden is a child directly calling or invoking a sibling function.
+
+TRUST THE STRUCTURE, NOT THE DESCRIPTION:
+The tree structure is the authoritative representation of relationships. Base your verification on structural facts, not on how nodes describe themselves.
+- Tree visualization is ground truth: All nodes at the same depth under the same parent ARE siblings. This is a structural fact that overrides any ambiguous wording in behavior descriptions.
+- Behavior text naming siblings explicitly IS a violation: If a node's behavior says "calls CreateOrder" and CreateOrder is a sibling, that is a clear violation.
+- Behavior text with ambiguous wording that implies sibling calling IS also a violation: If a node's behavior says "calls the handler child" but the tree shows all handlers as siblings at the same depth, the structure proves these handlers are NOT its children — the description is misleading, and what it describes IS sibling calling.
+- Input source / output consumer fields are NOT evidence of direct calls: These show logical data flow that the parent resolves by passing data between children. Do not flag them.
+- Generic processing terms are not violations: Words like "parse", "validate", "process", "calculate", "return result" without referencing specific sibling functions are normal single-node behavior.
+
+DO NOT TRUST THE DECOMPOSER'S DESCRIPTION:
+If a node's behavior describes calling or invoking other sibling nodes, that IS a violation regardless of how the decomposer frames it. The decomposer's narrative does not override structural reality.
+
+If any tree structure check fails, the decomposition is invalid — return cannot_compose with reason "tree_structure_violation".
+
+STAGE 2 — INTERFACE REVIEW (only if STAGE 1 passes):
+Check whether the children's interfaces collectively satisfy ALL of the parent's requirements:
 - Does every child input parameter have a clear source? (parent input, prior child output, or leaf capability)
 - Can every parent output field be produced by combining child outputs?
 - Is every needed data access covered by at least one child?
 - Do the child signatures fit together without type mismatches?
 If any check fails, the decomposition is invalid — return cannot_compose.
 
-STAGE 2 — IMPLEMENT (only if STAGE 1 passes):
+STAGE 2.5 — DATAFLOW EDGE CONFORMANCE (authoritative):
+Check that the declared dataflow edges can be realized with the given child signatures:
+- For each edge where from_node is a child and to_node is "parent": the child must have a matching output.
+- For each edge where from_node is "parent" and to_node is a child: the child must have a matching input.
+- For each child-to-child data dependency (from_node=ChildA, to_node=ChildB): the parent must mediate — the parent calls ChildA, stores its output, then passes it to ChildB. If the child signatures make this impossible, return cannot_compose.
+Do NOT infer hidden routing from child names such as Route*, Dispatch*, Handler*, or Validate*; use the structured dataflow edges.
+
+STAGE 3 — IMPLEMENT (only if STAGE 1, STAGE 2, and STAGE 2.5 pass):
 Write the parent function by composing child calls. Rules:
 1. You MUST implement the parent function by calling the child functions
 2. Child functions are NOT implemented yet - you only have their interfaces
@@ -45,6 +75,10 @@ Write the parent function by composing child calls. Rules:
 7. Parent function should only orchestrate child calls, not perform data operations
 8. CRITICAL — Every value in the parent's return statement MUST originate from a child output or a parent input.
    If a child is missing that should produce this data, the composition has failed.
+9. CRITICAL — For each declared dataflow edge, the parent must realize the transfer:
+   - If edge says ChildA.output -> parent.var, assign ChildA's output to parent.var
+   - If edge says parent.var -> ChildB.input, pass parent.var to ChildB's input
+   - If edge says ChildA.output -> ChildB.input, pass ChildA's output through parent to ChildB
 
 SIGNATURE ENFORCEMENT - YOUR FUNCTION SIGNATURE IS LOCKED:
 - Your function's parameter names, types, and return type are specified and non-negotiable
@@ -63,6 +97,7 @@ The code you generate will be validated:
 - It must use the child function interfaces correctly
 - It must NOT directly read/write any data source (only through child calls)
 - It must preserve the parent's input/output contract
+- It must realize every declared dataflow edge
 
 Return ONLY valid JSON with this structure:
 {
@@ -72,8 +107,16 @@ Return ONLY valid JSON with this structure:
   "child_calls": ["child1", "child2"],
   "implementation_notes": "Brief explanation of the logic",
   "decomposition_feedback": {
-    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | other",
+    "reason": "tree_structure_violation | missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | dataflow_conformance_failure | other",
     "offending_child": "ChildName or empty",
+    "violations": [
+      {
+        "from_node": "name of node that violates",
+        "to_node": "name of node being called/referenced",
+        "rule": "which rule is violated",
+        "details": "why this is a violation"
+      }
+    ],
     "missing_inputs": [
       {
         "child": "ChildName",
@@ -115,6 +158,8 @@ REVIEW CHECKLIST — examine the code and the children list together:
 
 4. NO CROSS CALLS (TREE STRUCTURE) — The decomposition is a tree, not a graph. Each child should only be called by the parent. If the code shows one child calling another child, that is a tree structure violation — siblings do not call each other.
 
+5. DECLARED DATAFLOW CONFORMANCE — Verify that generated code realizes every declared dataflow edge. For child-to-child data dependency, parent must mediate the transfer. If code uses a different source for a child input than the declared edge requires, return cannot_compose with reason "dataflow_conformance_failure".
+
 If ANY check fails, return status="cannot_compose" with detailed feedback and list which checks failed in failed_checks.
 If ALL checks pass, return status="ok" with empty checks marked passed.
 
@@ -122,13 +167,14 @@ Return ONLY valid JSON with this structure:
 {
   "status": "ok | cannot_compose",
   "checks": {
-    "return_value_origin": {"passed": true, "detail": "explanation of the verdict"},
-    "child_coverage": {"passed": true, "detail": "explanation of the verdict"},
-    "no_direct_access": {"passed": true, "detail": "explanation of the verdict"},
-    "no_cross_calls": {"passed": true, "detail": "explanation of the verdict"}
+    "return_value_origin": {"detail": "explanation of the verdict", "passed": true},
+    "child_coverage": {"detail": "explanation of the verdict", "passed": true},
+    "no_direct_access": {"detail": "explanation of the verdict", "passed": true},
+    "no_cross_calls": {"detail": "explanation of the verdict", "passed": true},
+    "dataflow_conformance": {"detail": "explanation of the verdict", "passed": true}
   },
   "decomposition_feedback": {
-    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | other",
+    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | dataflow_conformance_failure | other",
     "offending_child": "ChildName or empty",
     "failed_checks": ["return_value_origin", "child_coverage"],
     "missing_inputs": [
@@ -260,7 +306,8 @@ Return ONLY valid JSON with this structure:
 
         if node.decomposition_rationale:
             lines.append(f"")
-            lines.append(f"DECOMPOSITION RATIONALE (how children collaborate):")
+            lines.append(f"SUPPLEMENTARY RATIONALE (non-authoritative)")
+            lines.append(f"Use this only as explanatory context. If it conflicts with DECLARED DATAFLOW EDGES, follow the structured dataflow edges.")
             lines.append(f"{node.decomposition_rationale}")
 
         lines.append(f"")
@@ -281,6 +328,18 @@ Return ONLY valid JSON with this structure:
                     inputs_str = ", ".join([f"{i.name}: {i.type}" for i in contract.inputs])
                     outputs_str = ", ".join([o.type for o in contract.outputs]) if contract.outputs else "None"
                     lines.append(f"    Signature: def {child.name}({inputs_str}) -> {outputs_str}")
+
+                if contract.inputs:
+                    lines.append(f"    Inputs:")
+                    for inp in contract.inputs:
+                        source = inp.source if inp.source else "unspecified"
+                        lines.append(f"      - {inp.name}: {inp.type} (source: {source}) - {inp.description}")
+
+                if contract.outputs:
+                    lines.append(f"    Outputs:")
+                    for out in contract.outputs:
+                        consumer = out.consumer if out.consumer else "unspecified"
+                        lines.append(f"      - {out.name}: {out.type} (consumer: {consumer}) - {out.description}")
 
                 if contract.data_operations:
                     lines.append(f"    Data Operations:")
@@ -309,6 +368,11 @@ Return ONLY valid JSON with this structure:
             for gv in node.global_vars:
                 lines.append(f"  - {gv.op} on {gv.variable}: {gv.description}")
 
+        # Add structured dataflow edges — AUTHORITATIVE
+        dataflow_section = self._build_dataflow_edges_table(node)
+        if dataflow_section:
+            lines.append(dataflow_section)
+
         if previous_errors:
             lines.append(f"")
             lines.append(f"=" * 60)
@@ -331,6 +395,16 @@ Return ONLY valid JSON with this structure:
 
         lines.append(f"")
         lines.append(f"=" * 60)
+        lines.append(f"PARENT-MEDIATED COMPOSITION RULES")
+        lines.append(f"=" * 60)
+        lines.append(f"- The parent is the only composition coordinator.")
+        lines.append(f"- If a dataflow edge says ChildA -> ChildB, implement it as parent-mediated transfer.")
+        lines.append(f"- A child must not call a sibling.")
+        lines.append(f"- If the declared dataflow cannot be implemented with the declared child signatures, return cannot_compose.")
+        lines.append(f"- Do not infer hidden routing from child names; use the structured dataflow edges.")
+
+        lines.append(f"")
+        lines.append(f"=" * 60)
         lines.append(f"INTERFACE ENFORCEMENT - LOCKED SIGNATURE")
         lines.append(f"=" * 60)
         lines.append(f"Your exact function signature is LOCKED and MUST be:")
@@ -345,6 +419,7 @@ Return ONLY valid JSON with this structure:
         lines.append(f"2. Call the child functions with correct arguments")
         lines.append(f"3. Handle the return values from child functions")
         lines.append(f"4. Return a result that matches the parent outputs")
+        lines.append(f"5. Realize every declared dataflow edge through parent-mediated transfer")
         lines.append(f"")
 
         return "\n".join(lines)
@@ -396,10 +471,25 @@ Return ONLY valid JSON with this structure:
                 lines.append(f"    Behavior: {contract.behavior}")
                 if contract.signature:
                     lines.append(f"    Signature: {contract.signature}")
+                if contract.inputs:
+                    lines.append(f"    Inputs:")
+                    for inp in contract.inputs:
+                        source = inp.source if inp.source else "unspecified"
+                        lines.append(f"      - {inp.name}: {inp.type} (source: {source})")
+                if contract.outputs:
+                    lines.append(f"    Outputs:")
+                    for out in contract.outputs:
+                        consumer = out.consumer if out.consumer else "unspecified"
+                        lines.append(f"      - {out.name}: {out.type} (consumer: {consumer})")
                 if contract.data_operations:
                     lines.append(f"    Data Operations:")
                     for op in contract.data_operations:
                         lines.append(f"      - {op.source_name}: {op.operation_type} ({op.description})")
+
+        # Add dataflow edges table for verify
+        dataflow_section = self._build_dataflow_edges_table(node)
+        if dataflow_section:
+            lines.append(dataflow_section)
 
         lines.append(f"")
         lines.append(f"=" * 60)
@@ -777,6 +867,35 @@ Return ONLY valid JSON with this structure:
                 "item_schema": resource.item_schema,
                 "invariants": resource.invariants,
             }
+
+    def _build_dataflow_edges_table(self, node: Node) -> str:
+        """Render dataflow_edges as a structured markdown table."""
+        edges = node.dataflow_edges if hasattr(node, 'dataflow_edges') and node.dataflow_edges else []
+        if not edges:
+            return ""
+
+        lines = [
+            "",
+            "=" * 60,
+            "DECLARED DATAFLOW EDGES - AUTHORITATIVE COMPOSITION CONTRACT",
+            "=" * 60,
+            "",
+            "Each row is a data transfer that the parent implementation must realize.",
+            "Sibling-to-sibling rows describe data dependency only; they must be implemented by the parent:",
+            "the parent calls the source child, stores its output, then passes the value to the target child.",
+            "Children must never call siblings.",
+            "",
+            "| from_node | from_output | to_node | to_input | note |",
+            "|-----------|-------------|---------|----------|------|",
+        ]
+
+        for e in edges:
+            lines.append(
+                f"| {e.from_node} | {e.from_output} | {e.to_node} | {e.to_input} | {e.note} |"
+            )
+
+        lines.append("")
+        return "\n".join(lines)
 
     def _build_schema_reference(self) -> str:
         """Build a schema reference block for LLM prompts."""

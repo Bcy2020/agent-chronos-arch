@@ -1,0 +1,189 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "governance": {
+        "error_handling": {
+          "strategy": "fail_fast",
+          "description": "If source is invalid or parsing fails, return error immediately without writing to raw_data."
+        },
+        "retry_policy": {
+          "max_retries": 0,
+          "description": "No retry; ingestion is idempotent per call."
+        },
+        "logging": {
+          "level": "info",
+          "details": [
+            "operation_start",
+            "operation_end",
+            "records_ingested",
+            "errors"
+          ]
+        },
+        "security": {
+          "input_validation": "Check that source is a valid URI or path, reject malformed input."
+        }
+      },
+      "resources": {
+        "global_vars": [
+          {
+            "name": "raw_data",
+            "type": "memory_store",
+            "access": "write",
+            "description": "Store for ingested raw records"
+          }
+        ],
+        "data_operations": [
+          {
+            "operation": "write",
+            "store": "raw_data",
+            "description": "Write parsed records to raw_data store"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransformData",
+      "governance": {
+        "error_handling": {
+          "strategy": "continue_on_error",
+          "description": "If a single record fails transformation, log error and skip that record; continue processing remaining records."
+        },
+        "retry_policy": {
+          "max_retries": 1,
+          "description": "Retry once if raw_data read fails due to transient error."
+        },
+        "logging": {
+          "level": "info",
+          "details": [
+            "operation_start",
+            "operation_end",
+            "records_transformed",
+            "errors"
+          ]
+        },
+        "security": {
+          "input_validation": "Ensure raw_data is not empty before transformation."
+        }
+      },
+      "resources": {
+        "global_vars": [
+          {
+            "name": "raw_data",
+            "type": "memory_store",
+            "access": "read",
+            "description": "Source store for raw records"
+          },
+          {
+            "name": "processed_data",
+            "type": "memory_store",
+            "access": "write",
+            "description": "Target store for transformed records"
+          }
+        ],
+        "data_operations": [
+          {
+            "operation": "read",
+            "store": "raw_data",
+            "description": "Read all records from raw_data for transformation"
+          },
+          {
+            "operation": "write",
+            "store": "processed_data",
+            "description": "Write transformed records to processed_data"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ValidateQuality",
+      "governance": {
+        "error_handling": {
+          "strategy": "continue_on_error",
+          "description": "If validation rule fails for a record, mark it as invalid and continue; do not halt pipeline."
+        },
+        "retry_policy": {
+          "max_retries": 0,
+          "description": "No retry; validation is deterministic."
+        },
+        "logging": {
+          "level": "info",
+          "details": [
+            "operation_start",
+            "operation_end",
+            "valid_count",
+            "invalid_count",
+            "errors"
+          ]
+        },
+        "security": {
+          "input_validation": "Ensure processed_data contains records with expected schema before validation."
+        }
+      },
+      "resources": {
+        "global_vars": [
+          {
+            "name": "processed_data",
+            "type": "memory_store",
+            "access": "read_write",
+            "description": "Store for transformed records that will be updated with validity flags"
+          }
+        ],
+        "data_operations": [
+          {
+            "operation": "read",
+            "store": "processed_data",
+            "description": "Read records from processed_data for validation"
+          },
+          {
+            "operation": "write",
+            "store": "processed_data",
+            "description": "Update processed_data with validity flags per record"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ExportResults",
+      "governance": {
+        "error_handling": {
+          "strategy": "fail_fast",
+          "description": "If processed_data is empty or invalid, return error immediately."
+        },
+        "retry_policy": {
+          "max_retries": 0,
+          "description": "No retry; export is a final step."
+        },
+        "logging": {
+          "level": "info",
+          "details": [
+            "operation_start",
+            "operation_end",
+            "records_exported",
+            "errors"
+          ]
+        },
+        "security": {
+          "output_validation": "Ensure only valid records are included in output; reject if validity flags are missing."
+        }
+      },
+      "resources": {
+        "global_vars": [
+          {
+            "name": "processed_data",
+            "type": "memory_store",
+            "access": "read",
+            "description": "Store for processed records with validity flags"
+          }
+        ],
+        "data_operations": [
+          {
+            "operation": "read",
+            "store": "processed_data",
+            "description": "Read processed_data to filter valid records for export"
+          }
+        ]
+      }
+    }
+  ]
+}

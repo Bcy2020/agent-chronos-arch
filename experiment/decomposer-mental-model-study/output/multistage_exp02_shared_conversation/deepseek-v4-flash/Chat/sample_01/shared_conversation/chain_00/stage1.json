@@ -1,0 +1,299 @@
+{
+  "children": [
+    {
+      "name": "ParseAndValidateInput",
+      "purpose": "Parse the input JSON and validate the command field",
+      "behavior": "Parse input JSON, check if command is one of allowed values, return parsed command and payload",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "command validation"
+        ],
+        "out_of_scope": [
+          "executing commands",
+          "data access"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "Raw JSON input",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "parsed_command",
+          "description": "Validated command string",
+          "consumer": "parent"
+        },
+        {
+          "name": "payload",
+          "description": "Remaining fields after command extraction",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "command is one of send/history/create_channel/join"
+      ],
+      "guarantees": [
+        "Returns error if command missing or invalid"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Send a message to a channel the user has joined",
+      "behavior": "Check if user is member of channel, then store message in messages store",
+      "boundary": {
+        "in_scope": [
+          "message storage",
+          "membership check"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "history retrieval"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payload",
+          "description": "Contains user, channel, text",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "description": "Channel data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "Success or error response",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "channel exists",
+        "user is member"
+      ],
+      "postconditions": [
+        "message stored with timestamp"
+      ],
+      "guarantees": [
+        "Message not stored if user not member"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Retrieve last 100 messages from a channel the user has joined",
+      "behavior": "Check membership, then query messages store for channel, limit to 100",
+      "boundary": {
+        "in_scope": [
+          "message retrieval",
+          "membership check"
+        ],
+        "out_of_scope": [
+          "message sending",
+          "channel management"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payload",
+          "description": "Contains user, channel",
+          "source": "parent input"
+        },
+        {
+          "name": "messages",
+          "description": "Message data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "List of messages or error",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "channel exists",
+        "user is member"
+      ],
+      "postconditions": [
+        "Returns at most 100 messages"
+      ],
+      "guarantees": [
+        "Returns error if not member"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel and add creator as member",
+      "behavior": "Check if channel name already exists, if not create and add user to members list",
+      "boundary": {
+        "in_scope": [
+          "channel creation",
+          "membership initialization"
+        ],
+        "out_of_scope": [
+          "message operations",
+          "joining existing channels"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payload",
+          "description": "Contains channel name, user",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "description": "Channel data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "Success or error response",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "channel name not empty"
+      ],
+      "postconditions": [
+        "channel exists with creator as member"
+      ],
+      "guarantees": [
+        "Returns error if channel already exists"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Add user to an existing channel's member list",
+      "behavior": "Check if channel exists and user not already member, then add user",
+      "boundary": {
+        "in_scope": [
+          "membership addition"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "message operations"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "payload",
+          "description": "Contains channel name, user",
+          "source": "parent input"
+        },
+        {
+          "name": "channels",
+          "description": "Channel data store",
+          "source": "internal leaf access"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "Success or error response",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "channel exists"
+      ],
+      "postconditions": [
+        "user added to channel members"
+      ],
+      "guarantees": [
+        "Returns error if already member or channel missing"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent ChatApp handles four distinct commands. Each command is decomposed into a separate child function that performs the specific operation. Additionally, a validation child parses and validates the input before routing to the appropriate command handler. This keeps each child focused on a single responsibility.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ParseAndValidateInput",
+      "data": "input",
+      "note": "Raw input for parsing"
+    },
+    {
+      "from": "ParseAndValidateInput",
+      "to": "parent",
+      "data": "parsed_command, payload",
+      "note": "Validated command and payload"
+    },
+    {
+      "from": "parent",
+      "to": "SendMessage",
+      "data": "payload",
+      "note": "If command is send"
+    },
+    {
+      "from": "parent",
+      "to": "GetHistory",
+      "data": "payload",
+      "note": "If command is history"
+    },
+    {
+      "from": "parent",
+      "to": "CreateChannel",
+      "data": "payload",
+      "note": "If command is create_channel"
+    },
+    {
+      "from": "parent",
+      "to": "JoinChannel",
+      "data": "payload",
+      "note": "If command is join"
+    },
+    {
+      "from": "SendMessage",
+      "to": "parent",
+      "data": "result",
+      "note": "Response"
+    },
+    {
+      "from": "GetHistory",
+      "to": "parent",
+      "data": "result",
+      "note": "Response"
+    },
+    {
+      "from": "CreateChannel",
+      "to": "parent",
+      "data": "result",
+      "note": "Response"
+    },
+    {
+      "from": "JoinChannel",
+      "to": "parent",
+      "data": "result",
+      "note": "Response"
+    }
+  ]
+}

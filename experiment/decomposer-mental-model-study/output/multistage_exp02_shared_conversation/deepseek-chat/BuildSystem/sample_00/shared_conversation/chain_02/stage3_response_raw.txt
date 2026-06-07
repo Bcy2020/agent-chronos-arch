@@ -1,0 +1,173 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Extract and validate action, repo, branch from input JSON",
+      "call_inputs": [
+        {"name": "input", "type": "Any", "description": "Raw JSON input from parent"}
+      ],
+      "call_outputs": [
+        {"name": "action_request", "type": "Object", "description": "Parsed and validated action, repo, branch"}
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "invalid_input": "Return error with message 'Invalid input: missing required fields'",
+        "parse_failure": "Return error with message 'Invalid JSON format'"
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff_ms": 0,
+        "retryable_errors": []
+      },
+      "timeout_ms": 100,
+      "concurrency_limit": 10
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build for given repo+branch if no active build exists",
+      "call_inputs": [
+        {"name": "repo", "type": "String", "description": "Repository name"},
+        {"name": "branch", "type": "String", "description": "Branch name"}
+      ],
+      "call_outputs": [
+        {"name": "build_result", "type": "Object", "description": "Success status and build_id or error"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read_write", "description": "Check for existing active build and create new build entry"},
+        {"store": "artifacts", "access": "read_write", "description": "Initialize artifact storage for new build"}
+      ],
+      "global_vars": [
+        {"name": "MAX_BUILDS_PER_REPO_BRANCH", "type": "Integer", "value": 1, "description": "Maximum concurrent builds per repo+branch"}
+      ],
+      "data_operations": [
+        {"operation": "read", "store": "builds", "key": "repo+branch", "description": "Check for existing active build"},
+        {"operation": "write", "store": "builds", "key": "build_id", "description": "Create new build entry with status 'running'"},
+        {"operation": "write", "store": "artifacts", "key": "build_id", "description": "Initialize empty artifact storage"}
+      ],
+      "error_handling": {
+        "duplicate_build": "Return error with message 'Active build already exists for this repo and branch'",
+        "store_write_failure": "Return error with message 'Failed to create build: store unavailable'"
+      },
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff_ms": 100,
+        "retryable_errors": ["store_write_failure"]
+      },
+      "timeout_ms": 500,
+      "concurrency_limit": 5
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Retrieve current status and logs of a specific build",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "Identifier of the build"}
+      ],
+      "call_outputs": [
+        {"name": "status_result", "type": "Object", "description": "Build status and logs"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read", "description": "Look up build by build_id"}
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {"operation": "read", "store": "builds", "key": "build_id", "description": "Retrieve build status and logs"}
+      ],
+      "error_handling": {
+        "build_not_found": "Return error with message 'Build not found'",
+        "store_read_failure": "Return error with message 'Failed to read build data'"
+      },
+      "retry_policy": {
+        "max_retries": 1,
+        "backoff_ms": 50,
+        "retryable_errors": ["store_read_failure"]
+      },
+      "timeout_ms": 200,
+      "concurrency_limit": 10
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "Return a list of all builds, optionally filtered by repo or branch",
+      "call_inputs": [
+        {"name": "repo", "type": "String", "description": "Optional filter by repository"},
+        {"name": "branch", "type": "String", "description": "Optional filter by branch"}
+      ],
+      "call_outputs": [
+        {"name": "builds_list", "type": "Array", "description": "List of build summaries"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read", "description": "Query builds store with optional filters"}
+      ],
+      "global_vars": [
+        {"name": "MAX_LIST_RESULTS", "type": "Integer", "value": 100, "description": "Maximum number of builds to return in list"}
+      ],
+      "data_operations": [
+        {"operation": "read", "store": "builds", "key": "all", "description": "Query all builds with optional filters"}
+      ],
+      "error_handling": {
+        "store_read_failure": "Return error with message 'Failed to list builds'"
+      },
+      "retry_policy": {
+        "max_retries": 1,
+        "backoff_ms": 50,
+        "retryable_errors": ["store_read_failure"]
+      },
+      "timeout_ms": 300,
+      "concurrency_limit": 10
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Mark a running build as cancelled",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "Identifier of the build to cancel"}
+      ],
+      "call_outputs": [
+        {"name": "cancel_result", "type": "Object", "description": "Success or error"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read_write", "description": "Find build by build_id and update status to cancelled"}
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {"operation": "read", "store": "builds", "key": "build_id", "description": "Find build and check current status"},
+        {"operation": "write", "store": "builds", "key": "build_id", "description": "Update build status to 'cancelled'"}
+      ],
+      "error_handling": {
+        "build_not_found": "Return error with message 'Build not found'",
+        "build_not_running": "Return error with message 'Build is not running and cannot be cancelled'",
+        "store_write_failure": "Return error with message 'Failed to cancel build'"
+      },
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff_ms": 100,
+        "retryable_errors": ["store_write_failure"]
+      },
+      "timeout_ms": 500,
+      "concurrency_limit": 5
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Construct final JSON output from child results",
+      "call_inputs": [
+        {"name": "child_result", "type": "Any", "description": "Result from the executed child action"}
+      ],
+      "call_outputs": [
+        {"name": "output", "type": "Any", "description": "Final JSON response"}
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "missing_result": "Return error with message 'Internal error: no result to format'"
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff_ms": 0,
+        "retryable_errors": []
+      },
+      "timeout_ms": 100,
+      "concurrency_limit": 10
+    }
+  ]
+}

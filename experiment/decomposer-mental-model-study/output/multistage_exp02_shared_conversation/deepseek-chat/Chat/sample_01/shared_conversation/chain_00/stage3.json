@@ -1,0 +1,249 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "missing_command": "Return error string 'Missing command field'",
+        "invalid_command": "Return error string 'Invalid command: must be one of send, history, create_channel, join'",
+        "invalid_json": "Return error string 'Invalid JSON input'"
+      },
+      "security": {
+        "input_validation": "Ensure input is valid JSON before parsing",
+        "command_whitelist": "Only allow commands: send, history, create_channel, join"
+      },
+      "logging": {
+        "level": "info",
+        "events": [
+          "command_extracted",
+          "error_occurred"
+        ]
+      },
+      "metrics": {
+        "counters": [
+          "parse_attempts",
+          "parse_successes",
+          "parse_errors"
+        ]
+      }
+    },
+    {
+      "name": "SendMessage",
+      "global_vars": [
+        {
+          "name": "MAX_MESSAGE_LENGTH",
+          "type": "integer",
+          "value": 1000,
+          "description": "Maximum allowed message content length"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "channels",
+          "purpose": "Check if user is a member of the target channel"
+        },
+        {
+          "operation": "write",
+          "target": "messages",
+          "purpose": "Append new message with user_id, channel_id, content, timestamp"
+        }
+      ],
+      "error_handling": {
+        "channel_not_found": "Return error 'Channel not found'",
+        "user_not_member": "Return error 'User is not a member of this channel'",
+        "message_too_long": "Return error 'Message exceeds maximum length'",
+        "missing_fields": "Return error 'Missing required fields: channel_id, user_id, content'"
+      },
+      "security": {
+        "membership_check": "Verify user is in channel's member list before allowing send",
+        "content_sanitization": "Strip or escape any malicious content from message"
+      },
+      "logging": {
+        "level": "info",
+        "events": [
+          "message_sent",
+          "send_failed"
+        ]
+      },
+      "metrics": {
+        "counters": [
+          "send_attempts",
+          "send_successes",
+          "send_errors"
+        ],
+        "histograms": [
+          "message_length"
+        ]
+      }
+    },
+    {
+      "name": "GetHistory",
+      "global_vars": [
+        {
+          "name": "MAX_HISTORY_MESSAGES",
+          "type": "integer",
+          "value": 100,
+          "description": "Maximum number of messages to return"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "channels",
+          "purpose": "Verify channel exists"
+        },
+        {
+          "operation": "read",
+          "target": "messages",
+          "purpose": "Retrieve up to 100 most recent messages for the channel"
+        }
+      ],
+      "error_handling": {
+        "channel_not_found": "Return error 'Channel not found'",
+        "missing_channel_id": "Return error 'Missing channel_id field'"
+      },
+      "security": {
+        "channel_existence_check": "Only return history for existing channels"
+      },
+      "logging": {
+        "level": "info",
+        "events": [
+          "history_retrieved",
+          "history_failed"
+        ]
+      },
+      "metrics": {
+        "counters": [
+          "history_requests",
+          "history_successes",
+          "history_errors"
+        ],
+        "histograms": [
+          "messages_returned"
+        ]
+      }
+    },
+    {
+      "name": "CreateChannel",
+      "global_vars": [
+        {
+          "name": "MAX_CHANNEL_NAME_LENGTH",
+          "type": "integer",
+          "value": 50,
+          "description": "Maximum allowed channel name length"
+        },
+        {
+          "name": "CHANNEL_NAME_PATTERN",
+          "type": "string",
+          "value": "^[a-zA-Z0-9_-]+$",
+          "description": "Allowed characters for channel names"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "channels",
+          "purpose": "Check if channel name already exists"
+        },
+        {
+          "operation": "write",
+          "target": "channels",
+          "purpose": "Create new channel entry with name, members list (empty initially), creation timestamp"
+        }
+      ],
+      "error_handling": {
+        "channel_name_taken": "Return error 'Channel name already exists'",
+        "invalid_channel_name": "Return error 'Channel name must be alphanumeric with underscores/hyphens, max 50 chars'",
+        "missing_channel_name": "Return error 'Missing channel_name field'"
+      },
+      "security": {
+        "name_uniqueness": "Enforce unique channel names",
+        "name_validation": "Validate channel name against allowed pattern and length"
+      },
+      "logging": {
+        "level": "info",
+        "events": [
+          "channel_created",
+          "channel_creation_failed"
+        ]
+      },
+      "metrics": {
+        "counters": [
+          "create_channel_attempts",
+          "create_channel_successes",
+          "create_channel_errors"
+        ]
+      }
+    },
+    {
+      "name": "JoinChannel",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "channels",
+          "purpose": "Verify channel exists and check if user is already a member"
+        },
+        {
+          "operation": "write",
+          "target": "channels",
+          "purpose": "Add user_id to channel's members list"
+        }
+      ],
+      "error_handling": {
+        "channel_not_found": "Return error 'Channel not found'",
+        "already_member": "Return error 'User is already a member of this channel'",
+        "missing_fields": "Return error 'Missing required fields: channel_id, user_id'"
+      },
+      "security": {
+        "membership_check": "Prevent duplicate membership",
+        "channel_existence_check": "Only allow joining existing channels"
+      },
+      "logging": {
+        "level": "info",
+        "events": [
+          "user_joined",
+          "join_failed"
+        ]
+      },
+      "metrics": {
+        "counters": [
+          "join_attempts",
+          "join_successes",
+          "join_errors"
+        ]
+      }
+    }
+  ],
+  "parent_governance": {
+    "error_handling": {
+      "parse_command_error": "If ParseCommand returns error, immediately return that error as output",
+      "handler_error": "If any handler returns error, propagate that error to output",
+      "timeout": "Set a 5-second timeout for each child operation"
+    },
+    "security": {
+      "input_size_limit": "Limit input JSON size to 10KB",
+      "rate_limiting": "Apply rate limiting per user: 100 requests per minute"
+    },
+    "logging": {
+      "level": "info",
+      "events": [
+        "request_received",
+        "command_routed",
+        "response_sent"
+      ]
+    },
+    "metrics": {
+      "counters": [
+        "total_requests",
+        "successful_requests",
+        "failed_requests"
+      ],
+      "histograms": [
+        "request_latency_ms"
+      ]
+    }
+  }
+}

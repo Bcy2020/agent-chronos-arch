@@ -226,15 +226,240 @@ class Validator:
         except SyntaxError:
             return True, errors
 
-        for n in ast.walk(tree):
-            if isinstance(n, ast.Name) and n.id in resource_names:
-                errors.append(f"DIRECT_RESOURCE_ACCESS_PARENT: resource={n.id}")
-            elif isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id in resource_names:
-                errors.append(f"DIRECT_RESOURCE_ACCESS_PARENT: resource={n.value.id} attr={n.attr}")
-            elif isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name) and n.value.id in resource_names:
-                errors.append(f"DIRECT_RESOURCE_ACCESS_PARENT: resource={n.value.id} subscript")
+        # Scope-aware checking: track local variable bindings per function
+        # so that `orders = ListOrders(...)` shadows the global resource name.
+        self._check_resource_access(tree, resource_names, errors, [])
 
         return len(errors) == 0, errors
+
+    def _check_resource_access(self, node, resource_names: Set[str], errors: List[str], func_scopes: List[Tuple[Set[str], Set[str]]]):
+        """
+        Walk AST with function-scope and statement-order tracking.
+
+        A resource name is only considered shadowed after a local binding has
+        been seen in the current function. Nested function/class bodies have
+        their own scopes and cannot create bindings for the outer function.
+        """
+        if isinstance(node, ast.Module):
+            self._check_resource_stmt_sequence(node.body, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            local_bindings = self._initial_function_bindings(node)
+            global_decls = self._collect_global_decls(node)
+            func_scopes.append((local_bindings, global_decls))
+            self._check_resource_stmt_sequence(node.body, resource_names, errors, func_scopes)
+            func_scopes.pop()
+            return
+
+        if isinstance(node, ast.ClassDef):
+            func_scopes.append((set(), set()))
+            self._check_resource_stmt_sequence(node.body, resource_names, errors, func_scopes)
+            func_scopes.pop()
+            return
+
+        self._check_resource_expr(node, resource_names, errors, func_scopes)
+
+    def _check_resource_stmt_sequence(self, stmts: List[ast.stmt], resource_names: Set[str], errors: List[str], func_scopes: List[Tuple[Set[str], Set[str]]]):
+        for stmt in stmts:
+            self._check_resource_stmt(stmt, resource_names, errors, func_scopes)
+
+    def _check_resource_stmt(self, stmt, resource_names: Set[str], errors: List[str], func_scopes: List[Tuple[Set[str], Set[str]]]):
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for decorator in stmt.decorator_list:
+                self._check_resource_expr(decorator, resource_names, errors, func_scopes)
+            for default in list(stmt.args.defaults) + list(stmt.args.kw_defaults):
+                if default is not None:
+                    self._check_resource_expr(default, resource_names, errors, func_scopes)
+            self._bind_name(stmt.name, func_scopes)
+            self._check_resource_access(stmt, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(stmt, ast.ClassDef):
+            for decorator in stmt.decorator_list:
+                self._check_resource_expr(decorator, resource_names, errors, func_scopes)
+            for base in stmt.bases:
+                self._check_resource_expr(base, resource_names, errors, func_scopes)
+            for keyword in stmt.keywords:
+                self._check_resource_expr(keyword.value, resource_names, errors, func_scopes)
+            self._bind_name(stmt.name, func_scopes)
+            self._check_resource_access(stmt, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(stmt, ast.Assign):
+            self._check_resource_expr(stmt.value, resource_names, errors, func_scopes)
+            for target in stmt.targets:
+                self._check_resource_target_access(target, resource_names, errors, func_scopes)
+                self._bind_target_names(target, func_scopes)
+            return
+
+        if isinstance(stmt, ast.AnnAssign):
+            if stmt.annotation:
+                self._check_resource_expr(stmt.annotation, resource_names, errors, func_scopes)
+            if stmt.value:
+                self._check_resource_expr(stmt.value, resource_names, errors, func_scopes)
+            self._check_resource_target_access(stmt.target, resource_names, errors, func_scopes)
+            self._bind_target_names(stmt.target, func_scopes)
+            return
+
+        if isinstance(stmt, ast.AugAssign):
+            # AugAssign reads the previous target value before writing it.
+            self._check_resource_augassign_target(stmt.target, resource_names, errors, func_scopes)
+            self._check_resource_expr(stmt.value, resource_names, errors, func_scopes)
+            self._bind_target_names(stmt.target, func_scopes)
+            return
+
+        if isinstance(stmt, (ast.For, ast.AsyncFor)):
+            self._check_resource_expr(stmt.iter, resource_names, errors, func_scopes)
+            self._bind_target_names(stmt.target, func_scopes)
+            self._check_resource_stmt_sequence(stmt.body, resource_names, errors, func_scopes)
+            self._check_resource_stmt_sequence(stmt.orelse, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(stmt, (ast.With, ast.AsyncWith)):
+            for item in stmt.items:
+                self._check_resource_expr(item.context_expr, resource_names, errors, func_scopes)
+                if item.optional_vars:
+                    self._bind_target_names(item.optional_vars, func_scopes)
+            self._check_resource_stmt_sequence(stmt.body, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(stmt, ast.If):
+            self._check_resource_expr(stmt.test, resource_names, errors, func_scopes)
+            self._check_resource_stmt_sequence(stmt.body, resource_names, errors, func_scopes)
+            self._check_resource_stmt_sequence(stmt.orelse, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(stmt, ast.Try):
+            self._check_resource_stmt_sequence(stmt.body, resource_names, errors, func_scopes)
+            for handler in stmt.handlers:
+                if handler.type:
+                    self._check_resource_expr(handler.type, resource_names, errors, func_scopes)
+                if handler.name:
+                    self._bind_name(handler.name, func_scopes)
+                self._check_resource_stmt_sequence(handler.body, resource_names, errors, func_scopes)
+            self._check_resource_stmt_sequence(stmt.orelse, resource_names, errors, func_scopes)
+            self._check_resource_stmt_sequence(stmt.finalbody, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            for alias in stmt.names:
+                bound = alias.asname or alias.name.split(".")[0]
+                self._bind_name(bound, func_scopes)
+            return
+
+        if isinstance(stmt, ast.Global):
+            return
+
+        for child in ast.iter_child_nodes(stmt):
+            self._check_resource_access(child, resource_names, errors, func_scopes)
+
+    def _check_resource_expr(self, node, resource_names: Set[str], errors: List[str], func_scopes: List[Tuple[Set[str], Set[str]]]):
+        if node is None:
+            return
+
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if node.id in resource_names and not self._is_shadowed(node.id, func_scopes):
+                errors.append(f"DIRECT_RESOURCE_ACCESS_PARENT: resource={node.id}")
+            return
+
+        if isinstance(node, ast.Attribute):
+            if isinstance(node.value, ast.Name) and node.value.id in resource_names and not self._is_shadowed(node.value.id, func_scopes):
+                errors.append(f"DIRECT_RESOURCE_ACCESS_PARENT: resource={node.value.id} attr={node.attr}")
+            else:
+                self._check_resource_expr(node.value, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(node, ast.Subscript):
+            if isinstance(node.value, ast.Name) and node.value.id in resource_names and not self._is_shadowed(node.value.id, func_scopes):
+                errors.append(f"DIRECT_RESOURCE_ACCESS_PARENT: resource={node.value.id} subscript")
+            else:
+                self._check_resource_expr(node.value, resource_names, errors, func_scopes)
+            self._check_resource_expr(node.slice, resource_names, errors, func_scopes)
+            return
+
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            self._check_resource_access(node, resource_names, errors, func_scopes)
+            return
+
+        for child in ast.iter_child_nodes(node):
+            self._check_resource_expr(child, resource_names, errors, func_scopes)
+
+    def _check_resource_target_access(self, target, resource_names: Set[str], errors: List[str], func_scopes: List[Tuple[Set[str], Set[str]]]):
+        if isinstance(target, ast.Name):
+            return
+        if isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                self._check_resource_target_access(elt, resource_names, errors, func_scopes)
+            return
+        if isinstance(target, ast.Starred):
+            self._check_resource_target_access(target.value, resource_names, errors, func_scopes)
+            return
+        self._check_resource_expr(target, resource_names, errors, func_scopes)
+
+    def _check_resource_augassign_target(self, target, resource_names: Set[str], errors: List[str], func_scopes: List[Tuple[Set[str], Set[str]]]):
+        if isinstance(target, ast.Name):
+            if target.id in resource_names and not self._is_shadowed(target.id, func_scopes):
+                errors.append(f"DIRECT_RESOURCE_ACCESS_PARENT: resource={target.id}")
+            return
+        self._check_resource_expr(target, resource_names, errors, func_scopes)
+
+    def _is_shadowed(self, name: str, func_scopes: List[Tuple[Set[str], Set[str]]]) -> bool:
+        """True if name is locally bound in the innermost function and NOT global-declared."""
+        if not func_scopes:
+            return False
+        local_bindings, global_decls = func_scopes[-1]
+        return name in local_bindings and name not in global_decls
+
+    def _initial_function_bindings(self, func_node) -> Set[str]:
+        """Collect function parameters that are local from function entry."""
+        bindings = set()
+        for arg in func_node.args.args + func_node.args.kwonlyargs + func_node.args.posonlyargs:
+            bindings.add(arg.arg)
+        if func_node.args.vararg:
+            bindings.add(func_node.args.vararg.arg)
+        if func_node.args.kwarg:
+            bindings.add(func_node.args.kwarg.arg)
+        return bindings
+
+    def _bind_name(self, name: str, func_scopes: List[Tuple[Set[str], Set[str]]]):
+        if not func_scopes:
+            return
+        local_bindings, _ = func_scopes[-1]
+        local_bindings.add(name)
+
+    def _bind_target_names(self, target, func_scopes: List[Tuple[Set[str], Set[str]]]):
+        if not func_scopes:
+            return
+        local_bindings, _ = func_scopes[-1]
+        self._extract_names(target, local_bindings)
+
+    def _extract_names(self, target, bindings: Set[str]):
+        """Recursively extract Name nodes from assignment targets (handles unpacking)."""
+        if isinstance(target, ast.Name):
+            bindings.add(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                self._extract_names(elt, bindings)
+        elif isinstance(target, ast.Starred):
+            self._extract_names(target.value, bindings)
+
+    def _collect_global_decls(self, func_node) -> Set[str]:
+        """Collect names declared as global inside a function."""
+        globals_set = set()
+        def walk_stmts(stmts):
+            for stmt in stmts:
+                if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    continue
+                if isinstance(stmt, ast.Global):
+                    globals_set.update(stmt.names)
+                    continue
+                for child in ast.iter_child_nodes(stmt):
+                    if isinstance(child, ast.stmt):
+                        walk_stmts([child])
+
+        walk_stmts(func_node.body)
+        return globals_set
 
     def validate_leaf_interface_usage(self, node: Node, code: str) -> Tuple[bool, List[str]]:
         errors = []
@@ -383,11 +608,10 @@ class Validator:
 
     def check_conservation(self, node: Node) -> List[str]:
         """
-        Global State Conservation Law: Parent Global Variables ⊇ Σ(Child Global Variables).
-        
-        - Completeness: Every parent global_var's variable+op combination must be covered
-          by at least one child's global_vars.
-        - Correctness: Children only declare global_vars that are subsets of parent's.
+        Global State Conservation Law: Child Global Vars ⊆ Parent Global Vars.
+
+        Children may declare a subset of parent operations (fewer is OK).
+        Children must NOT declare operations the parent does not have (correctness).
         """
         errors = []
 
@@ -396,34 +620,18 @@ class Validator:
 
         parent_gvs = node.global_vars
         if not parent_gvs:
+            # Parent has no global vars — children must not declare any
+            for child in node.children:
+                if child.global_vars:
+                    errors.append(
+                        f"Conservation violation - Correctness: child '{child.name}' declares "
+                        f"global_vars but parent has none"
+                    )
             return errors
 
-        child_gvs_by_variable = {}
-        for child in node.children:
-            for gv in child.global_vars:
-                if gv.variable not in child_gvs_by_variable:
-                    child_gvs_by_variable[gv.variable] = []
-                child_gvs_by_variable[gv.variable].append({"child": child.name, "op": gv.op})
-
-        for gv in parent_gvs:
-            if gv.variable not in child_gvs_by_variable:
-                errors.append(
-                    f"Conservation violation - Completeness: parent global_var '{gv.variable}' "
-                    f"(op: {gv.op}) is not assigned to any child"
-                )
-                continue
-
-            child_ops = {c["op"] for c in child_gvs_by_variable[gv.variable]}
-            if gv.op == "read_write":
-                has_read = "read" in child_ops or "read_write" in child_ops
-                has_write = "write" in child_ops or "read_write" in child_ops
-                if not (has_read and has_write):
-                    errors.append(
-                        f"Conservation violation - Completeness: parent requires read+write on "
-                        f"'{gv.variable}', but children only provide: {child_ops}"
-                    )
-
         parent_var_names = {gv.variable for gv in parent_gvs}
+        parent_var_ops = {gv.variable: gv.op for gv in parent_gvs}
+
         for child in node.children:
             for gv in child.global_vars:
                 if gv.variable not in parent_var_names:
@@ -431,13 +639,20 @@ class Validator:
                         f"Conservation violation - Correctness: child '{child.name}' uses "
                         f"undeclared variable '{gv.variable}'"
                     )
-
-        for child in node.children:
-            if not child.stop_decompose and child.subprd and child.subprd.global_state_operations:
-                errors.append(
-                    f"Non-leaf child '{child.name}' has global_state_operations "
-                    f"(only leaf nodes should have them)"
-                )
+                    continue
+                # Child op must be compatible with parent op (not exceed parent's scope)
+                parent_op = parent_var_ops[gv.variable]
+                child_op = gv.op
+                if parent_op == "read" and child_op in ("write", "read_write"):
+                    errors.append(
+                        f"Conservation violation - Correctness: child '{child.name}' requires "
+                        f"{child_op} on '{gv.variable}' but parent only allows {parent_op}"
+                    )
+                elif parent_op == "write" and child_op in ("read", "read_write"):
+                    errors.append(
+                        f"Conservation violation - Correctness: child '{child.name}' requires "
+                        f"{child_op} on '{gv.variable}' but parent only allows {parent_op}"
+                    )
 
         return errors
 

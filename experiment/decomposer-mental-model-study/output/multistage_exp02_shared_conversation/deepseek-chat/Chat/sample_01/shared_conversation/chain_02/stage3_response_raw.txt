@@ -1,0 +1,275 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from parent containing the command field",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "command",
+          "type": "String",
+          "description": "Extracted command string (send/history/create_channel/join)",
+          "consumer": "parent"
+        },
+        {
+          "name": "error",
+          "type": "String",
+          "description": "Error message if command missing or invalid",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "detectable_errors": [
+          "Invalid JSON input",
+          "Missing command field",
+          "Invalid command value"
+        ],
+        "recovery_strategy": "Return error string in call_outputs; parent will propagate as error response"
+      },
+      "concurrency_control": "none",
+      "latency_budget_ms": 10
+    },
+    {
+      "name": "SendMessage",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with send details (channel_id, user_id, message content)",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "Success or error response for send operation",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "DataStore",
+          "description": "Channel data store for membership check",
+          "access": "read"
+        },
+        {
+          "name": "messages",
+          "type": "DataStore",
+          "description": "Message data store for appending new messages",
+          "access": "write"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "MAX_MESSAGE_LENGTH",
+          "type": "Integer",
+          "description": "Maximum allowed message length in characters",
+          "default": 1000
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "channels",
+          "description": "Check if user is a member of the target channel"
+        },
+        {
+          "operation": "write",
+          "target": "messages",
+          "description": "Append new message with timestamp to the channel's message list"
+        }
+      ],
+      "error_handling": {
+        "detectable_errors": [
+          "Missing channel_id or user_id or message content",
+          "Channel does not exist",
+          "User is not a member of the channel",
+          "Message exceeds MAX_MESSAGE_LENGTH"
+        ],
+        "recovery_strategy": "Return error result with descriptive message; no data store changes on failure"
+      },
+      "concurrency_control": "optimistic_locking",
+      "latency_budget_ms": 100
+    },
+    {
+      "name": "GetHistory",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_id",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "List of messages (max 100) or error if channel not found",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "DataStore",
+          "description": "Channel data store for existence check",
+          "access": "read"
+        },
+        {
+          "name": "messages",
+          "type": "DataStore",
+          "description": "Message data store for retrieval",
+          "access": "read"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "HISTORY_LIMIT",
+          "type": "Integer",
+          "description": "Maximum number of messages to return",
+          "default": 100
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "channels",
+          "description": "Verify channel exists"
+        },
+        {
+          "operation": "read",
+          "target": "messages",
+          "description": "Retrieve up to HISTORY_LIMIT most recent messages for the channel"
+        }
+      ],
+      "error_handling": {
+        "detectable_errors": [
+          "Missing channel_id",
+          "Channel does not exist"
+        ],
+        "recovery_strategy": "Return error result with descriptive message; no data store modifications"
+      },
+      "concurrency_control": "none",
+      "latency_budget_ms": 50
+    },
+    {
+      "name": "CreateChannel",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_name",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "Success with channel details or error if name taken",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "DataStore",
+          "description": "Channel data store for creation and uniqueness check",
+          "access": "write"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "MAX_CHANNEL_NAME_LENGTH",
+          "type": "Integer",
+          "description": "Maximum allowed channel name length",
+          "default": 50
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "channels",
+          "description": "Check if channel name already exists"
+        },
+        {
+          "operation": "write",
+          "target": "channels",
+          "description": "Create new channel entry with name and empty member list"
+        }
+      ],
+      "error_handling": {
+        "detectable_errors": [
+          "Missing channel_name",
+          "Channel name already exists",
+          "Channel name exceeds MAX_CHANNEL_NAME_LENGTH"
+        ],
+        "recovery_strategy": "Return error result with descriptive message; no data store changes on failure"
+      },
+      "concurrency_control": "optimistic_locking",
+      "latency_budget_ms": 50
+    },
+    {
+      "name": "JoinChannel",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_id and user_id",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "Success or error if channel not found or already member",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "DataStore",
+          "description": "Channel data store for membership update",
+          "access": "write"
+        }
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "channels",
+          "description": "Check if channel exists and if user is already a member"
+        },
+        {
+          "operation": "write",
+          "target": "channels",
+          "description": "Add user to channel's member list"
+        }
+      ],
+      "error_handling": {
+        "detectable_errors": [
+          "Missing channel_id or user_id",
+          "Channel does not exist",
+          "User is already a member of the channel"
+        ],
+        "recovery_strategy": "Return error result with descriptive message; no data store changes on failure"
+      },
+      "concurrency_control": "optimistic_locking",
+      "latency_budget_ms": 50
+    }
+  ]
+}

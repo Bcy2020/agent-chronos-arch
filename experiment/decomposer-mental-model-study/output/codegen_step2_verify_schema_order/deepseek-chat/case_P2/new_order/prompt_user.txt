@@ -1,0 +1,99 @@
+Review the submitted code below. This code was written by another developer.
+
+============================================================
+SUBMITTED PARENT FUNCTION
+============================================================
+Name: NormalizeFilters
+Purpose: Normalize and validate input filters, providing defaults for optional fields.
+
+============================================================
+PARENT SUBPRD — TASK DEFINITION
+============================================================
+Purpose: Filter normalization with PRD-defined defaults
+Description: Normalize incoming filter parameters. The 'tags' field is optional. After ParseFilters returns filters, if 'tags' is absent, the parent applies tags=[] as a schema default before validation. The final result must come from FormatFilters. This [] is a PRD-defined constant default, not a runtime database lookup.
+Constraints:
+  - type: behavior
+  - detail: tags is optional; empty list is the PRD-defined default
+Acceptance Criteria:
+  - [P2-AC1] If tags is absent, parent applies tags=[] before validation
+  - [P2-AC2] Final result comes from FormatFilters
+
+============================================================
+DECLARED LITERAL EXPECTATIONS FOR THIS CASE
+============================================================
+Allowed literals (authorized by PRD/SubPRD):
+  - value='[]', kind=PRD_LITERAL
+    condition: tags key absent from parsed input
+    prd_basis: SubPRD acceptance criterion P2-AC1 defines empty list as schema default for absent optional field
+Forbidden literals (must be rejected):
+  - value='hardcoded tags', kind=DYNAMIC_VALUE
+    reason: Tags must come from ParseFilters output or be empty list default
+
+Parent Inputs:
+  - input: dict - Input dict with optional tags field
+Parent Outputs:
+  - result: dict - Result dict with success and normalized_tags keys
+
+============================================================
+CHILDREN — INTERFACES AND DATA OPERATIONS
+============================================================
+
+  [ParseFilters]
+    Purpose: Parse raw input into structured filter dict.
+    Behavior: ParseFilters performs its function and returns the result.
+    Signature: def ParseFilters(input: dict) -> dict
+    Inputs:
+      - input: dict (source: parent input)
+    Outputs:
+      - filters: dict (consumer: parent)
+
+  [ValidateFilters]
+    Purpose: Validate filter parameters.
+    Behavior: ValidateFilters performs its function and returns the result.
+    Signature: def ValidateFilters(filters: dict) -> dict
+    Inputs:
+      - filters: dict (source: parent.filters)
+    Outputs:
+      - validated_filters: dict (consumer: parent)
+
+  [FormatFilters]
+    Purpose: Format validated filters into final result.
+    Behavior: FormatFilters performs its function and returns the result.
+    Signature: def FormatFilters(validated_filters: dict) -> dict
+    Inputs:
+      - validated_filters: dict (source: parent.validated_filters)
+    Outputs:
+      - result: dict (consumer: parent)
+
+============================================================
+DECLARED DATAFLOW EDGES - AUTHORITATIVE COMPOSITION CONTRACT
+============================================================
+
+Each row is a data transfer that the parent implementation must realize.
+Sibling-to-sibling rows describe data dependency only; they must be implemented by the parent:
+the parent calls the source child, stores its output, then passes the value to the target child.
+Children must never call siblings.
+
+| from_node | from_output | to_node | to_input | note |
+|-----------|-------------|---------|----------|------|
+| parent | input | ParseFilters | input | Parse the raw input |
+| ParseFilters | filters | parent | filters | Parsed filters for defaulting |
+| parent | filters | ValidateFilters | filters | Validate filters after PRD defaults |
+| ValidateFilters | validated_filters | parent | validated_filters | Validated filters |
+| parent | validated_filters | FormatFilters | validated_filters | Format validated filters |
+| FormatFilters | result | parent | result | Final parent output |
+
+============================================================
+GENERATED CODE TO VERIFY
+============================================================
+```python
+def NormalizeFilters(input: dict) -> dict:
+    filters = ParseFilters(input)
+    if 'tags' not in filters:
+        filters['tags'] = []
+    validated_filters = ValidateFilters(filters)
+    result = FormatFilters(validated_filters)
+    return result
+```
+
+Apply the verification checklist. Return your verdict as valid JSON.

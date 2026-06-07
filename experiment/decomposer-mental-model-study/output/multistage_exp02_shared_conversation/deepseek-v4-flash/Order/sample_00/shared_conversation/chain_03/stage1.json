@@ -1,0 +1,265 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Parse the input JSON to extract command and order data",
+      "behavior": "Parse input JSON and validate command field",
+      "boundary": {
+        "in_scope": [
+          "Extract command type",
+          "Extract order data"
+        ],
+        "out_of_scope": [
+          "Business logic",
+          "Data store access"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "Raw JSON input",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "command",
+          "description": "Command type (place/cancel/track)",
+          "consumer": "parent"
+        },
+        {
+          "name": "order_data",
+          "description": "Parsed order data",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command and order_data are extracted"
+      ],
+      "guarantees": [
+        "Returns error if command missing or invalid"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute order placement logic",
+      "behavior": "Validate inventory, process payment, create order record",
+      "boundary": {
+        "in_scope": [
+          "Inventory check",
+          "Payment processing",
+          "Order creation"
+        ],
+        "out_of_scope": [
+          "Cancellation",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order details including items and payment info",
+          "source": "parent input via ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_id",
+          "description": "Generated order ID",
+          "consumer": "parent"
+        },
+        {
+          "name": "status",
+          "description": "Order status after placement",
+          "consumer": "parent"
+        },
+        {
+          "name": "message",
+          "description": "Success or error message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order data is valid",
+        "Inventory sufficient",
+        "Payment authorized"
+      ],
+      "postconditions": [
+        "Order created in orders store",
+        "Inventory decremented",
+        "Payment recorded"
+      ],
+      "guarantees": [
+        "Atomic operation"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute order cancellation logic",
+      "behavior": "Check order status, cancel if not shipped, refund payment, restore inventory",
+      "boundary": {
+        "in_scope": [
+          "Order status check",
+          "Cancellation",
+          "Refund",
+          "Inventory restoration"
+        ],
+        "out_of_scope": [
+          "Placement",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order ID and cancellation reason",
+          "source": "parent input via ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_id",
+          "description": "Order ID that was cancelled",
+          "consumer": "parent"
+        },
+        {
+          "name": "status",
+          "description": "Updated order status",
+          "consumer": "parent"
+        },
+        {
+          "name": "message",
+          "description": "Success or error message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order exists",
+        "Order not shipped"
+      ],
+      "postconditions": [
+        "Order status set to cancelled",
+        "Payment refunded",
+        "Inventory restored"
+      ],
+      "guarantees": [
+        "Atomic operation",
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute order tracking logic",
+      "behavior": "Retrieve order status from orders store",
+      "boundary": {
+        "in_scope": [
+          "Order status retrieval"
+        ],
+        "out_of_scope": [
+          "Placement",
+          "Cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order ID to track",
+          "source": "parent input via ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "order_id",
+          "description": "Order ID",
+          "consumer": "parent"
+        },
+        {
+          "name": "status",
+          "description": "Current order status",
+          "consumer": "parent"
+        },
+        {
+          "name": "message",
+          "description": "Status description",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order exists"
+      ],
+      "postconditions": [
+        "Status retrieved"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent OrderSystem is decomposed into a command parser and three command-specific executors. ParseCommand handles input validation and routing, while PlaceOrder, CancelOrder, and TrackOrder each handle their respective atomic operations. This keeps children at the same abstraction level and minimally overlapping.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ParseCommand",
+      "data": "input",
+      "note": "Raw input"
+    },
+    {
+      "from": "ParseCommand",
+      "to": "parent",
+      "data": "command, order_data",
+      "note": "Parsed command and data"
+    },
+    {
+      "from": "parent",
+      "to": "PlaceOrder",
+      "data": "order_data",
+      "note": "If command is place"
+    },
+    {
+      "from": "parent",
+      "to": "CancelOrder",
+      "data": "order_data",
+      "note": "If command is cancel"
+    },
+    {
+      "from": "parent",
+      "to": "TrackOrder",
+      "data": "order_data",
+      "note": "If command is track"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "parent",
+      "data": "order_id, status, message",
+      "note": "Result"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "parent",
+      "data": "order_id, status, message",
+      "note": "Result"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "parent",
+      "data": "order_id, status, message",
+      "note": "Result"
+    }
+  ]
+}

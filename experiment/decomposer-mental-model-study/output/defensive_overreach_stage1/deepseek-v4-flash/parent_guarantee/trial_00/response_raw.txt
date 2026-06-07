@@ -1,0 +1,54 @@
+{
+  "children": [
+    {
+      "name": "BuildStudentRecord",
+      "purpose": "Construct the student record object from inputs",
+      "behavior": "Takes student_id and student_name, creates a record structure (e.g., dict or object) with these fields.",
+      "boundary": {
+        "in_scope": ["Construct record from inputs"],
+        "out_of_scope": ["Data store operations", "Validation"]
+      },
+      "semantic_inputs": [
+        {"name": "student_id", "description": "Unique student identifier", "source": "parent input"},
+        {"name": "student_name", "description": "Student name", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "student_record", "description": "Constructed student record", "consumer": "InsertRecord"}
+      ],
+      "preconditions": ["student_id and student_name are provided"],
+      "postconditions": ["A student record object is created"],
+      "guarantees": ["Record contains exactly student_id and student_name"],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "InsertRecord",
+      "purpose": "Insert the student record into the students data store",
+      "behavior": "Takes the student record and writes it to the students data store. Returns success indicator based on write outcome.",
+      "boundary": {
+        "in_scope": ["Write record to data store", "Return success/failure"],
+        "out_of_scope": ["Record construction", "Duplicate checking"]
+      },
+      "semantic_inputs": [
+        {"name": "student_record", "description": "Student record to insert", "source": "BuildStudentRecord"}
+      ],
+      "semantic_outputs": [
+        {"name": "success", "description": "Whether insertion succeeded", "consumer": "parent"}
+      ],
+      "preconditions": ["student_record is valid", "Data store is accessible"],
+      "postconditions": ["If success, record is persisted"],
+      "guarantees": ["Insertion is atomic"],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data store operation"
+    }
+  ],
+  "decomposition_rationale": "InsertStudent is split into two sequential steps: first constructing the record object from inputs, then performing the actual data store insertion. This separates data preparation from I/O operation.",
+  "orchestration_model": "sequence",
+  "dataflow_sketch": [
+    {"from": "parent", "to": "BuildStudentRecord", "data": "student_id, student_name", "note": "Inputs passed to build record"},
+    {"from": "BuildStudentRecord", "to": "InsertRecord", "data": "student_record", "note": "Constructed record passed for insertion"},
+    {"from": "InsertRecord", "to": "parent", "data": "success", "note": "Insertion result returned to parent"}
+  ]
+}

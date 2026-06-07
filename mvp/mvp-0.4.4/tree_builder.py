@@ -59,6 +59,31 @@ class TreeBuilder:
                 child.granted_capabilities = grant
                 self._log(f"Granted {len(grant.granted_interfaces)} interface(s) to '{child.name}'", node.depth)
 
+    def _build_decompose_context_from_failure(self, node: Node) -> Dict[str, Any]:
+        """Build previous_errors dict from last_failure for re-decomposition."""
+        if not node.last_failure:
+            return {}
+        lf = node.last_failure
+        ctx: Dict[str, Any] = {}
+        if lf.errors:
+            ctx["previous_errors"] = lf.errors
+        if lf.children_snapshot:
+            ctx["previous_children"] = lf.children_snapshot
+        if lf.decomposition_rationale:
+            ctx["previous_rationale"] = lf.decomposition_rationale
+        if lf.generated_code:
+            ctx["previous_code"] = lf.generated_code
+        validator_report: Dict[str, Any] = {}
+        if lf.structured_errors:
+            validator_report["structured_errors"] = [e.to_dict() for e in lf.structured_errors]
+        if lf.composition_feedback:
+            validator_report["composition_feedback"] = lf.composition_feedback.to_dict()
+        if lf.fix_summary:
+            validator_report["fix_summary"] = lf.fix_summary
+        if validator_report:
+            ctx["validator_report"] = validator_report
+        return ctx
+
     def _build_decompose_messages(self, node: Node, retry_count: int) -> List[Dict[str, str]]:
         """Build multi-turn messages based on failure type."""
         messages = [
@@ -343,9 +368,33 @@ class TreeBuilder:
 
             # 1. Decompose stage
             if retry_count > 0 or not node.children:
-                decomp_messages = self._build_decompose_messages(node, retry_count)
+                if retry_count == 0:
+                    # First attempt: three-stage decomposition
+                    self._log(f"Starting three-stage decomposition...", node.depth)
+                    node, decomp_errors = self.decomposer.decompose_staged(
+                        node,
+                        interface_plan_summary=self.interface_plan_summary
+                    )
+                    # Capture message history for potential re-decomposition
+                    decomp_messages = getattr(node, '_staged_messages', [])
+                else:
+                    # Re-decomposition: restart from Stage 1 with full message history
+                    prev_messages = None
+                    if hasattr(node, '_staged_messages') and node._staged_messages:
+                        prev_messages = node._staged_messages
+                    elif node.last_failure and node.last_failure.decompose_messages:
+                        prev_messages = node.last_failure.decompose_messages
 
-                node, decomp_errors = self.decomposer.decompose_with_messages(node, decomp_messages)
+                    decomp_context = self._build_decompose_context_from_failure(node)
+                    self._log(f"Re-decomposing with message history ({len(prev_messages or [])} msgs)...", node.depth)
+                    node, decomp_errors = self.decomposer.decompose_staged_with_history(
+                        node,
+                        previous_errors=decomp_context,
+                        message_history=prev_messages,
+                        interface_plan_summary=self.interface_plan_summary
+                    )
+                    # Update message history
+                    decomp_messages = getattr(node, '_staged_messages', prev_messages or [])
 
                 if decomp_errors:
                     self._log(f"Decomposition failed: {decomp_errors}", node.depth)

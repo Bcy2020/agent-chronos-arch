@@ -1,0 +1,401 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Extract and validate the command field from the input JSON",
+      "behavior": "Parse the input JSON and extract the 'command' field, returning it as a string or error if missing/invalid",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "command extraction",
+          "validation of command presence"
+        ],
+        "out_of_scope": [
+          "Command execution",
+          "Data store access"
+        ]
+      },
+      "semantic_inputs": [
+        "input JSON"
+      ],
+      "semantic_outputs": [
+        "command string or error"
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command is one of the allowed values or error is set"
+      ],
+      "guarantees": [
+        "Returns command or error, never both"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": true,
+      "stop_reason": "Pure parsing function",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Extracted command string (send/history/create_channel/join)",
+          "consumer": "parent"
+        },
+        {
+          "name": "error",
+          "type": "str",
+          "description": "Error if command missing or invalid",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(input: dict) -> tuple[str, str]"
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Handle the 'send' command by storing a message in the appropriate channel",
+      "behavior": "Validate that the user is a member of the target channel, then append the message to the messages data store with timestamp",
+      "boundary": {
+        "in_scope": [
+          "Message validation",
+          "Channel membership check",
+          "Message storage"
+        ],
+        "out_of_scope": [
+          "Other commands",
+          "History retrieval"
+        ]
+      },
+      "semantic_inputs": [
+        "input JSON",
+        "channels data store",
+        "messages data store"
+      ],
+      "semantic_outputs": [
+        "success/error response"
+      ],
+      "preconditions": [
+        "Command is 'send'",
+        "Input contains channel_id and message content"
+      ],
+      "postconditions": [
+        "Message is stored if user is member",
+        "Error returned if not member"
+      ],
+      "guarantees": [
+        "Message is not stored if user is not a member"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Can be further decomposed into membership check and message append",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Original input JSON with send details",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "channels",
+          "op": "read",
+          "reason": "Check if user is a member of the target channel"
+        },
+        {
+          "resource": "messages",
+          "op": "write",
+          "reason": "Append the new message to the channel's message list"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Success or error response for send operation",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def SendMessage(input: dict) -> dict"
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Handle the 'history' command by retrieving recent messages from a channel",
+      "behavior": "Validate channel exists, then return up to 100 most recent messages from the messages data store",
+      "boundary": {
+        "in_scope": [
+          "Channel existence check",
+          "Message retrieval",
+          "Limit enforcement"
+        ],
+        "out_of_scope": [
+          "Message sending",
+          "Channel creation"
+        ]
+      },
+      "semantic_inputs": [
+        "input JSON",
+        "channels data store",
+        "messages data store"
+      ],
+      "semantic_outputs": [
+        "list of messages or error"
+      ],
+      "preconditions": [
+        "Command is 'history'",
+        "Input contains channel_id"
+      ],
+      "postconditions": [
+        "Returns up to 100 messages sorted by timestamp"
+      ],
+      "guarantees": [
+        "Does not modify any data store"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "Can be further decomposed into channel check and message query",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Original input JSON with channel_id",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "channels",
+          "op": "read",
+          "reason": "Check if the channel exists"
+        },
+        {
+          "resource": "messages",
+          "op": "read",
+          "reason": "Retrieve messages for the specified channel"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "List of messages (max 100) or error if channel not found",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def GetHistory(input: dict) -> dict"
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Handle the 'create_channel' command by adding a new channel",
+      "behavior": "Validate channel name is unique, then create a new channel entry in the channels data store",
+      "boundary": {
+        "in_scope": [
+          "Channel name uniqueness check",
+          "Channel creation"
+        ],
+        "out_of_scope": [
+          "Joining channels",
+          "Sending messages"
+        ]
+      },
+      "semantic_inputs": [
+        "input JSON",
+        "channels data store"
+      ],
+      "semantic_outputs": [
+        "success with channel details or error"
+      ],
+      "preconditions": [
+        "Command is 'create_channel'",
+        "Input contains channel_name"
+      ],
+      "postconditions": [
+        "New channel is added to channels data store if name unique"
+      ],
+      "guarantees": [
+        "Does not create duplicate channels"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with single data store write",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Original input JSON with channel name",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "channels",
+          "op": "read_write",
+          "reason": "Check uniqueness and then add new channel"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Success with channel details or error if name taken",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CreateChannel(input: dict) -> dict"
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Handle the 'join' command by adding a user to a channel's member list",
+      "behavior": "Validate channel exists, then add the user to the channel's member list if not already a member",
+      "boundary": {
+        "in_scope": [
+          "Channel existence check",
+          "Membership update"
+        ],
+        "out_of_scope": [
+          "Channel creation",
+          "Message operations"
+        ]
+      },
+      "semantic_inputs": [
+        "input JSON",
+        "channels data store"
+      ],
+      "semantic_outputs": [
+        "success or error"
+      ],
+      "preconditions": [
+        "Command is 'join'",
+        "Input contains channel_id and user_id"
+      ],
+      "postconditions": [
+        "User is added to channel members if channel exists and not already member"
+      ],
+      "guarantees": [
+        "Does not add duplicate members"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with single data store update",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Original input JSON with channel_id and user_id",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "channels",
+          "op": "read_write",
+          "reason": "Check channel existence and update member list"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Success or error if channel not found or already member",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def JoinChannel(input: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseCommand"
+    },
+    "parent_outputs_produced_by": {
+      "output": "JoinChannel"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseCommand",
+      "to_input": "input",
+      "note": "Parent passes raw JSON to parse command"
+    },
+    {
+      "from_node": "ParseCommand",
+      "from_output": "command",
+      "to_node": "parent",
+      "to_input": "command",
+      "note": "Parsed command returned to parent for routing"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "SendMessage",
+      "to_input": "input",
+      "note": "Parent passes input to send message handler"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "GetHistory",
+      "to_input": "input",
+      "note": "Parent passes input to get history handler"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "CreateChannel",
+      "to_input": "input",
+      "note": "Parent passes input to create channel handler"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "JoinChannel",
+      "to_input": "input",
+      "note": "Parent passes input to join channel handler"
+    },
+    {
+      "from_node": "SendMessage",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "Send result returned to parent"
+    },
+    {
+      "from_node": "GetHistory",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "History result returned to parent"
+    },
+    {
+      "from_node": "CreateChannel",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "Create channel result returned to parent"
+    },
+    {
+      "from_node": "JoinChannel",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "Join result returned to parent"
+    }
+  ],
+  "interface_audit": {
+    "identity_preservation_detail": "All five children from Stage 1 are preserved exactly: ParseCommand, SendMessage, GetHistory, CreateChannel, JoinChannel. No children were added, deleted, renamed, or reordered.",
+    "semantic_preservation_detail": "All Stage 1 fields (purpose, behavior, boundary, preconditions, postconditions, guarantees, composition_role) are copied verbatim without modification.",
+    "call_signature_detail": "Each child's signature contains only call_inputs parameters. ParseCommand takes 'input' dict. All command handlers take 'input' dict. No internal data stores appear in signatures.",
+    "internal_leaf_separation_detail": "Data stores (channels, messages) are listed as internal_leaf_accesses with appropriate read/write operations. They are not exposed as call parameters, maintaining proper encapsulation.",
+    "dataflow_schema_detail": "All dataflow edges connect valid nodes: parent or child names. No resource names (raw_data, processed_data, channels, messages, orders, inventory, payments) appear as from_node/to_node.",
+    "final_status": "ok"
+  }
+}

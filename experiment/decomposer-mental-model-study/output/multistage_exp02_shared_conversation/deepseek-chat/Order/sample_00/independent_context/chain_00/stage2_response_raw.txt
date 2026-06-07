@@ -1,0 +1,369 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Extract and validate the command type from the input JSON",
+      "behavior": "Parse the input JSON to extract the 'command' field and validate it is one of 'place', 'cancel', 'track'",
+      "boundary": {
+        "in_scope": [
+          "Parsing JSON",
+          "Validating command value"
+        ],
+        "out_of_scope": [
+          "Processing order data",
+          "Accessing data stores"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "command",
+          "description": "Validated command string",
+          "consumer": "parent"
+        },
+        {
+          "name": "order_data",
+          "description": "Remaining JSON data after command extraction",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command is one of 'place', 'cancel', 'track'"
+      ],
+      "guarantees": [
+        "Returns error if command is missing or invalid"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure parsing and validation function",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Dictionary with 'command' and 'order_data' keys, or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(input: dict) -> dict"
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the place order workflow",
+      "behavior": "Reserve inventory, process payment, create order record, return success with order_id",
+      "boundary": {
+        "in_scope": [
+          "Inventory reservation",
+          "Payment processing",
+          "Order creation"
+        ],
+        "out_of_scope": [
+          "Cancellation",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order details including items and customer info",
+          "source": "ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Inventory available",
+        "Payment method valid"
+      ],
+      "postconditions": [
+        "Order created in orders store",
+        "Inventory decremented",
+        "Payment recorded"
+      ],
+      "guarantees": [
+        "Atomic operation: all or nothing"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Can be further decomposed into sub-steps",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order details including items and customer info",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "inventory",
+          "op": "read_write",
+          "reason": "Reserve items for the order"
+        },
+        {
+          "resource": "payments",
+          "op": "read_write",
+          "reason": "Process payment for the order"
+        },
+        {
+          "resource": "orders",
+          "op": "write",
+          "reason": "Create order record"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Dictionary with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(order_data: dict) -> dict"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the cancel order workflow",
+      "behavior": "Check order status, if not shipped, cancel order, refund payment, restore inventory",
+      "boundary": {
+        "in_scope": [
+          "Order status check",
+          "Cancellation logic",
+          "Payment refund",
+          "Inventory restoration"
+        ],
+        "out_of_scope": [
+          "Placing orders",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Contains order_id to cancel",
+          "source": "ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order exists",
+        "Order not shipped"
+      ],
+      "postconditions": [
+        "Order status set to cancelled",
+        "Payment refunded",
+        "Inventory restored"
+      ],
+      "guarantees": [
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Can be further decomposed into sub-steps",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Contains order_id to cancel",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "orders",
+          "op": "read_write",
+          "reason": "Check order status and update to cancelled"
+        },
+        {
+          "resource": "payments",
+          "op": "read_write",
+          "reason": "Process refund"
+        },
+        {
+          "resource": "inventory",
+          "op": "write",
+          "reason": "Restore inventory items"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Dictionary with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(order_data: dict) -> dict"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Retrieve and return order tracking information",
+      "behavior": "Look up order by ID in orders store and return current status and tracking details",
+      "boundary": {
+        "in_scope": [
+          "Order lookup",
+          "Status retrieval"
+        ],
+        "out_of_scope": [
+          "Modifying order",
+          "Payment or inventory operations"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Contains order_id to track",
+          "source": "ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message, tracking_info",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order exists"
+      ],
+      "postconditions": [
+        "No state changes"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Simple read operation",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Contains order_id to track",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "orders",
+          "op": "read",
+          "reason": "Retrieve order status and tracking details"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Dictionary with success, order_id, status, message, tracking_info",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(order_data: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseCommand"
+    },
+    "parent_outputs_produced_by": {
+      "output": "ParseCommand",
+      "output": "PlaceOrder",
+      "output": "CancelOrder",
+      "output": "TrackOrder"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseCommand",
+      "to_input": "input",
+      "note": "Parent passes raw JSON input to ParseCommand"
+    },
+    {
+      "from_node": "ParseCommand",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "ParseCommand returns parsed command and order_data to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "PlaceOrder",
+      "to_input": "order_data",
+      "note": "Parent routes order_data to PlaceOrder when command is 'place'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "CancelOrder",
+      "to_input": "order_data",
+      "note": "Parent routes order_data to CancelOrder when command is 'cancel'"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "order_data",
+      "to_node": "TrackOrder",
+      "to_input": "order_data",
+      "note": "Parent routes order_data to TrackOrder when command is 'track'"
+    },
+    {
+      "from_node": "PlaceOrder",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "PlaceOrder returns result to parent"
+    },
+    {
+      "from_node": "CancelOrder",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "CancelOrder returns result to parent"
+    },
+    {
+      "from_node": "TrackOrder",
+      "from_output": "result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "TrackOrder returns result to parent"
+    }
+  ],
+  "interface_audit": {
+    "identity_preservation_detail": "All four child names (ParseCommand, PlaceOrder, CancelOrder, TrackOrder) are preserved exactly as in Stage 1, in the same order.",
+    "semantic_preservation_detail": "All Stage 1 fields (purpose, behavior, boundary, semantic_inputs, semantic_outputs, preconditions, postconditions, guarantees, composition_role) are copied verbatim without modification.",
+    "call_signature_detail": "Each child's signature contains only the call_inputs parameters. ParseCommand takes 'input' from parent. PlaceOrder, CancelOrder, TrackOrder each take 'order_data' from parent. No internal resources appear in signatures.",
+    "internal_leaf_separation_detail": "Data stores (inventory, payments, orders) are listed only in internal_leaf_accesses, not in call_inputs. This ensures the parent does not need to pass store references, maintaining encapsulation.",
+    "dataflow_schema_detail": "All from_node and to_node values are either 'parent' or exact child names (ParseCommand, PlaceOrder, CancelOrder, TrackOrder). No resource names like 'orders' or 'inventory' appear as endpoints.",
+    "final_status": "ok"
+  }
+}

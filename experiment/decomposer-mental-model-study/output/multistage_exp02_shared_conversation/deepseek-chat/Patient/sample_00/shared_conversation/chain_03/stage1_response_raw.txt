@@ -1,0 +1,170 @@
+{
+  "children": [
+    {
+      "name": "RegisterPatient",
+      "purpose": "Register a new patient in the system",
+      "behavior": "Extract patient details from input, validate uniqueness, store in patients data store, and return success or error",
+      "boundary": {
+        "in_scope": ["patient registration", "input validation", "data store write"],
+        "out_of_scope": ["booking appointments", "retrieving records", "profile updates"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "JSON with registration details (name, contact, etc.)", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "registration_result", "description": "JSON with success status, patient ID, and message", "consumer": "parent"}
+      ],
+      "preconditions": ["input contains valid registration data", "patient does not already exist"],
+      "postconditions": ["new patient record created in patients data store"],
+      "guarantees": ["patient ID is unique", "registration is atomic"],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "BookAppointment",
+      "purpose": "Book an appointment for a registered patient",
+      "behavior": "Extract patient ID and appointment details from input, verify patient exists, check slot availability, store appointment, and return confirmation",
+      "boundary": {
+        "in_scope": ["appointment booking", "patient existence check", "slot availability", "data store write"],
+        "out_of_scope": ["patient registration", "record retrieval", "profile updates"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "JSON with patient ID, date, time, doctor, etc.", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "booking_result", "description": "JSON with success status, appointment ID, and message", "consumer": "parent"}
+      ],
+      "preconditions": ["patient is registered", "appointment slot is available"],
+      "postconditions": ["new appointment record created in appointments data store"],
+      "guarantees": ["appointment is unique", "booking is atomic"],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetRecords",
+      "purpose": "Retrieve medical records for a patient",
+      "behavior": "Extract patient ID from input, verify patient exists, query appointments data store for all records, and return them",
+      "boundary": {
+        "in_scope": ["record retrieval", "patient existence check", "data store read"],
+        "out_of_scope": ["registration", "booking", "profile updates"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "JSON with patient ID", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "records_result", "description": "JSON with success status, list of records, and message", "consumer": "parent"}
+      ],
+      "preconditions": ["patient is registered"],
+      "postconditions": ["records are read without modification"],
+      "guarantees": ["records are append-only, no deletion"],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "UpdateProfile",
+      "purpose": "Update patient profile information",
+      "behavior": "Extract patient ID and updated fields from input, verify patient exists, update patients data store, and return confirmation",
+      "boundary": {
+        "in_scope": ["profile update", "patient existence check", "data store write"],
+        "out_of_scope": ["registration", "booking", "record retrieval"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "JSON with patient ID and fields to update", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "update_result", "description": "JSON with success status and message", "consumer": "parent"}
+      ],
+      "preconditions": ["patient is registered"],
+      "postconditions": ["patient profile updated in patients data store"],
+      "guarantees": ["update is atomic"],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ParseCommand",
+      "purpose": "Parse the input JSON to determine which command to execute",
+      "behavior": "Extract the 'command' field from input JSON and return it along with the rest of the data",
+      "boundary": {
+        "in_scope": ["command extraction", "input parsing"],
+        "out_of_scope": ["executing any command", "data store access"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "JSON with command field", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "command", "description": "String indicating the operation (register/book/records/update)", "consumer": "parent"},
+        {"name": "data", "description": "Remaining JSON data for the command", "consumer": "parent"}
+      ],
+      "preconditions": ["input is valid JSON"],
+      "postconditions": ["command and data are extracted"],
+      "guarantees": ["command is one of the valid commands"],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateInput",
+      "purpose": "Validate the input JSON structure and required fields",
+      "behavior": "Check that input has required fields based on command, return validation result",
+      "boundary": {
+        "in_scope": ["input validation", "field presence check"],
+        "out_of_scope": ["executing commands", "data store access"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "JSON with command and data", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "validation_result", "description": "Boolean indicating validity and error message if invalid", "consumer": "parent"}
+      ],
+      "preconditions": ["input is parseable"],
+      "postconditions": ["validation result is returned"],
+      "guarantees": ["validation is deterministic"],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Format the output JSON with success, data, and message",
+      "behavior": "Take the result from a child operation and wrap it in a standard response format",
+      "boundary": {
+        "in_scope": ["response formatting", "error handling"],
+        "out_of_scope": ["executing commands", "data store access"]
+      },
+      "semantic_inputs": [
+        {"name": "result", "description": "Result from a child operation (success, data, message)", "source": "previous child output"}
+      ],
+      "semantic_outputs": [
+        {"name": "output", "description": "JSON with success, data, message", "consumer": "parent"}
+      ],
+      "preconditions": ["result is available"],
+      "postconditions": ["output is formatted"],
+      "guarantees": ["output conforms to specification"],
+      "composition_role": "aggregate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "The parent PatientPortal is decomposed into five main functional children (RegisterPatient, BookAppointment, GetRecords, UpdateProfile) each handling a distinct operation, plus three supporting children (ParseCommand, ValidateInput, FormatResponse) for input handling and output formatting. This separation ensures each child has a single responsibility and no sibling calls, with the parent orchestrating the flow based on the parsed command.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {"from": "parent", "to": "ParseCommand", "data": "input JSON", "note": "Extract command and data"},
+    {"from": "ParseCommand", "to": "parent", "data": "command and data", "note": "Return parsed command"},
+    {"from": "parent", "to": "ValidateInput", "data": "input JSON", "note": "Validate input structure"},
+    {"from": "ValidateInput", "to": "parent", "data": "validation result", "note": "Return validity"},
+    {"from": "parent", "to": "RegisterPatient", "data": "input data", "note": "If command is register"},
+    {"from": "RegisterPatient", "to": "parent", "data": "registration result", "note": "Return result"},
+    {"from": "parent", "to": "BookAppointment", "data": "input data", "note": "If command is book"},
+    {"from": "BookAppointment", "to": "parent", "data": "booking result", "note": "Return result"},
+    {"from": "parent", "to": "GetRecords", "data": "input data", "note": "If command is records"},
+    {"from": "GetRecords", "to": "parent", "data": "records result", "note": "Return result"},
+    {"from": "parent", "to": "UpdateProfile", "data": "input data", "note": "If command is update"},
+    {"from": "UpdateProfile", "to": "parent", "data": "update result", "note": "Return result"},
+    {"from": "parent", "to": "FormatResponse", "data": "result from child", "note": "Format final output"},
+    {"from": "FormatResponse", "to": "parent", "data": "formatted output", "note": "Return to parent"}
+  ]
+}

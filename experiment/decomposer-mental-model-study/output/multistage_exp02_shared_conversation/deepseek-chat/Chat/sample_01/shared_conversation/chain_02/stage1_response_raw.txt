@@ -1,0 +1,130 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Extract and validate the command field from the input JSON",
+      "behavior": "Parse the input JSON and extract the 'command' field, returning it as a string or error if missing/invalid",
+      "boundary": {
+        "in_scope": ["JSON parsing", "command extraction", "validation of command presence"],
+        "out_of_scope": ["Command execution", "Data store access"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "Raw JSON input from parent", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "command", "description": "Extracted command string (send/history/create_channel/join)", "consumer": "parent"},
+        {"name": "error", "description": "Error if command missing or invalid", "consumer": "parent"}
+      ],
+      "preconditions": ["Input is valid JSON"],
+      "postconditions": ["Command is one of the allowed values or error is set"],
+      "guarantees": ["Returns command or error, never both"],
+      "composition_role": "transform",
+      "stop_decompose": true,
+      "stop_reason": "Pure parsing function"
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Handle the 'send' command by storing a message in the appropriate channel",
+      "behavior": "Validate that the user is a member of the target channel, then append the message to the messages data store with timestamp",
+      "boundary": {
+        "in_scope": ["Message validation", "Channel membership check", "Message storage"],
+        "out_of_scope": ["Other commands", "History retrieval"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "Original input JSON with send details", "source": "parent input"},
+        {"name": "channels", "description": "Channel data store for membership check", "source": "internal leaf access"},
+        {"name": "messages", "description": "Message data store for appending", "source": "internal leaf access"}
+      ],
+      "semantic_outputs": [
+        {"name": "result", "description": "Success or error response for send operation", "consumer": "parent"}
+      ],
+      "preconditions": ["Command is 'send'", "Input contains channel_id and message content"],
+      "postconditions": ["Message is stored if user is member", "Error returned if not member"],
+      "guarantees": ["Message is not stored if user is not a member"],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Can be further decomposed into membership check and message append"
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Handle the 'history' command by retrieving recent messages from a channel",
+      "behavior": "Validate channel exists, then return up to 100 most recent messages from the messages data store",
+      "boundary": {
+        "in_scope": ["Channel existence check", "Message retrieval", "Limit enforcement"],
+        "out_of_scope": ["Message sending", "Channel creation"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "Original input JSON with channel_id", "source": "parent input"},
+        {"name": "channels", "description": "Channel data store for existence check", "source": "internal leaf access"},
+        {"name": "messages", "description": "Message data store for retrieval", "source": "internal leaf access"}
+      ],
+      "semantic_outputs": [
+        {"name": "result", "description": "List of messages (max 100) or error if channel not found", "consumer": "parent"}
+      ],
+      "preconditions": ["Command is 'history'", "Input contains channel_id"],
+      "postconditions": ["Returns up to 100 messages sorted by timestamp"],
+      "guarantees": ["Does not modify any data store"],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "Can be further decomposed into channel check and message query"
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Handle the 'create_channel' command by adding a new channel",
+      "behavior": "Validate channel name is unique, then create a new channel entry in the channels data store",
+      "boundary": {
+        "in_scope": ["Channel name uniqueness check", "Channel creation"],
+        "out_of_scope": ["Joining channels", "Sending messages"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "Original input JSON with channel name", "source": "parent input"},
+        {"name": "channels", "description": "Channel data store for creation", "source": "internal leaf access"}
+      ],
+      "semantic_outputs": [
+        {"name": "result", "description": "Success with channel details or error if name taken", "consumer": "parent"}
+      ],
+      "preconditions": ["Command is 'create_channel'", "Input contains channel_name"],
+      "postconditions": ["New channel is added to channels data store if name unique"],
+      "guarantees": ["Does not create duplicate channels"],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with single data store write"
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Handle the 'join' command by adding a user to a channel's member list",
+      "behavior": "Validate channel exists, then add the user to the channel's member list if not already a member",
+      "boundary": {
+        "in_scope": ["Channel existence check", "Membership update"],
+        "out_of_scope": ["Channel creation", "Message operations"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "Original input JSON with channel_id and user_id", "source": "parent input"},
+        {"name": "channels", "description": "Channel data store for membership update", "source": "internal leaf access"}
+      ],
+      "semantic_outputs": [
+        {"name": "result", "description": "Success or error if channel not found or already member", "consumer": "parent"}
+      ],
+      "preconditions": ["Command is 'join'", "Input contains channel_id and user_id"],
+      "postconditions": ["User is added to channel members if channel exists and not already member"],
+      "guarantees": ["Does not add duplicate members"],
+      "composition_role": "execute",
+      "stop_decompose": true,
+      "stop_reason": "Atomic operation with single data store update"
+    }
+  ],
+  "decomposition_rationale": "The parent ChatApp is decomposed into a command parser and four command-specific handlers, each responsible for one functional requirement. The parser extracts the command and routes to the appropriate handler, which performs the actual work using data stores.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {"from": "parent", "to": "ParseCommand", "data": "input JSON", "note": "Extract command"},
+    {"from": "ParseCommand", "to": "parent", "data": "command or error", "note": "Route based on command"},
+    {"from": "parent", "to": "SendMessage", "data": "input JSON", "note": "If command is 'send'"},
+    {"from": "parent", "to": "GetHistory", "data": "input JSON", "note": "If command is 'history'"},
+    {"from": "parent", "to": "CreateChannel", "data": "input JSON", "note": "If command is 'create_channel'"},
+    {"from": "parent", "to": "JoinChannel", "data": "input JSON", "note": "If command is 'join'"},
+    {"from": "SendMessage", "to": "parent", "data": "result", "note": "Return success/error"},
+    {"from": "GetHistory", "to": "parent", "data": "result", "note": "Return message list"},
+    {"from": "CreateChannel", "to": "parent", "data": "result", "note": "Return channel details"},
+    {"from": "JoinChannel", "to": "parent", "data": "result", "note": "Return join status"}
+  ]
+}

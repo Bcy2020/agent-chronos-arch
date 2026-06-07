@@ -1,0 +1,397 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from parent containing the command field"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "command",
+          "type": "string",
+          "description": "Extracted command string (send/history/create_channel/join)"
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "description": "Error message if command missing or invalid"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": [
+        {
+          "condition": "Input is not valid JSON",
+          "action": "Return error with message 'Invalid JSON input'"
+        },
+        {
+          "condition": "Command field missing or not a string",
+          "action": "Return error with message 'Missing or invalid command field'"
+        },
+        {
+          "condition": "Command value not in allowed set",
+          "action": "Return error with message 'Unknown command'"
+        }
+      ],
+      "rate_limits": [],
+      "timeouts": [],
+      "security": []
+    },
+    {
+      "name": "SendMessage",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with send details (channel_id, message content, user_id)"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, data, message for send operation"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "data_store",
+          "access": "read",
+          "description": "Read channel membership data"
+        },
+        {
+          "name": "messages",
+          "type": "data_store",
+          "access": "write",
+          "description": "Append new message"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "MAX_MESSAGE_LENGTH",
+          "type": "integer",
+          "default": 1000,
+          "description": "Maximum allowed message length in characters"
+        }
+      ],
+      "data_operations": [
+        {
+          "name": "check_membership",
+          "description": "Read channels data store to verify user_id is in channel_id's member list",
+          "access": "read",
+          "target": "channels"
+        },
+        {
+          "name": "append_message",
+          "description": "Write a new message entry to messages data store with channel_id, user_id, content, and timestamp",
+          "access": "write",
+          "target": "messages"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "channel_id not found in channels data store",
+          "action": "Return error with message 'Channel not found'"
+        },
+        {
+          "condition": "user_id not a member of channel",
+          "action": "Return error with message 'User not a member of this channel'"
+        },
+        {
+          "condition": "message content exceeds MAX_MESSAGE_LENGTH",
+          "action": "Return error with message 'Message too long'"
+        },
+        {
+          "condition": "message content empty or missing",
+          "action": "Return error with message 'Message content required'"
+        }
+      ],
+      "rate_limits": [
+        {
+          "name": "send_rate_limit",
+          "limit": "10 messages per second per user",
+          "scope": "per_user"
+        }
+      ],
+      "timeouts": [
+        {
+          "name": "send_timeout",
+          "duration": "5 seconds",
+          "action": "Return error with message 'Send operation timed out'"
+        }
+      ],
+      "security": [
+        {
+          "name": "input_sanitization",
+          "description": "Sanitize message content to prevent injection attacks"
+        }
+      ]
+    },
+    {
+      "name": "GetHistory",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_id"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, data (list of messages), message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "data_store",
+          "access": "read",
+          "description": "Check channel existence"
+        },
+        {
+          "name": "messages",
+          "type": "data_store",
+          "access": "read",
+          "description": "Retrieve messages"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "MAX_HISTORY_MESSAGES",
+          "type": "integer",
+          "default": 100,
+          "description": "Maximum number of messages to return in history"
+        }
+      ],
+      "data_operations": [
+        {
+          "name": "check_channel_exists",
+          "description": "Read channels data store to verify channel_id exists",
+          "access": "read",
+          "target": "channels"
+        },
+        {
+          "name": "retrieve_messages",
+          "description": "Read messages data store filtered by channel_id, sorted by timestamp descending, limited to MAX_HISTORY_MESSAGES",
+          "access": "read",
+          "target": "messages"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "channel_id not found in channels data store",
+          "action": "Return error with message 'Channel not found'"
+        },
+        {
+          "condition": "No messages in channel",
+          "action": "Return success with empty list"
+        }
+      ],
+      "rate_limits": [
+        {
+          "name": "history_rate_limit",
+          "limit": "30 requests per minute per user",
+          "scope": "per_user"
+        }
+      ],
+      "timeouts": [
+        {
+          "name": "history_timeout",
+          "duration": "3 seconds",
+          "action": "Return error with message 'History retrieval timed out'"
+        }
+      ],
+      "security": []
+    },
+    {
+      "name": "CreateChannel",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_name"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, data (channel details), message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "data_store",
+          "access": "read_write",
+          "description": "Check uniqueness and create channel"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "MAX_CHANNEL_NAME_LENGTH",
+          "type": "integer",
+          "default": 50,
+          "description": "Maximum allowed channel name length"
+        },
+        {
+          "name": "MAX_CHANNELS_PER_USER",
+          "type": "integer",
+          "default": 20,
+          "description": "Maximum number of channels a user can create"
+        }
+      ],
+      "data_operations": [
+        {
+          "name": "check_channel_name_unique",
+          "description": "Read channels data store to verify channel_name does not already exist",
+          "access": "read",
+          "target": "channels"
+        },
+        {
+          "name": "create_channel_entry",
+          "description": "Write a new channel entry to channels data store with name, creator, members list, and creation timestamp",
+          "access": "write",
+          "target": "channels"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "channel_name already exists in channels data store",
+          "action": "Return error with message 'Channel name already taken'"
+        },
+        {
+          "condition": "channel_name exceeds MAX_CHANNEL_NAME_LENGTH",
+          "action": "Return error with message 'Channel name too long'"
+        },
+        {
+          "condition": "User has reached MAX_CHANNELS_PER_USER",
+          "action": "Return error with message 'Maximum channels created'"
+        },
+        {
+          "condition": "channel_name empty or missing",
+          "action": "Return error with message 'Channel name required'"
+        }
+      ],
+      "rate_limits": [
+        {
+          "name": "create_channel_rate_limit",
+          "limit": "5 channels per hour per user",
+          "scope": "per_user"
+        }
+      ],
+      "timeouts": [
+        {
+          "name": "create_channel_timeout",
+          "duration": "3 seconds",
+          "action": "Return error with message 'Channel creation timed out'"
+        }
+      ],
+      "security": [
+        {
+          "name": "channel_name_sanitization",
+          "description": "Sanitize channel name to prevent special characters or injection"
+        }
+      ]
+    },
+    {
+      "name": "JoinChannel",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_id and user_id"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, data, message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "data_store",
+          "access": "read_write",
+          "description": "Read channel members and add user"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "MAX_MEMBERS_PER_CHANNEL",
+          "type": "integer",
+          "default": 100,
+          "description": "Maximum number of members allowed in a channel"
+        }
+      ],
+      "data_operations": [
+        {
+          "name": "check_channel_exists",
+          "description": "Read channels data store to verify channel_id exists",
+          "access": "read",
+          "target": "channels"
+        },
+        {
+          "name": "check_membership",
+          "description": "Read channel's member list to verify user_id is not already a member",
+          "access": "read",
+          "target": "channels"
+        },
+        {
+          "name": "add_member",
+          "description": "Write updated member list to channels data store with user_id added",
+          "access": "write",
+          "target": "channels"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "channel_id not found in channels data store",
+          "action": "Return error with message 'Channel not found'"
+        },
+        {
+          "condition": "user_id already a member of channel",
+          "action": "Return error with message 'Already a member of this channel'"
+        },
+        {
+          "condition": "Channel has reached MAX_MEMBERS_PER_CHANNEL",
+          "action": "Return error with message 'Channel is full'"
+        },
+        {
+          "condition": "user_id missing from input",
+          "action": "Return error with message 'User ID required'"
+        }
+      ],
+      "rate_limits": [
+        {
+          "name": "join_rate_limit",
+          "limit": "10 join requests per minute per user",
+          "scope": "per_user"
+        }
+      ],
+      "timeouts": [
+        {
+          "name": "join_timeout",
+          "duration": "3 seconds",
+          "action": "Return error with message 'Join operation timed out'"
+        }
+      ],
+      "security": [
+        {
+          "name": "user_id_validation",
+          "description": "Validate user_id format to prevent injection"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Extract and validate action, repo, branch from input JSON",
+      "call_inputs": [
+        {"name": "input", "type": "Any", "description": "JSON with action, repo, branch", "source": "parent input"}
+      ],
+      "call_outputs": [
+        {"name": "parsed_data", "type": "Object", "description": "Object with action, repo, branch, and optional params", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": []
+    },
+    {
+      "name": "RouteAction",
+      "purpose": "Determine which build operation to perform based on action",
+      "call_inputs": [
+        {"name": "parsed_data", "type": "Object", "description": "Object with action field", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "decision", "type": "String", "description": "String indicating which child to invoke: trigger, status, list, cancel", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": []
+    },
+    {
+      "name": "CheckDuplicateBuild",
+      "purpose": "Verify no existing build for the same repo+branch",
+      "call_inputs": [
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "is_duplicate", "type": "Boolean", "description": "True if build already exists for repo+branch", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read", "description": "Query builds data store for existing build with same repo and branch"}
+      ]
+    },
+    {
+      "name": "CreateBuildRecord",
+      "purpose": "Create a new build record in builds data store",
+      "call_inputs": [
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "build_id", "type": "String", "description": "Unique identifier for the new build", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "write", "description": "Insert new build record with initial status"}
+      ]
+    },
+    {
+      "name": "ExecuteBuildPipeline",
+      "purpose": "Run the actual CI/CD pipeline for the build",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to execute", "source": "CreateBuildRecord"},
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "build_result", "type": "Object", "description": "Final status and logs of the build", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "write", "description": "Update build status incrementally"},
+        {"store": "artifacts", "access": "write", "description": "Store build artifacts if any"}
+      ]
+    },
+    {
+      "name": "QueryBuildStatus",
+      "purpose": "Retrieve current status of a specific build",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to check", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "status_info", "type": "Object", "description": "Object with status and logs", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read", "description": "Read build record by build_id"}
+      ]
+    },
+    {
+      "name": "ListAllBuilds",
+      "purpose": "Return a list of all builds with their details",
+      "call_inputs": [],
+      "call_outputs": [
+        {"name": "builds_list", "type": "Array", "description": "Array of build objects with id, repo, branch, status", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read", "description": "Read all build records"}
+      ]
+    },
+    {
+      "name": "CancelBuildRecord",
+      "purpose": "Mark a build as cancelled and stop execution if running",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to cancel", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "cancel_result", "type": "Object", "description": "Success indicator and updated status", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "write", "description": "Update build status to cancelled"}
+      ]
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Construct the final output JSON with success, build_id, status, logs",
+      "call_inputs": [
+        {"name": "action_result", "type": "Any", "description": "Result from the executed child (build_result, status_info, builds_list, cancel_result, or error)", "source": "parent"},
+        {"name": "action", "type": "String", "description": "The original action for context", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "output", "type": "Any", "description": "Final JSON with success, build_id, status, logs", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": []
+    }
+  ]
+}

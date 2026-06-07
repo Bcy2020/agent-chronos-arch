@@ -69,7 +69,7 @@ class APIClient:
     def test_connection(self) -> bool:
         """Test if the API connection is working."""
         try:
-            response = self.chat([{"role": "user", "content": "Hello"}], max_tokens=10)
+            response = self.chat([{"role": "user", "content": "Return JSON: {\"ok\": true}"}], max_tokens=20)
             return len(response) > 0
         except Exception as e:
             print(f"Connection test failed: {e}")

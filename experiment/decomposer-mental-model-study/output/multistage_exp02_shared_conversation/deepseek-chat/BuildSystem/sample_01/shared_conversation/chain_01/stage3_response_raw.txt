@@ -1,0 +1,300 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Extract and validate action, repo, branch from input JSON",
+      "call_inputs": [
+        {"name": "input", "type": "Any", "description": "JSON with action, repo, branch", "source": "parent input"}
+      ],
+      "call_outputs": [
+        {"name": "parsed_data", "type": "Object", "description": "Object with action, repo, branch, and optional params", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "invalid_input": "Return error with message 'Invalid input: missing required fields'",
+        "malformed_json": "Return error with message 'Invalid input: malformed JSON'"
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff": "none"
+      },
+      "timeout": "100ms",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["parse_count", "parse_errors"]
+      }
+    },
+    {
+      "name": "RouteAction",
+      "purpose": "Determine which build operation to perform based on action",
+      "call_inputs": [
+        {"name": "parsed_data", "type": "Object", "description": "Object with action field", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "decision", "type": "String", "description": "String indicating which child to invoke: trigger, status, list, cancel", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "unknown_action": "Return error with message 'Unknown action: {action}'"
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff": "none"
+      },
+      "timeout": "50ms",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["route_count", "route_errors"]
+      }
+    },
+    {
+      "name": "CheckDuplicateBuild",
+      "purpose": "Verify no existing build for the same repo+branch",
+      "call_inputs": [
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "is_duplicate", "type": "Boolean", "description": "True if build already exists for repo+branch", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read", "description": "Query builds data store for existing build with same repo and branch"}
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {"operation": "read", "store": "builds", "description": "Query builds data store for existing build with same repo and branch"}
+      ],
+      "error_handling": {
+        "store_unavailable": "Return error with message 'Data store unavailable'"
+      },
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff": "exponential"
+      },
+      "timeout": "200ms",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["duplicate_check_count", "duplicate_found_count"]
+      }
+    },
+    {
+      "name": "CreateBuildRecord",
+      "purpose": "Create a new build record in builds data store",
+      "call_inputs": [
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "build_id", "type": "String", "description": "Unique identifier for the new build", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "write", "description": "Insert new build record with initial status"}
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {"operation": "write", "store": "builds", "description": "Insert new build record with initial status"}
+      ],
+      "error_handling": {
+        "store_unavailable": "Return error with message 'Data store unavailable'",
+        "duplicate_key": "Return error with message 'Build already exists'"
+      },
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff": "exponential"
+      },
+      "timeout": "200ms",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["build_created_count"]
+      }
+    },
+    {
+      "name": "ExecuteBuildPipeline",
+      "purpose": "Run the actual CI/CD pipeline for the build",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to execute", "source": "CreateBuildRecord"},
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "build_result", "type": "Object", "description": "Final status and logs of the build", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "write", "description": "Update build status incrementally"},
+        {"store": "artifacts", "access": "write", "description": "Store build artifacts if any"}
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {"operation": "write", "store": "builds", "description": "Update build status incrementally"},
+        {"operation": "write", "store": "artifacts", "description": "Store build artifacts if any"}
+      ],
+      "error_handling": {
+        "pipeline_failure": "Return error with message 'Build pipeline failed' and partial logs",
+        "store_unavailable": "Return error with message 'Data store unavailable'"
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff": "none"
+      },
+      "timeout": "30s",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["build_execution_count", "build_success_count", "build_failure_count"]
+      }
+    },
+    {
+      "name": "QueryBuildStatus",
+      "purpose": "Retrieve current status of a specific build",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to check", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "status_info", "type": "Object", "description": "Object with status and logs", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read", "description": "Read build record by build_id"}
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {"operation": "read", "store": "builds", "description": "Read build record by build_id"}
+      ],
+      "error_handling": {
+        "build_not_found": "Return error with message 'Build not found'",
+        "store_unavailable": "Return error with message 'Data store unavailable'"
+      },
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff": "exponential"
+      },
+      "timeout": "200ms",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["status_query_count"]
+      }
+    },
+    {
+      "name": "ListAllBuilds",
+      "purpose": "Return a list of all builds with their details",
+      "call_inputs": [],
+      "call_outputs": [
+        {"name": "builds_list", "type": "Array", "description": "Array of build objects with id, repo, branch, status", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "read", "description": "Read all build records"}
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {"operation": "read", "store": "builds", "description": "Read all build records"}
+      ],
+      "error_handling": {
+        "store_unavailable": "Return error with message 'Data store unavailable'"
+      },
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff": "exponential"
+      },
+      "timeout": "300ms",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["list_query_count"]
+      }
+    },
+    {
+      "name": "CancelBuildRecord",
+      "purpose": "Mark a build as cancelled and stop execution if running",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to cancel", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "cancel_result", "type": "Object", "description": "Success indicator and updated status", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "builds", "access": "write", "description": "Update build status to cancelled"}
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {"operation": "write", "store": "builds", "description": "Update build status to cancelled"}
+      ],
+      "error_handling": {
+        "build_not_found": "Return error with message 'Build not found'",
+        "build_already_cancelled": "Return error with message 'Build already cancelled'",
+        "store_unavailable": "Return error with message 'Data store unavailable'"
+      },
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff": "exponential"
+      },
+      "timeout": "200ms",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["cancel_count"]
+      }
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Construct the final output JSON with success, build_id, status, logs",
+      "call_inputs": [
+        {"name": "action_result", "type": "Any", "description": "Result from the executed child (build_result, status_info, builds_list, cancel_result, or error)", "source": "parent"},
+        {"name": "action", "type": "String", "description": "The original action for context", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "output", "type": "Any", "description": "Final JSON with success, build_id, status, logs", "consumer": "parent"}
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "missing_result": "Return error with message 'Internal error: missing result'"
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff": "none"
+      },
+      "timeout": "50ms",
+      "security": {
+        "authentication_required": false,
+        "authorization_required": false
+      },
+      "observability": {
+        "logging": true,
+        "metrics": ["response_count"]
+      }
+    }
+  ]
+}

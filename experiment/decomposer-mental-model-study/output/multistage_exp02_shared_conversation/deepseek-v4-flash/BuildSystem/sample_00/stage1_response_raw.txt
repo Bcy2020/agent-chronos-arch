@@ -1,0 +1,146 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Extract and validate action, repo, branch from input JSON",
+      "behavior": "Parse JSON input, validate required fields, return structured action request",
+      "boundary": {
+        "in_scope": ["JSON parsing", "field validation", "error handling for malformed input"],
+        "out_of_scope": ["business logic", "data store access"]
+      },
+      "semantic_inputs": [
+        {"name": "input", "description": "Raw JSON input from parent", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "action_request", "description": "Parsed and validated action request with action, repo, branch", "consumer": "parent"}
+      ],
+      "preconditions": ["input is valid JSON"],
+      "postconditions": ["action_request contains valid action, repo, branch"],
+      "guarantees": ["Returns error if input invalid"],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CheckBuildExists",
+      "purpose": "Check if a build exists for given repo+branch in builds store",
+      "behavior": "Query builds store by repo and branch, return existing build record or null",
+      "boundary": {
+        "in_scope": ["querying builds store", "matching repo and branch"],
+        "out_of_scope": ["modifying builds store", "other actions"]
+      },
+      "semantic_inputs": [
+        {"name": "repo", "description": "Repository name", "source": "parent input"},
+        {"name": "branch", "description": "Branch name", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "existing_build", "description": "Existing build record or null if none", "consumer": "parent"}
+      ],
+      "preconditions": ["builds store is accessible"],
+      "postconditions": ["Returns existing build or null"],
+      "guarantees": ["Does not modify builds store"],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build record and trigger CI/CD process",
+      "behavior": "Generate build_id, create build record in builds store, initiate build process, return build_id and status",
+      "boundary": {
+        "in_scope": ["creating build record", "generating build_id", "initiating build"],
+        "out_of_scope": ["checking existing builds", "cancelling builds"]
+      },
+      "semantic_inputs": [
+        {"name": "repo", "description": "Repository name", "source": "parent input"},
+        {"name": "branch", "description": "Branch name", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "build_result", "description": "JSON with success, build_id, status", "consumer": "parent"}
+      ],
+      "preconditions": ["No existing build for repo+branch", "builds store writable"],
+      "postconditions": ["New build record created", "Build status is 'running'"],
+      "guarantees": ["Build_id is unique"],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetBuildStatus",
+      "purpose": "Retrieve current status and logs of a build",
+      "behavior": "Query builds store by build_id, return status and logs",
+      "boundary": {
+        "in_scope": ["querying builds store", "retrieving logs"],
+        "out_of_scope": ["modifying builds store", "triggering builds"]
+      },
+      "semantic_inputs": [
+        {"name": "build_id", "description": "Build identifier", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "status_result", "description": "JSON with success, status, logs", "consumer": "parent"}
+      ],
+      "preconditions": ["build_id exists in builds store"],
+      "postconditions": ["Returns current status and logs"],
+      "guarantees": ["Does not modify builds store"],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "Return list of all builds with summary info",
+      "behavior": "Query builds store for all records, return list of builds with id, repo, branch, status",
+      "boundary": {
+        "in_scope": ["querying all builds", "returning summary"],
+        "out_of_scope": ["filtering", "detailed logs"]
+      },
+      "semantic_inputs": [],
+      "semantic_outputs": [
+        {"name": "list_result", "description": "JSON with success and list of builds", "consumer": "parent"}
+      ],
+      "preconditions": ["builds store accessible"],
+      "postconditions": ["Returns list of builds"],
+      "guarantees": ["Does not modify builds store"],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build and update status",
+      "behavior": "Update build record status to 'cancelled', stop build process, return confirmation",
+      "boundary": {
+        "in_scope": ["updating build status", "stopping build process"],
+        "out_of_scope": ["triggering builds", "checking status"]
+      },
+      "semantic_inputs": [
+        {"name": "build_id", "description": "Build identifier", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "cancel_result", "description": "JSON with success and updated status", "consumer": "parent"}
+      ],
+      "preconditions": ["build_id exists", "build is running"],
+      "postconditions": ["Build status changed to 'cancelled'"],
+      "guarantees": ["Build process stopped"],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "Parent BuildSystem handles four distinct actions. ParseInput extracts and validates the action, then parent routes to the appropriate child based on action. CheckBuildExists is a shared query used by TriggerBuild to enforce one-build-per-repo+branch constraint. Each action has its own child function that performs the specific operation without calling siblings.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {"from": "parent", "to": "ParseInput", "data": "input", "note": "Parse and validate input"},
+    {"from": "ParseInput", "to": "parent", "data": "action_request", "note": "Return parsed request"},
+    {"from": "parent", "to": "CheckBuildExists", "data": "repo, branch", "note": "Check existing build (only for trigger action)"},
+    {"from": "CheckBuildExists", "to": "parent", "data": "existing_build", "note": "Return existing build or null"},
+    {"from": "parent", "to": "TriggerBuild", "data": "repo, branch", "note": "Trigger new build"},
+    {"from": "TriggerBuild", "to": "parent", "data": "build_result", "note": "Return build result"},
+    {"from": "parent", "to": "GetBuildStatus", "data": "build_id", "note": "Get status"},
+    {"from": "GetBuildStatus", "to": "parent", "data": "status_result", "note": "Return status"},
+    {"from": "parent", "to": "ListBuilds", "data": "none", "note": "List all builds"},
+    {"from": "ListBuilds", "to": "parent", "data": "list_result", "note": "Return list"},
+    {"from": "parent", "to": "CancelBuild", "data": "build_id", "note": "Cancel build"},
+    {"from": "CancelBuild", "to": "parent", "data": "cancel_result", "note": "Return cancel result"}
+  ]
+}

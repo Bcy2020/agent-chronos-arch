@@ -1,0 +1,451 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Extract and validate the command type and order data from the input JSON.",
+      "behavior": "Parse the input JSON to extract 'command' and 'order_data' fields, validate that command is one of 'place', 'cancel', 'track'.",
+      "boundary": {
+        "in_scope": [
+          "Parsing JSON",
+          "Validating command type"
+        ],
+        "out_of_scope": [
+          "Executing any order operation",
+          "Accessing data stores"
+        ]
+      },
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command is one of place/cancel/track",
+        "order_data is extracted"
+      ],
+      "guarantees": [
+        "Returns error if command invalid"
+      ],
+      "composition_role": "transform",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with command and order_data",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Contains command, order_data, or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(input: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid JSON with command 'place', ParseCommand returns command='place' and order_data"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given invalid JSON, ParseCommand returns error in result"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Given invalid command, ParseCommand returns error in result"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Create a new order, update inventory, and process payment.",
+      "behavior": "Generate order ID, store order in orders with status 'placed', decrement inventory, process payment via payments store.",
+      "boundary": {
+        "in_scope": [
+          "Creating order record",
+          "Updating inventory",
+          "Processing payment"
+        ],
+        "out_of_scope": [
+          "Canceling orders",
+          "Tracking orders"
+        ]
+      },
+      "preconditions": [
+        "Inventory has sufficient stock",
+        "Payment method valid"
+      ],
+      "postconditions": [
+        "Order created with status 'placed'",
+        "Inventory decremented",
+        "Payment processed"
+      ],
+      "guarantees": [
+        "Atomic operation: all or nothing"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order details including items and payment info",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "orders",
+          "op": "write",
+          "reason": "Store new order record"
+        },
+        {
+          "resource": "inventory",
+          "op": "write",
+          "reason": "Decrement stock for ordered items"
+        },
+        {
+          "resource": "payments",
+          "op": "write",
+          "reason": "Process payment transaction"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Contains order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "write",
+          "description": "Store new order record"
+        },
+        {
+          "variable": "inventory",
+          "op": "write",
+          "description": "Decrement stock for ordered items"
+        },
+        {
+          "variable": "payments",
+          "op": "write",
+          "description": "Process payment transaction"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "write",
+          "description": "Store new order record"
+        },
+        {
+          "source_name": "inventory",
+          "operation_type": "write",
+          "description": "Decrement stock for ordered items"
+        },
+        {
+          "source_name": "payments",
+          "operation_type": "write",
+          "description": "Process payment transaction"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.write",
+        "inventory.write",
+        "payments.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must check inventory stock before decrementing"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Must validate payment method before processing"
+        },
+        {
+          "constraint_id": "C-003",
+          "description": "All writes must be atomic (all succeed or all rollback)"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid order_data with sufficient inventory, PlaceOrder creates order, decrements inventory, processes payment, returns order_id and status 'placed'"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given insufficient inventory, PlaceOrder returns error and does not modify any store"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Given invalid payment, PlaceOrder returns error and does not modify any store"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Cancel an existing order if not shipped, restore inventory, and refund payment.",
+      "behavior": "Look up order by order_id, check status is not 'shipped', update status to 'cancelled', restore inventory, process refund.",
+      "boundary": {
+        "in_scope": [
+          "Checking order status",
+          "Updating order status",
+          "Restoring inventory",
+          "Processing refund"
+        ],
+        "out_of_scope": [
+          "Placing orders",
+          "Tracking orders"
+        ]
+      },
+      "preconditions": [
+        "Order exists",
+        "Order status is not 'shipped'"
+      ],
+      "postconditions": [
+        "Order status changed to 'cancelled'",
+        "Inventory restored",
+        "Payment refunded"
+      ],
+      "guarantees": [
+        "Cannot cancel shipped orders",
+        "Atomic operation"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Contains order_id to cancel",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "orders",
+          "op": "read_write",
+          "reason": "Read current status and update to cancelled"
+        },
+        {
+          "resource": "inventory",
+          "op": "write",
+          "reason": "Restore stock for cancelled items"
+        },
+        {
+          "resource": "payments",
+          "op": "write",
+          "reason": "Process refund transaction"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Contains order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read_write",
+          "description": "Read current status and update to cancelled"
+        },
+        {
+          "variable": "inventory",
+          "op": "write",
+          "description": "Restore stock for cancelled items"
+        },
+        {
+          "variable": "payments",
+          "op": "write",
+          "description": "Process refund transaction"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read_write",
+          "description": "Read current status and update to cancelled"
+        },
+        {
+          "source_name": "inventory",
+          "operation_type": "write",
+          "description": "Restore stock for cancelled items"
+        },
+        {
+          "source_name": "payments",
+          "operation_type": "write",
+          "description": "Process refund transaction"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read",
+        "orders.write",
+        "inventory.write",
+        "payments.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must verify order exists before updating"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Must check order status is not 'shipped' before cancelling"
+        },
+        {
+          "constraint_id": "C-003",
+          "description": "All writes must be atomic (all succeed or all rollback)"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid order_id for non-shipped order, CancelOrder updates status to 'cancelled', restores inventory, processes refund, returns success"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given order_id for shipped order, CancelOrder returns error and does not modify any store"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Given non-existent order_id, CancelOrder returns error"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Retrieve and return the current status and details of an order.",
+      "behavior": "Look up order by order_id from orders store, return status and relevant details.",
+      "boundary": {
+        "in_scope": [
+          "Reading order status",
+          "Returning order details"
+        ],
+        "out_of_scope": [
+          "Modifying orders",
+          "Accessing inventory or payments"
+        ]
+      },
+      "preconditions": [
+        "Order exists"
+      ],
+      "postconditions": [
+        "Order status returned"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Contains order_id to track",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "orders",
+          "op": "read",
+          "reason": "Retrieve order status and details"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Contains order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read",
+          "description": "Retrieve order status and details"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read",
+          "description": "Retrieve order status and details"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must verify order exists before returning details"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid order_id, TrackOrder returns order status and details"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given non-existent order_id, TrackOrder returns error"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children preserve Stage 1 semantics and Stage 2 interfaces. Resource fields derived from internal_leaf_accesses. ParseCommand has no data store accesses, so global_vars and data_operations are empty. PlaceOrder, CancelOrder, and TrackOrder have synchronized global_vars and data_operations. Capabilities follow the principle of least privilege. Constraints enforce business rules and atomicity. Acceptance criteria cover happy path and error cases.",
+  "resource_audit": {
+    "signature_preservation_detail": "All signatures unchanged from Stage 2: ParseCommand(input: dict) -> dict, PlaceOrder(order_data: dict) -> dict, CancelOrder(order_data: dict) -> dict, TrackOrder(order_data: dict) -> dict.",
+    "internal_leaf_mapping_detail": "ParseCommand has no internal_leaf_accesses. PlaceOrder maps to orders.write, inventory.write, payments.write. CancelOrder maps to orders.read_write, inventory.write, payments.write. TrackOrder maps to orders.read.",
+    "global_vars_data_operations_sync_detail": "For each child, global_vars and data_operations are identical in content. ParseCommand has both empty. PlaceOrder has three entries each. CancelOrder has three entries each. TrackOrder has one entry each.",
+    "coverage_detail": "All three available data stores (orders, inventory, payments) are covered across the children. orders is accessed by PlaceOrder (write), CancelOrder (read_write), TrackOrder (read). inventory is accessed by PlaceOrder (write) and CancelOrder (write). payments is accessed by PlaceOrder (write) and CancelOrder (write).",
+    "final_status": "ok"
+  }
+}

@@ -1,0 +1,198 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from parent containing the command field"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "command",
+          "type": "string",
+          "description": "Extracted command string (send/history/create_channel/join)"
+        },
+        {
+          "name": "error",
+          "type": "string",
+          "description": "Error message if command missing or invalid"
+        }
+      ],
+      "internal_leaf_accesses": []
+    },
+    {
+      "name": "SendMessage",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with send details (channel_id, user_id, message content)"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, data, message indicating send outcome"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "data_store",
+          "access": "read",
+          "description": "Read channel membership to validate user is a member"
+        },
+        {
+          "name": "messages",
+          "type": "data_store",
+          "access": "write",
+          "description": "Append new message to the channel's message list"
+        }
+      ]
+    },
+    {
+      "name": "GetHistory",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_id for history retrieval"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, data (list of messages, max 100), message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "data_store",
+          "access": "read",
+          "description": "Read to verify channel exists"
+        },
+        {
+          "name": "messages",
+          "type": "data_store",
+          "access": "read",
+          "description": "Read messages for the specified channel, limited to 100"
+        }
+      ]
+    },
+    {
+      "name": "CreateChannel",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_name for creation"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, data (channel details), message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "data_store",
+          "access": "read_write",
+          "description": "Read to check uniqueness, write to add new channel"
+        }
+      ]
+    },
+    {
+      "name": "JoinChannel",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Original input JSON with channel_id and user_id for joining"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, data, message indicating join outcome"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "name": "channels",
+          "type": "data_store",
+          "access": "read_write",
+          "description": "Read to verify channel exists and check membership, write to add user"
+        }
+      ]
+    }
+  ],
+  "parent_orchestration": {
+    "description": "Parent ChatApp receives input, passes it to ParseCommand to extract command. Based on command, parent passes the original input to the appropriate handler (SendMessage, GetHistory, CreateChannel, or JoinChannel). Each handler returns a result JSON which parent forwards as output.",
+    "dataflow": [
+      {
+        "from": "parent",
+        "to": "ParseCommand",
+        "data": "input"
+      },
+      {
+        "from": "ParseCommand",
+        "to": "parent",
+        "data": "command or error"
+      },
+      {
+        "from": "parent",
+        "to": "SendMessage",
+        "data": "input",
+        "condition": "command == 'send'"
+      },
+      {
+        "from": "parent",
+        "to": "GetHistory",
+        "data": "input",
+        "condition": "command == 'history'"
+      },
+      {
+        "from": "parent",
+        "to": "CreateChannel",
+        "data": "input",
+        "condition": "command == 'create_channel'"
+      },
+      {
+        "from": "parent",
+        "to": "JoinChannel",
+        "data": "input",
+        "condition": "command == 'join'"
+      },
+      {
+        "from": "SendMessage",
+        "to": "parent",
+        "data": "result"
+      },
+      {
+        "from": "GetHistory",
+        "to": "parent",
+        "data": "result"
+      },
+      {
+        "from": "CreateChannel",
+        "to": "parent",
+        "data": "result"
+      },
+      {
+        "from": "JoinChannel",
+        "to": "parent",
+        "data": "result"
+      }
+    ]
+  }
+}

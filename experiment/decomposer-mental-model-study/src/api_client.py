@@ -39,7 +39,10 @@ class APIClient:
                     max_tokens=max_tokens,
                     response_format={"type": "json_object"}
                 )
-                return response.choices[0].message.content
+                content = response.choices[0].message.content
+                if not content:
+                    raise RuntimeError("API returned empty content")
+                return content
             except Exception as e:
                 last_error = e
                 print(f"API call failed (attempt {attempt + 1}/{self.config.max_retries}): {e}")

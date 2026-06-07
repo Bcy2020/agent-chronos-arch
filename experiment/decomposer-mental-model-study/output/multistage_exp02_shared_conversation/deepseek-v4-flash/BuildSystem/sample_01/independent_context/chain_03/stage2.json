@@ -1,0 +1,476 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Parse and validate the input JSON to extract action, repo, branch",
+      "behavior": "Parse JSON input, validate required fields, return structured action request",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "field validation"
+        ],
+        "out_of_scope": [
+          "executing any action",
+          "accessing data stores"
+        ]
+      },
+      "semantic_inputs": [
+        "input"
+      ],
+      "semantic_outputs": [
+        "action_request"
+      ],
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "action_request contains valid action, repo, branch"
+      ],
+      "guarantees": [
+        "returns error if input invalid"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "action_request",
+          "type": "dict",
+          "description": "Parsed action request with keys: action, repo, branch",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseInput(input: Any) -> dict"
+    },
+    {
+      "name": "RouteAction",
+      "purpose": "Route the action to the appropriate child function based on action type",
+      "behavior": "Based on action_request.action, call the corresponding child function",
+      "boundary": {
+        "in_scope": [
+          "action routing",
+          "invoking children"
+        ],
+        "out_of_scope": [
+          "implementing action logic"
+        ]
+      },
+      "semantic_inputs": [
+        "action_request"
+      ],
+      "semantic_outputs": [
+        "action_result"
+      ],
+      "preconditions": [
+        "action_request is valid"
+      ],
+      "postconditions": [
+        "appropriate child function called"
+      ],
+      "guarantees": [
+        "only one child function called per request"
+      ],
+      "composition_role": "decide",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "action_request",
+          "type": "dict",
+          "description": "Parsed action request from ParseInput",
+          "source": "ParseInput output"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "action_result",
+          "type": "dict",
+          "description": "Result from the executed action child",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RouteAction(action_request: dict) -> dict"
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Trigger a new build for a given repo and branch",
+      "behavior": "Check if build already exists for repo+branch, if not create new build record, return build_id",
+      "boundary": {
+        "in_scope": [
+          "build creation",
+          "duplicate check"
+        ],
+        "out_of_scope": [
+          "cancelling builds",
+          "listing builds"
+        ]
+      },
+      "semantic_inputs": [
+        "repo",
+        "branch"
+      ],
+      "semantic_outputs": [
+        "build_result"
+      ],
+      "preconditions": [
+        "build does not already exist for repo+branch"
+      ],
+      "postconditions": [
+        "new build record created in builds store"
+      ],
+      "guarantees": [
+        "build_id is unique"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "action_request"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "action_request"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read_write",
+          "reason": "Check for existing build and create new build record"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "JSON with success and build_id",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TriggerBuild(repo: str, branch: str) -> dict"
+    },
+    {
+      "name": "CheckStatus",
+      "purpose": "Check the status of a specific build",
+      "behavior": "Look up build by repo and branch, return status and logs",
+      "boundary": {
+        "in_scope": [
+          "build lookup",
+          "status retrieval"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "cancelling"
+        ]
+      },
+      "semantic_inputs": [
+        "repo",
+        "branch"
+      ],
+      "semantic_outputs": [
+        "build_result"
+      ],
+      "preconditions": [
+        "build exists for repo+branch"
+      ],
+      "postconditions": [
+        "status and logs returned"
+      ],
+      "guarantees": [
+        "returns error if build not found"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "action_request"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "action_request"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read",
+          "reason": "Look up build record by repo and branch"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "JSON with success, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CheckStatus(repo: str, branch: str) -> dict"
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "List all builds for a given repo",
+      "behavior": "Query builds store for all builds matching repo, return list of build summaries",
+      "boundary": {
+        "in_scope": [
+          "build listing",
+          "filtering by repo"
+        ],
+        "out_of_scope": [
+          "individual build details"
+        ]
+      },
+      "semantic_inputs": [
+        "repo"
+      ],
+      "semantic_outputs": [
+        "build_result"
+      ],
+      "preconditions": [
+        "none"
+      ],
+      "postconditions": [
+        "list of builds returned"
+      ],
+      "guarantees": [
+        "returns empty list if no builds"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "action_request"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read",
+          "reason": "Query all builds for the given repo"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "JSON with success and list of builds",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ListBuilds(repo: str) -> dict"
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build",
+      "behavior": "Find build by repo+branch, update status to cancelled, return success",
+      "boundary": {
+        "in_scope": [
+          "build cancellation",
+          "status update"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "listing"
+        ]
+      },
+      "semantic_inputs": [
+        "repo",
+        "branch"
+      ],
+      "semantic_outputs": [
+        "build_result"
+      ],
+      "preconditions": [
+        "build exists and is not already cancelled"
+      ],
+      "postconditions": [
+        "build status set to cancelled"
+      ],
+      "guarantees": [
+        "idempotent if already cancelled"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "action_request"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "action_request"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read_write",
+          "reason": "Find build record and update its status to cancelled"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "JSON with success",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelBuild(repo: str, branch: str) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseInput"
+    },
+    "parent_outputs_produced_by": {
+      "output": "RouteAction"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseInput",
+      "to_input": "input",
+      "note": "Raw input passed to parser"
+    },
+    {
+      "from_node": "ParseInput",
+      "from_output": "action_request",
+      "to_node": "parent",
+      "to_input": "action_request",
+      "note": "Parsed request returned to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "action_request",
+      "to_node": "RouteAction",
+      "to_input": "action_request",
+      "note": "Parent passes parsed request to router"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "action_result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "Router returns action result to parent"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "repo",
+      "to_node": "TriggerBuild",
+      "to_input": "repo",
+      "note": "Router passes repo to trigger"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "branch",
+      "to_node": "TriggerBuild",
+      "to_input": "branch",
+      "note": "Router passes branch to trigger"
+    },
+    {
+      "from_node": "TriggerBuild",
+      "from_output": "build_result",
+      "to_node": "RouteAction",
+      "to_input": "action_result",
+      "note": "Trigger result returned to router"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "repo",
+      "to_node": "CheckStatus",
+      "to_input": "repo",
+      "note": "Router passes repo to status"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "branch",
+      "to_node": "CheckStatus",
+      "to_input": "branch",
+      "note": "Router passes branch to status"
+    },
+    {
+      "from_node": "CheckStatus",
+      "from_output": "build_result",
+      "to_node": "RouteAction",
+      "to_input": "action_result",
+      "note": "Status result returned to router"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "repo",
+      "to_node": "ListBuilds",
+      "to_input": "repo",
+      "note": "Router passes repo to list"
+    },
+    {
+      "from_node": "ListBuilds",
+      "from_output": "build_result",
+      "to_node": "RouteAction",
+      "to_input": "action_result",
+      "note": "List result returned to router"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "repo",
+      "to_node": "CancelBuild",
+      "to_input": "repo",
+      "note": "Router passes repo to cancel"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "branch",
+      "to_node": "CancelBuild",
+      "to_input": "branch",
+      "note": "Router passes branch to cancel"
+    },
+    {
+      "from_node": "CancelBuild",
+      "from_output": "build_result",
+      "to_node": "RouteAction",
+      "to_input": "action_result",
+      "note": "Cancel result returned to router"
+    }
+  ],
+  "interface_audit": {
+    "identity_preservation_detail": "All six child names and order preserved exactly from Stage 1.",
+    "semantic_preservation_detail": "All Stage 1 fields (purpose, behavior, boundary, preconditions, postconditions, guarantees, composition_role) are unchanged.",
+    "call_signature_detail": "Signatures include only call_inputs: ParseInput takes input; RouteAction takes action_request; action children take repo and branch as needed.",
+    "internal_leaf_separation_detail": "builds store is accessed internally by TriggerBuild (read_write), CheckStatus (read), ListBuilds (read), CancelBuild (read_write); not exposed as call parameters.",
+    "dataflow_schema_detail": "All edges use legal from_node/to_node: parent or child names. No resource names used as endpoints.",
+    "final_status": "ok"
+  }
+}

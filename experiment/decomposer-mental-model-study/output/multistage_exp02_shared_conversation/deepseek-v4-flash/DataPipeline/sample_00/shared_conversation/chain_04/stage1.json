@@ -1,0 +1,235 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read raw data from source and store in raw_data store",
+      "behavior": "Reads input source, parses data, writes to raw_data store, logs ingestion",
+      "boundary": {
+        "in_scope": [
+          "reading source",
+          "parsing",
+          "storing raw data",
+          "logging"
+        ],
+        "out_of_scope": [
+          "transformation",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "JSON with action and source",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "ingest_result",
+          "description": "JSON with success, records_ingested, errors",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input.action == 'ingest'"
+      ],
+      "postconditions": [
+        "raw_data store contains ingested records"
+      ],
+      "guarantees": [
+        "logs ingestion details"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformations to raw data and store in processed_data",
+      "behavior": "Reads raw_data, applies transformation rules, writes to processed_data, logs transformation",
+      "boundary": {
+        "in_scope": [
+          "reading raw_data",
+          "transformation logic",
+          "writing processed_data",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "JSON with action",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "transform_result",
+          "description": "JSON with success, records_transformed, errors",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input.action == 'transform'",
+        "raw_data store is populated"
+      ],
+      "postconditions": [
+        "processed_data store contains transformed records"
+      ],
+      "guarantees": [
+        "logs transformation details"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateData",
+      "purpose": "Check quality of processed data and mark invalid records",
+      "behavior": "Reads processed_data, applies validation rules, marks invalid records, logs validation",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "validation rules",
+          "marking invalid records",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "JSON with action",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "validate_result",
+          "description": "JSON with success, records_valid, records_invalid, errors",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input.action == 'validate'",
+        "processed_data store is populated"
+      ],
+      "postconditions": [
+        "processed_data store has validity flags"
+      ],
+      "guarantees": [
+        "logs validation details"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ExportData",
+      "purpose": "Export only valid records from processed_data to output",
+      "behavior": "Reads processed_data, filters valid records, formats output, logs export",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "filtering valid records",
+          "formatting output",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "validation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "JSON with action",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "export_result",
+          "description": "JSON with success, records_exported, errors, data",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input.action == 'export'",
+        "processed_data store has validity flags"
+      ],
+      "postconditions": [
+        "output contains only valid records"
+      ],
+      "guarantees": [
+        "logs export details"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "decomposition_rationale": "Each functional requirement maps to a child function that performs a single ETL step. The parent orchestrates based on action field.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "IngestData",
+      "data": "input",
+      "note": "action=ingest"
+    },
+    {
+      "from": "parent",
+      "to": "TransformData",
+      "data": "input",
+      "note": "action=transform"
+    },
+    {
+      "from": "parent",
+      "to": "ValidateData",
+      "data": "input",
+      "note": "action=validate"
+    },
+    {
+      "from": "parent",
+      "to": "ExportData",
+      "data": "input",
+      "note": "action=export"
+    },
+    {
+      "from": "IngestData",
+      "to": "parent",
+      "data": "ingest_result",
+      "note": "return result"
+    },
+    {
+      "from": "TransformData",
+      "to": "parent",
+      "data": "transform_result",
+      "note": "return result"
+    },
+    {
+      "from": "ValidateData",
+      "to": "parent",
+      "data": "validate_result",
+      "note": "return result"
+    },
+    {
+      "from": "ExportData",
+      "to": "parent",
+      "data": "export_result",
+      "note": "return result"
+    }
+  ]
+}

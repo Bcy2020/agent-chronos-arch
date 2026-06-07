@@ -1,0 +1,167 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "invalid_input": "Return error with message 'Invalid input: missing or malformed fields'"
+      },
+      "rate_limits": {
+        "max_calls_per_second": 100
+      },
+      "timeouts": {
+        "max_execution_ms": 100
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff_ms": 0
+      }
+    },
+    {
+      "name": "TriggerBuild",
+      "global_vars": [
+        {
+          "name": "MAX_BUILDS_PER_REPO_BRANCH",
+          "type": "Integer",
+          "value": 1,
+          "description": "Maximum concurrent builds per repo+branch"
+        }
+      ],
+      "data_operations": [
+        {
+          "store": "builds",
+          "operation": "read",
+          "description": "Check for existing active build for given repo+branch"
+        },
+        {
+          "store": "builds",
+          "operation": "write",
+          "description": "Create new build entry with unique ID and initial status 'running'"
+        },
+        {
+          "store": "artifacts",
+          "operation": "write",
+          "description": "Initialize artifact storage for new build"
+        }
+      ],
+      "error_handling": {
+        "duplicate_build": "Return error with message 'Active build already exists for this repo+branch'",
+        "store_write_failure": "Return error with message 'Failed to create build'"
+      },
+      "rate_limits": {
+        "max_calls_per_second": 10
+      },
+      "timeouts": {
+        "max_execution_ms": 500
+      },
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff_ms": 100
+      }
+    },
+    {
+      "name": "CheckBuildStatus",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "store": "builds",
+          "operation": "read",
+          "description": "Look up build by build_id to retrieve status and logs"
+        }
+      ],
+      "error_handling": {
+        "build_not_found": "Return error with message 'Build not found'"
+      },
+      "rate_limits": {
+        "max_calls_per_second": 100
+      },
+      "timeouts": {
+        "max_execution_ms": 200
+      },
+      "retry_policy": {
+        "max_retries": 1,
+        "backoff_ms": 50
+      }
+    },
+    {
+      "name": "ListBuilds",
+      "global_vars": [
+        {
+          "name": "MAX_LIST_RESULTS",
+          "type": "Integer",
+          "value": 100,
+          "description": "Maximum number of builds to return in a single list"
+        }
+      ],
+      "data_operations": [
+        {
+          "store": "builds",
+          "operation": "read",
+          "description": "Query builds store with optional filters and limit results"
+        }
+      ],
+      "error_handling": {
+        "query_failure": "Return error with message 'Failed to list builds'"
+      },
+      "rate_limits": {
+        "max_calls_per_second": 50
+      },
+      "timeouts": {
+        "max_execution_ms": 300
+      },
+      "retry_policy": {
+        "max_retries": 1,
+        "backoff_ms": 50
+      }
+    },
+    {
+      "name": "CancelBuild",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "store": "builds",
+          "operation": "read",
+          "description": "Find build by build_id and check current status"
+        },
+        {
+          "store": "builds",
+          "operation": "write",
+          "description": "Update build status to 'cancelled' if currently running"
+        }
+      ],
+      "error_handling": {
+        "build_not_found": "Return error with message 'Build not found'",
+        "build_not_running": "Return error with message 'Build is not running, cannot cancel'"
+      },
+      "rate_limits": {
+        "max_calls_per_second": 20
+      },
+      "timeouts": {
+        "max_execution_ms": 300
+      },
+      "retry_policy": {
+        "max_retries": 1,
+        "backoff_ms": 100
+      }
+    },
+    {
+      "name": "FormatResponse",
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "missing_child_result": "Return error with message 'Internal error: missing result from child action'"
+      },
+      "rate_limits": {
+        "max_calls_per_second": 200
+      },
+      "timeouts": {
+        "max_execution_ms": 50
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff_ms": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "interfaces": [
+    {
+      "child_name": "ParseInput",
+      "call_inputs": [
+        {"name": "input", "type": "Any", "description": "JSON with action, repo, branch", "source": "parent input"}
+      ],
+      "call_outputs": [
+        {"name": "parsed_data", "type": "Object", "description": "Object with action, repo, branch, and optional params"}
+      ],
+      "internal_leaf_accesses": []
+    },
+    {
+      "child_name": "RouteAction",
+      "call_inputs": [
+        {"name": "parsed_data", "type": "Object", "description": "Object with action field", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "decision", "type": "String", "description": "String indicating which child to invoke: trigger, status, list, cancel"}
+      ],
+      "internal_leaf_accesses": []
+    },
+    {
+      "child_name": "CheckDuplicateBuild",
+      "call_inputs": [
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "is_duplicate", "type": "Boolean", "description": "True if build already exists for repo+branch"}
+      ],
+      "internal_leaf_accesses": [
+        {"name": "builds", "type": "memory", "access": "read", "description": "Read builds data store to check for existing build"}
+      ]
+    },
+    {
+      "child_name": "CreateBuildRecord",
+      "call_inputs": [
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "build_id", "type": "String", "description": "Unique identifier for the new build"}
+      ],
+      "internal_leaf_accesses": [
+        {"name": "builds", "type": "memory", "access": "write", "description": "Write new build record to builds data store"}
+      ]
+    },
+    {
+      "child_name": "ExecuteBuildPipeline",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to execute", "source": "CreateBuildRecord"},
+        {"name": "repo", "type": "String", "description": "Repository name", "source": "ParseInput"},
+        {"name": "branch", "type": "String", "description": "Branch name", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "build_result", "type": "Object", "description": "Final status and logs of the build"}
+      ],
+      "internal_leaf_accesses": [
+        {"name": "builds", "type": "memory", "access": "read_write", "description": "Update build status and logs incrementally"},
+        {"name": "artifacts", "type": "memory", "access": "write", "description": "Store build artifacts if any"}
+      ]
+    },
+    {
+      "child_name": "QueryBuildStatus",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to check", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "status_info", "type": "Object", "description": "Object with status and logs"}
+      ],
+      "internal_leaf_accesses": [
+        {"name": "builds", "type": "memory", "access": "read", "description": "Read build record to get status and logs"}
+      ]
+    },
+    {
+      "child_name": "ListAllBuilds",
+      "call_inputs": [],
+      "call_outputs": [
+        {"name": "builds_list", "type": "Array", "description": "Array of build objects with id, repo, branch, status"}
+      ],
+      "internal_leaf_accesses": [
+        {"name": "builds", "type": "memory", "access": "read", "description": "Read all build records"}
+      ]
+    },
+    {
+      "child_name": "CancelBuildRecord",
+      "call_inputs": [
+        {"name": "build_id", "type": "String", "description": "ID of the build to cancel", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "cancel_result", "type": "Object", "description": "Success indicator and updated status"}
+      ],
+      "internal_leaf_accesses": [
+        {"name": "builds", "type": "memory", "access": "write", "description": "Update build status to cancelled"}
+      ]
+    },
+    {
+      "child_name": "FormatResponse",
+      "call_inputs": [
+        {"name": "action_result", "type": "Any", "description": "Result from the executed child (build_result, status_info, builds_list, cancel_result, or error)", "source": "parent"},
+        {"name": "action", "type": "String", "description": "The original action for context", "source": "ParseInput"}
+      ],
+      "call_outputs": [
+        {"name": "output", "type": "Any", "description": "Final JSON with success, build_id, status, logs"}
+      ],
+      "internal_leaf_accesses": []
+    }
+  ]
+}

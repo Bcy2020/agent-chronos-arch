@@ -1,0 +1,265 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from parent"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "command",
+          "type": "String",
+          "description": "Validated command string"
+        },
+        {
+          "name": "order_data",
+          "type": "Any",
+          "description": "Remaining JSON data after command extraction"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": [
+        {
+          "error": "Invalid JSON",
+          "action": "Return error message to parent"
+        },
+        {
+          "error": "Missing or invalid command",
+          "action": "Return error message to parent"
+        }
+      ],
+      "timeout_ms": 100,
+      "retry_policy": "none",
+      "concurrency_guard": "none"
+    },
+    {
+      "name": "PlaceOrder",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "Any",
+          "description": "Order details including items and customer info"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, order_id, status, message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "orders",
+          "access": "read_write"
+        },
+        {
+          "store": "inventory",
+          "access": "read_write"
+        },
+        {
+          "store": "payments",
+          "access": "read_write"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "orders",
+          "type": "DataStore",
+          "access": "read_write"
+        },
+        {
+          "name": "inventory",
+          "type": "DataStore",
+          "access": "read_write"
+        },
+        {
+          "name": "payments",
+          "type": "DataStore",
+          "access": "read_write"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "reserve_inventory",
+          "store": "inventory",
+          "description": "Decrement item quantities"
+        },
+        {
+          "operation": "process_payment",
+          "store": "payments",
+          "description": "Record payment transaction"
+        },
+        {
+          "operation": "create_order",
+          "store": "orders",
+          "description": "Insert new order record"
+        }
+      ],
+      "error_handling": [
+        {
+          "error": "Insufficient inventory",
+          "action": "Rollback all changes, return error to parent"
+        },
+        {
+          "error": "Payment failure",
+          "action": "Rollback inventory reservation, return error to parent"
+        },
+        {
+          "error": "Data store write failure",
+          "action": "Rollback all changes, return error to parent"
+        }
+      ],
+      "timeout_ms": 5000,
+      "retry_policy": "none",
+      "concurrency_guard": "pessimistic_lock"
+    },
+    {
+      "name": "CancelOrder",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "Any",
+          "description": "Contains order_id to cancel"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, order_id, status, message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "orders",
+          "access": "read_write"
+        },
+        {
+          "store": "inventory",
+          "access": "read_write"
+        },
+        {
+          "store": "payments",
+          "access": "read_write"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "orders",
+          "type": "DataStore",
+          "access": "read_write"
+        },
+        {
+          "name": "inventory",
+          "type": "DataStore",
+          "access": "read_write"
+        },
+        {
+          "name": "payments",
+          "type": "DataStore",
+          "access": "read_write"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "check_order_status",
+          "store": "orders",
+          "description": "Read order status to verify not shipped"
+        },
+        {
+          "operation": "update_order_status",
+          "store": "orders",
+          "description": "Set order status to cancelled"
+        },
+        {
+          "operation": "refund_payment",
+          "store": "payments",
+          "description": "Process refund transaction"
+        },
+        {
+          "operation": "restore_inventory",
+          "store": "inventory",
+          "description": "Increment item quantities"
+        }
+      ],
+      "error_handling": [
+        {
+          "error": "Order not found",
+          "action": "Return error to parent"
+        },
+        {
+          "error": "Order already shipped",
+          "action": "Return error to parent, no changes made"
+        },
+        {
+          "error": "Refund failure",
+          "action": "Rollback order status change, return error to parent"
+        },
+        {
+          "error": "Data store write failure",
+          "action": "Rollback all changes, return error to parent"
+        }
+      ],
+      "timeout_ms": 5000,
+      "retry_policy": "none",
+      "concurrency_guard": "pessimistic_lock"
+    },
+    {
+      "name": "TrackOrder",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "Any",
+          "description": "Contains order_id to track"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "result",
+          "type": "Any",
+          "description": "JSON with success, order_id, status, message, tracking_info"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "orders",
+          "access": "read_write"
+        }
+      ],
+      "global_vars": [
+        {
+          "name": "orders",
+          "type": "DataStore",
+          "access": "read_write"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "lookup_order",
+          "store": "orders",
+          "description": "Read order record by ID"
+        }
+      ],
+      "error_handling": [
+        {
+          "error": "Order not found",
+          "action": "Return error to parent"
+        },
+        {
+          "error": "Data store read failure",
+          "action": "Return error to parent"
+        }
+      ],
+      "timeout_ms": 1000,
+      "retry_policy": "simple_retry",
+      "concurrency_guard": "none"
+    }
+  ]
+}

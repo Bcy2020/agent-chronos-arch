@@ -682,6 +682,8 @@ Return ONLY valid JSON with this structure:
         return "\n".join(lines)
     
     def _parse_response(self, content: str) -> Dict[str, Any]:
+        if not content:
+            return {"code": "", "error": "empty_response"}
         content = content.strip()
         if content.startswith("```"):
             content = re.sub(r"^```[a-zA-Z0-9]*\n?", "", content)

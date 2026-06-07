@@ -1,0 +1,221 @@
+{
+  "governance_and_resources": [
+    {
+      "child_name": "ParseCommand",
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": [
+        {
+          "condition": "Input is not valid JSON",
+          "action": "Return error with message 'Invalid input format'"
+        },
+        {
+          "condition": "Command field missing or not one of allowed values",
+          "action": "Return error with message 'Unknown or missing command'"
+        }
+      ],
+      "security": [],
+      "rate_limits": [],
+      "audit_logging": [],
+      "resource_limits": {
+        "max_cpu": "low",
+        "max_memory": "low",
+        "max_time_ms": 50
+      }
+    },
+    {
+      "child_name": "SendMessage",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "data_store": "messages",
+          "operation": "write",
+          "description": "Insert new message with timestamp, user, channel, and content"
+        },
+        {
+          "data_store": "channels",
+          "operation": "read",
+          "description": "Verify user is a member of the target channel"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "User not a member of channel",
+          "action": "Return error with message 'User not in channel'"
+        },
+        {
+          "condition": "Message content empty or missing",
+          "action": "Return error with message 'Message content required'"
+        },
+        {
+          "condition": "Channel does not exist",
+          "action": "Return error with message 'Channel not found'"
+        }
+      ],
+      "security": [
+        {
+          "type": "membership_check",
+          "description": "Ensure user is a member of the channel before allowing send"
+        }
+      ],
+      "rate_limits": [
+        {
+          "scope": "per_user_per_channel",
+          "limit": "10 messages per minute",
+          "action": "Return error with message 'Rate limit exceeded'"
+        }
+      ],
+      "audit_logging": [
+        {
+          "event": "message_sent",
+          "fields": ["user", "channel", "timestamp", "message_id"]
+        }
+      ],
+      "resource_limits": {
+        "max_cpu": "medium",
+        "max_memory": "medium",
+        "max_time_ms": 200
+      }
+    },
+    {
+      "child_name": "GetHistory",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "data_store": "messages",
+          "operation": "read",
+          "description": "Query messages for channel, ordered by timestamp descending, limit 100"
+        },
+        {
+          "data_store": "channels",
+          "operation": "read",
+          "description": "Verify user is a member of the channel"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "User not a member of channel",
+          "action": "Return error with message 'User not in channel'"
+        },
+        {
+          "condition": "Channel does not exist",
+          "action": "Return error with message 'Channel not found'"
+        }
+      ],
+      "security": [
+        {
+          "type": "membership_check",
+          "description": "Ensure user is a member of the channel before returning history"
+        }
+      ],
+      "rate_limits": [
+        {
+          "scope": "per_user_per_channel",
+          "limit": "30 requests per minute",
+          "action": "Return error with message 'Rate limit exceeded'"
+        }
+      ],
+      "audit_logging": [
+        {
+          "event": "history_retrieved",
+          "fields": ["user", "channel", "timestamp"]
+        }
+      ],
+      "resource_limits": {
+        "max_cpu": "medium",
+        "max_memory": "medium",
+        "max_time_ms": 300
+      }
+    },
+    {
+      "child_name": "CreateChannel",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "data_store": "channels",
+          "operation": "read",
+          "description": "Check if channel name already exists"
+        },
+        {
+          "data_store": "channels",
+          "operation": "write",
+          "description": "Create new channel entry with name, creator, and member list"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "Channel name already exists",
+          "action": "Return error with message 'Channel already exists'"
+        },
+        {
+          "condition": "Channel name empty or invalid",
+          "action": "Return error with message 'Invalid channel name'"
+        }
+      ],
+      "security": [],
+      "rate_limits": [
+        {
+          "scope": "per_user",
+          "limit": "5 channels per minute",
+          "action": "Return error with message 'Rate limit exceeded'"
+        }
+      ],
+      "audit_logging": [
+        {
+          "event": "channel_created",
+          "fields": ["channel_name", "creator", "timestamp"]
+        }
+      ],
+      "resource_limits": {
+        "max_cpu": "low",
+        "max_memory": "low",
+        "max_time_ms": 100
+      }
+    },
+    {
+      "child_name": "JoinChannel",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "data_store": "channels",
+          "operation": "read",
+          "description": "Check channel exists and user is not already a member"
+        },
+        {
+          "data_store": "channels",
+          "operation": "write",
+          "description": "Add user to channel's member list"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "Channel does not exist",
+          "action": "Return error with message 'Channel not found'"
+        },
+        {
+          "condition": "User already a member",
+          "action": "Return error with message 'User already in channel'"
+        }
+      ],
+      "security": [],
+      "rate_limits": [
+        {
+          "scope": "per_user",
+          "limit": "20 join requests per minute",
+          "action": "Return error with message 'Rate limit exceeded'"
+        }
+      ],
+      "audit_logging": [
+        {
+          "event": "user_joined_channel",
+          "fields": ["user", "channel", "timestamp"]
+        }
+      ],
+      "resource_limits": {
+        "max_cpu": "low",
+        "max_memory": "low",
+        "max_time_ms": 100
+      }
+    }
+  ]
+}

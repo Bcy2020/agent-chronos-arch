@@ -1,0 +1,644 @@
+{
+  "children": [
+    {
+      "name": "RegisterPatient",
+      "purpose": "Register a new patient in the system",
+      "behavior": "Extract patient details from input, validate uniqueness, store in patients data store, and return success or error",
+      "boundary": {
+        "in_scope": [
+          "patient registration",
+          "input validation",
+          "data store write"
+        ],
+        "out_of_scope": [
+          "booking appointments",
+          "retrieving records",
+          "profile updates"
+        ]
+      },
+      "preconditions": [
+        "input contains valid registration data",
+        "patient does not already exist"
+      ],
+      "postconditions": [
+        "new patient record created in patients data store"
+      ],
+      "guarantees": [
+        "patient ID is unique",
+        "registration is atomic"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with registration details (name, contact, etc.)",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "patients",
+          "op": "read_write",
+          "reason": "Check uniqueness and store new patient record"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "registration_result",
+          "type": "dict",
+          "description": "JSON with success status, patient ID, and message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RegisterPatient(input: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "patients",
+          "op": "read_write",
+          "description": "Check uniqueness and store new patient record"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "patients",
+          "operation_type": "read_write",
+          "description": "Check uniqueness and store new patient record"
+        }
+      ],
+      "requested_capabilities": [
+        "patients.read",
+        "patients.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Patient ID must be unique across all records"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Registration must be atomic (all-or-nothing)"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid input, a new patient record is created and a success response is returned"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given duplicate patient data, an error response is returned and no record is created"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "BookAppointment",
+      "purpose": "Book an appointment for a registered patient",
+      "behavior": "Extract patient ID and appointment details from input, verify patient exists, check slot availability, store appointment, and return confirmation",
+      "boundary": {
+        "in_scope": [
+          "appointment booking",
+          "patient existence check",
+          "slot availability",
+          "data store write"
+        ],
+        "out_of_scope": [
+          "patient registration",
+          "record retrieval",
+          "profile updates"
+        ]
+      },
+      "preconditions": [
+        "patient is registered",
+        "appointment slot is available"
+      ],
+      "postconditions": [
+        "new appointment record created in appointments data store"
+      ],
+      "guarantees": [
+        "appointment is unique",
+        "booking is atomic"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with patient ID, date, time, doctor, etc.",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "patients",
+          "op": "read",
+          "reason": "Verify patient exists"
+        },
+        {
+          "resource": "appointments",
+          "op": "read_write",
+          "reason": "Check slot availability and store new appointment"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "booking_result",
+          "type": "dict",
+          "description": "JSON with success status, appointment ID, and message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def BookAppointment(input: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "patients",
+          "op": "read",
+          "description": "Verify patient exists"
+        },
+        {
+          "variable": "appointments",
+          "op": "read_write",
+          "description": "Check slot availability and store new appointment"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "patients",
+          "operation_type": "read",
+          "description": "Verify patient exists"
+        },
+        {
+          "source_name": "appointments",
+          "operation_type": "read_write",
+          "description": "Check slot availability and store new appointment"
+        }
+      ],
+      "requested_capabilities": [
+        "patients.read",
+        "appointments.read",
+        "appointments.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "Appointment slot must be available (no double-booking)"
+        },
+        {
+          "constraint_id": "C-004",
+          "description": "Booking must be atomic (all-or-nothing)"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-003",
+          "description": "Given valid input and available slot, a new appointment is created and a success response is returned"
+        },
+        {
+          "ac_id": "AC-004",
+          "description": "Given unavailable slot, an error response is returned and no appointment is created"
+        },
+        {
+          "ac_id": "AC-005",
+          "description": "Given unregistered patient, an error response is returned"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetRecords",
+      "purpose": "Retrieve medical records for a patient",
+      "behavior": "Extract patient ID from input, verify patient exists, query appointments data store for all records, and return them",
+      "boundary": {
+        "in_scope": [
+          "record retrieval",
+          "patient existence check",
+          "data store read"
+        ],
+        "out_of_scope": [
+          "registration",
+          "booking",
+          "profile updates"
+        ]
+      },
+      "preconditions": [
+        "patient is registered"
+      ],
+      "postconditions": [
+        "records are read without modification"
+      ],
+      "guarantees": [
+        "records are append-only, no deletion"
+      ],
+      "composition_role": "query",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with patient ID",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "patients",
+          "op": "read",
+          "reason": "Verify patient exists"
+        },
+        {
+          "resource": "appointments",
+          "op": "read",
+          "reason": "Query all records for the patient"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "records_result",
+          "type": "dict",
+          "description": "JSON with success status, list of records, and message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def GetRecords(input: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "patients",
+          "op": "read",
+          "description": "Verify patient exists"
+        },
+        {
+          "variable": "appointments",
+          "op": "read",
+          "description": "Query all records for the patient"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "patients",
+          "operation_type": "read",
+          "description": "Verify patient exists"
+        },
+        {
+          "source_name": "appointments",
+          "operation_type": "read",
+          "description": "Query all records for the patient"
+        }
+      ],
+      "requested_capabilities": [
+        "patients.read",
+        "appointments.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-005",
+          "description": "Records must be read-only (no modification)"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-006",
+          "description": "Given registered patient ID, all records are returned successfully"
+        },
+        {
+          "ac_id": "AC-007",
+          "description": "Given unregistered patient ID, an error response is returned"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "UpdateProfile",
+      "purpose": "Update patient profile information",
+      "behavior": "Extract patient ID and updated fields from input, verify patient exists, update patients data store, and return confirmation",
+      "boundary": {
+        "in_scope": [
+          "profile update",
+          "patient existence check",
+          "data store write"
+        ],
+        "out_of_scope": [
+          "registration",
+          "booking",
+          "record retrieval"
+        ]
+      },
+      "preconditions": [
+        "patient is registered"
+      ],
+      "postconditions": [
+        "patient profile updated in patients data store"
+      ],
+      "guarantees": [
+        "update is atomic"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with patient ID and fields to update",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "patients",
+          "op": "read_write",
+          "reason": "Verify patient exists and update profile"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "update_result",
+          "type": "dict",
+          "description": "JSON with success status and message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def UpdateProfile(input: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "patients",
+          "op": "read_write",
+          "description": "Verify patient exists and update profile"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "patients",
+          "operation_type": "read_write",
+          "description": "Verify patient exists and update profile"
+        }
+      ],
+      "requested_capabilities": [
+        "patients.read",
+        "patients.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-006",
+          "description": "Update must be atomic (all-or-nothing)"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-008",
+          "description": "Given valid input and registered patient, profile is updated and success response is returned"
+        },
+        {
+          "ac_id": "AC-009",
+          "description": "Given unregistered patient, an error response is returned"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ParseCommand",
+      "purpose": "Parse the input JSON to determine which command to execute",
+      "behavior": "Extract the 'command' field from input JSON and return it along with the rest of the data",
+      "boundary": {
+        "in_scope": [
+          "command extraction",
+          "input parsing"
+        ],
+        "out_of_scope": [
+          "executing any command",
+          "data store access"
+        ]
+      },
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "command and data are extracted"
+      ],
+      "guarantees": [
+        "command is one of the valid commands"
+      ],
+      "composition_role": "transform",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with command field",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "String indicating the operation (register/book/records/update)",
+          "consumer": "parent"
+        },
+        {
+          "name": "data",
+          "type": "dict",
+          "description": "Remaining JSON data for the command",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(input: dict) -> tuple[str, dict]",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-007",
+          "description": "Command must be one of: register, book, records, update"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-010",
+          "description": "Given valid JSON with command field, command and data are extracted correctly"
+        },
+        {
+          "ac_id": "AC-011",
+          "description": "Given missing command field, an error is returned"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-005"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateInput",
+      "purpose": "Validate the input JSON structure and required fields",
+      "behavior": "Check that input has required fields based on command, return validation result",
+      "boundary": {
+        "in_scope": [
+          "input validation",
+          "field presence check"
+        ],
+        "out_of_scope": [
+          "executing commands",
+          "data store access"
+        ]
+      },
+      "preconditions": [
+        "input is parseable"
+      ],
+      "postconditions": [
+        "validation result is returned"
+      ],
+      "guarantees": [
+        "validation is deterministic"
+      ],
+      "composition_role": "validate",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with command and data",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "validation_result",
+          "type": "dict",
+          "description": "JSON with boolean valid flag and optional error message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateInput(input: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-008",
+          "description": "Validation rules must be deterministic and consistent"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-012",
+          "description": "Given valid input, validation returns valid=true"
+        },
+        {
+          "ac_id": "AC-013",
+          "description": "Given invalid input, validation returns valid=false with error message"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-006"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Format the output JSON with success, data, and message",
+      "behavior": "Take the result from a child operation and wrap it in a standard response format",
+      "boundary": {
+        "in_scope": [
+          "response formatting",
+          "error handling"
+        ],
+        "out_of_scope": [
+          "executing commands",
+          "data store access"
+        ]
+      },
+      "preconditions": [
+        "result is available"
+      ],
+      "postconditions": [
+        "output is formatted"
+      ],
+      "guarantees": [
+        "output conforms to specification"
+      ],
+      "composition_role": "aggregate",
+      "call_inputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Result from a child operation (success, data, message)",
+          "source": "previous child output"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "dict",
+          "description": "JSON with success, data, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def FormatResponse(result: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-009",
+          "description": "Response format must be consistent across all operations"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-014",
+          "description": "Given a result dict, output is formatted with success, data, and message fields"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-007"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All governance and resource fields derived from Stage 2 internal_leaf_accesses. Children with no internal_leaf_accesses (ParseCommand, ValidateInput, FormatResponse) have empty global_vars and data_operations. For children with data store accesses, global_vars and data_operations are synchronized with the same resources and operations. Requested_capabilities follow the pattern 'resource.operation'. Constraints and acceptance criteria are derived from preconditions, postconditions, and guarantees. Node types: pure_function for read-only or transform operations, atomic_operation for write operations.",
+  "resource_audit": {
+    "signature_preservation_detail": "All 7 child signatures from Stage 2 are preserved exactly. No changes to call_inputs, outputs, or signature strings.",
+    "internal_leaf_mapping_detail": "Each internal_leaf_accesses entry maps directly to a global_vars entry with the same resource and op. For example, RegisterPatient's internal_leaf_accesses [patients read_write] maps to global_vars [patients read_write] and data_operations [patients read_write]. BookAppointment's two accesses map to two global_vars entries.",
+    "global_vars_data_operations_sync_detail": "For every child with internal_leaf_accesses, global_vars and data_operations contain identical entries. Children without internal_leaf_accesses have empty arrays for both. No exceptions needed.",
+    "coverage_detail": "All resources from internal_leaf_accesses are covered: patients (read, read_write) and appointments (read, read_write). No resources are missing from governance fields.",
+    "final_status": "ok"
+  }
+}

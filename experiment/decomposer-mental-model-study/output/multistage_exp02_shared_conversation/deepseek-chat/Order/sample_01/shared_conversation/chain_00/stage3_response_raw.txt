@@ -1,0 +1,240 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "JSON with command and order_data",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "command",
+          "type": "String",
+          "description": "Validated command string (place/cancel/track)"
+        },
+        {
+          "name": "order_data",
+          "type": "Any",
+          "description": "Parsed order data object"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "governance": {
+        "execution_mode": "synchronous",
+        "retry_policy": {
+          "max_retries": 0,
+          "retry_interval_ms": 0
+        },
+        "timeout_ms": 100,
+        "error_handling": "fail_fast"
+      }
+    },
+    {
+      "name": "PlaceOrder",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "Any",
+          "description": "Order details including items and payment info",
+          "source": "ParseCommand output"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "order_id",
+          "type": "String",
+          "description": "Generated unique order ID"
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "description": "Order status after placement"
+        },
+        {
+          "name": "message",
+          "type": "String",
+          "description": "Success or error message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "orders",
+          "access": "read_write",
+          "description": "Create new order record"
+        },
+        {
+          "store": "inventory",
+          "access": "read_write",
+          "description": "Decrement inventory for ordered items"
+        },
+        {
+          "store": "payments",
+          "access": "read_write",
+          "description": "Process payment transaction"
+        }
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "create",
+          "target": "orders",
+          "description": "Insert new order record with status 'placed'"
+        },
+        {
+          "operation": "update",
+          "target": "inventory",
+          "description": "Decrement stock for each item in order"
+        },
+        {
+          "operation": "create",
+          "target": "payments",
+          "description": "Record payment transaction"
+        }
+      ],
+      "governance": {
+        "execution_mode": "synchronous",
+        "retry_policy": {
+          "max_retries": 2,
+          "retry_interval_ms": 500
+        },
+        "timeout_ms": 5000,
+        "error_handling": "rollback_all"
+      }
+    },
+    {
+      "name": "CancelOrder",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "Any",
+          "description": "Contains order_id to cancel",
+          "source": "ParseCommand output"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "order_id",
+          "type": "String",
+          "description": "ID of cancelled order"
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "description": "New status after cancellation"
+        },
+        {
+          "name": "message",
+          "type": "String",
+          "description": "Success or error message"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "orders",
+          "access": "read_write",
+          "description": "Read order status and update to cancelled"
+        },
+        {
+          "store": "inventory",
+          "access": "read_write",
+          "description": "Restore inventory for cancelled order items"
+        },
+        {
+          "store": "payments",
+          "access": "read_write",
+          "description": "Process refund for cancelled order"
+        }
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "orders",
+          "description": "Retrieve order record to check status"
+        },
+        {
+          "operation": "update",
+          "target": "orders",
+          "description": "Set order status to 'cancelled'"
+        },
+        {
+          "operation": "update",
+          "target": "inventory",
+          "description": "Restore stock for each item in order"
+        },
+        {
+          "operation": "create",
+          "target": "payments",
+          "description": "Record refund transaction"
+        }
+      ],
+      "governance": {
+        "execution_mode": "synchronous",
+        "retry_policy": {
+          "max_retries": 2,
+          "retry_interval_ms": 500
+        },
+        "timeout_ms": 5000,
+        "error_handling": "rollback_all"
+      }
+    },
+    {
+      "name": "TrackOrder",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "Any",
+          "description": "Contains order_id to track",
+          "source": "ParseCommand output"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "order_id",
+          "type": "String",
+          "description": "ID of tracked order"
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "description": "Current order status"
+        },
+        {
+          "name": "message",
+          "type": "String",
+          "description": "Order details or error"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "orders",
+          "access": "read",
+          "description": "Read order status and details"
+        }
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "read",
+          "target": "orders",
+          "description": "Retrieve order record by order_id"
+        }
+      ],
+      "governance": {
+        "execution_mode": "synchronous",
+        "retry_policy": {
+          "max_retries": 1,
+          "retry_interval_ms": 200
+        },
+        "timeout_ms": 2000,
+        "error_handling": "fail_fast"
+      }
+    }
+  ]
+}

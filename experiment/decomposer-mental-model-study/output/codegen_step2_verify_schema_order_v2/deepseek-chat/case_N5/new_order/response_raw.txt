@@ -1,0 +1,34 @@
+{
+  "checks": {
+    "return_value_origin": {
+      "detail": "Return value is (True, result). True is a literal success flag, which is acceptable as a PRD_LITERAL (fixed output key). result comes from RouteCommand child call, so it's dynamic. No forbidden literals.",
+      "passed": true
+    },
+    "child_coverage": {
+      "detail": "Children declared: ParseInput, RouteCommand, PlaceOrder, CancelOrder. Parent calls ParseInput and RouteCommand directly. PlaceOrder and CancelOrder are not called by the parent; they are supposed to be called by RouteCommand (sibling cross-call). However, the parent does not call them directly. According to the checklist, every child's name must appear as a direct call in the parent code. PlaceOrder and CancelOrder are missing. This is a violation.",
+      "passed": false
+    },
+    "no_direct_access": {
+      "detail": "No direct reads/writes to global variables or data sources. All data comes from child calls or parent input.",
+      "passed": true
+    },
+    "no_cross_calls": {
+      "detail": "The parent code does not show any child calling another child. However, the decomposition declares that RouteCommand should call PlaceOrder or CancelOrder, which is a cross-call (sibling calling sibling). This violates the tree structure requirement. The parent code itself does not contain cross-calls, but the decomposition design does. Since the checklist says 'If the code shows one child calling another child', and the code does not show that, but the decomposition expects it, this is a design issue. However, the check is about the code, and the code does not have cross-calls. So passed is true for the code, but the decomposition is invalid. The checklist says 'If the code shows one child calling another child', and the code does not. So passed is true.",
+      "passed": true
+    },
+    "dataflow_conformance": {
+      "detail": "Dataflow edges: parent.input -> ParseInput.input (realized: parsed = ParseInput(input)). ParseInput.command -> parent.command (realized: command = parsed['command']). ParseInput.data -> parent.data (realized: data = parsed['data']). parent.command -> RouteCommand.command (realized: result = RouteCommand(command, data)). parent.data -> RouteCommand.data (same call). RouteCommand.result -> parent.result (realized: return True, result). All edges are satisfied. However, the decomposition also declares edges from ParseInput.data to PlaceOrder.data and CancelOrder.data, but those children are not called by the parent. Since the parent does not call them, those edges are not realized. But the declared dataflow edges in the table do not include those; they only include edges involving ParseInput, RouteCommand, and parent. So the table is consistent with the code. The missing children are a child coverage issue, not dataflow conformance. So dataflow conformance passes.",
+      "passed": true
+    }
+  },
+  "decomposition_feedback": {
+    "reason": "missing_child_capability",
+    "offending_child": "PlaceOrder, CancelOrder",
+    "failed_checks": ["child_coverage"],
+    "missing_inputs": [],
+    "direct_resource_accesses": [],
+    "suggested_fix": "Either call PlaceOrder and CancelOrder directly from the parent, or remove them from the decomposition if they are not needed at the parent level. Alternatively, redesign so that RouteCommand does not call siblings but the parent handles routing.",
+    "requires_redecomposition": true
+  },
+  "final_status": "cannot_compose"
+}

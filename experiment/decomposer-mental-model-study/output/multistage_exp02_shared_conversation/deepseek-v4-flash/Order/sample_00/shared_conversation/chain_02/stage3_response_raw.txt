@@ -1,0 +1,187 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Parse the input JSON to extract command and order data",
+      "behavior": "Parse input JSON and validate command field",
+      "boundary": {
+        "in_scope": ["Extract command type", "Extract order data"],
+        "out_of_scope": ["Business logic", "Data store access"]
+      },
+      "preconditions": ["Input is valid JSON"],
+      "postconditions": ["Command and order_data are extracted"],
+      "guarantees": ["Returns error if command missing or invalid"],
+      "composition_role": "transform",
+      "call_inputs": [
+        {"name": "input", "type": "dict", "description": "Raw JSON input from parent", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {"name": "command", "type": "str", "description": "Command type", "consumer": "parent"},
+        {"name": "order_data", "type": "dict", "description": "Parsed order data", "consumer": "parent"}
+      ],
+      "signature": "def ParseCommand(input: dict) -> tuple[str, dict]",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [],
+      "acceptance_criteria": [
+        {"ac_id": "AC-001", "description": "Returns error if input is not valid JSON"},
+        {"ac_id": "AC-002", "description": "Returns error if command field missing or invalid"}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-001", "FR-002", "FR-003"]},
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute order placement logic",
+      "behavior": "Validate inventory, process payment, create order record",
+      "boundary": {
+        "in_scope": ["Inventory check", "Payment processing", "Order creation"],
+        "out_of_scope": ["Cancellation", "Tracking"]
+      },
+      "preconditions": ["Order data is valid", "Inventory sufficient", "Payment authorized"],
+      "postconditions": ["Order created in orders store", "Inventory decremented", "Payment recorded"],
+      "guarantees": ["Atomic operation"],
+      "composition_role": "execute",
+      "call_inputs": [
+        {"name": "order_data", "type": "dict", "description": "Order details from parent", "source": "parent input via ParseCommand output"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "orders", "op": "read_write", "reason": "Create order record"},
+        {"resource": "inventory", "op": "read_write", "reason": "Check and decrement inventory"},
+        {"resource": "payments", "op": "read_write", "reason": "Process payment"}
+      ],
+      "outputs": [
+        {"name": "order_id", "type": "str", "description": "Generated order ID", "consumer": "parent"},
+        {"name": "status", "type": "str", "description": "Order status", "consumer": "parent"},
+        {"name": "message", "type": "str", "description": "Result message", "consumer": "parent"}
+      ],
+      "signature": "def PlaceOrder(order_data: dict) -> tuple[str, str, str]",
+      "global_vars": [
+        {"variable": "orders", "op": "read_write", "description": "Create order record"},
+        {"variable": "inventory", "op": "read_write", "description": "Check and decrement inventory"},
+        {"variable": "payments", "op": "read_write", "description": "Process payment"}
+      ],
+      "data_operations": [
+        {"source_name": "orders", "operation_type": "read_write", "description": "Create order record"},
+        {"source_name": "inventory", "operation_type": "read_write", "description": "Check and decrement inventory"},
+        {"source_name": "payments", "operation_type": "read_write", "description": "Process payment"}
+      ],
+      "requested_capabilities": ["orders.read_write", "inventory.read_write", "payments.read_write"],
+      "constraints": [
+        {"constraint_id": "C-001", "description": "All operations must be atomic"}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-001", "description": "Order is created in orders store"},
+        {"ac_id": "AC-002", "description": "Inventory is decremented correctly"},
+        {"ac_id": "AC-003", "description": "Payment is recorded"}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-001"]},
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute order cancellation logic",
+      "behavior": "Check order status, cancel if not shipped, refund payment, restore inventory",
+      "boundary": {
+        "in_scope": ["Order status check", "Cancellation", "Refund", "Inventory restoration"],
+        "out_of_scope": ["Placement", "Tracking"]
+      },
+      "preconditions": ["Order exists", "Order not shipped"],
+      "postconditions": ["Order status set to cancelled", "Payment refunded", "Inventory restored"],
+      "guarantees": ["Atomic operation", "Cannot cancel shipped order"],
+      "composition_role": "execute",
+      "call_inputs": [
+        {"name": "order_data", "type": "dict", "description": "Order ID and reason from parent", "source": "parent input via ParseCommand output"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "orders", "op": "read_write", "reason": "Read order status and update to cancelled"},
+        {"resource": "payments", "op": "read_write", "reason": "Process refund"},
+        {"resource": "inventory", "op": "read_write", "reason": "Restore inventory"}
+      ],
+      "outputs": [
+        {"name": "order_id", "type": "str", "description": "Cancelled order ID", "consumer": "parent"},
+        {"name": "status", "type": "str", "description": "Updated status", "consumer": "parent"},
+        {"name": "message", "type": "str", "description": "Result message", "consumer": "parent"}
+      ],
+      "signature": "def CancelOrder(order_data: dict) -> tuple[str, str, str]",
+      "global_vars": [
+        {"variable": "orders", "op": "read_write", "description": "Read order status and update to cancelled"},
+        {"variable": "payments", "op": "read_write", "description": "Process refund"},
+        {"variable": "inventory", "op": "read_write", "description": "Restore inventory"}
+      ],
+      "data_operations": [
+        {"source_name": "orders", "operation_type": "read_write", "description": "Read order status and update to cancelled"},
+        {"source_name": "payments", "operation_type": "read_write", "description": "Process refund"},
+        {"source_name": "inventory", "operation_type": "read_write", "description": "Restore inventory"}
+      ],
+      "requested_capabilities": ["orders.read_write", "payments.read_write", "inventory.read_write"],
+      "constraints": [
+        {"constraint_id": "C-001", "description": "All operations must be atomic"},
+        {"constraint_id": "C-002", "description": "Cannot cancel a shipped order"}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-001", "description": "Order status updated to cancelled"},
+        {"ac_id": "AC-002", "description": "Payment refunded"},
+        {"ac_id": "AC-003", "description": "Inventory restored"}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-002"]},
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Execute order tracking logic",
+      "behavior": "Retrieve order status from orders store",
+      "boundary": {
+        "in_scope": ["Order status retrieval"],
+        "out_of_scope": ["Placement", "Cancellation"]
+      },
+      "preconditions": ["Order exists"],
+      "postconditions": ["Status retrieved"],
+      "guarantees": ["Read-only operation"],
+      "composition_role": "query",
+      "call_inputs": [
+        {"name": "order_data", "type": "dict", "description": "Order ID from parent", "source": "parent input via ParseCommand output"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "orders", "op": "read", "reason": "Read order status"}
+      ],
+      "outputs": [
+        {"name": "order_id", "type": "str", "description": "Order ID", "consumer": "parent"},
+        {"name": "status", "type": "str", "description": "Current status", "consumer": "parent"},
+        {"name": "message", "type": "str", "description": "Status description", "consumer": "parent"}
+      ],
+      "signature": "def TrackOrder(order_data: dict) -> tuple[str, str, str]",
+      "global_vars": [
+        {"variable": "orders", "op": "read", "description": "Read order status"}
+      ],
+      "data_operations": [
+        {"source_name": "orders", "operation_type": "read", "description": "Read order status"}
+      ],
+      "requested_capabilities": ["orders.read"],
+      "constraints": [],
+      "acceptance_criteria": [
+        {"ac_id": "AC-001", "description": "Returns current order status"}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-003"]},
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "ParseCommand is a pure function with no resource access. PlaceOrder and CancelOrder are atomic operations requiring read_write access to orders, inventory, and payments. TrackOrder is a pure function with read-only access to orders. All constraints from functional requirements are captured. Acceptance criteria align with postconditions.",
+  "resource_audit": {
+    "signature_preservation_detail": "All signatures from Stage 2 are unchanged: ParseCommand(input: dict) -> tuple[str, dict], PlaceOrder(order_data: dict) -> tuple[str, str, str], CancelOrder(order_data: dict) -> tuple[str, str, str], TrackOrder(order_data: dict) -> tuple[str, str, str].",
+    "internal_leaf_mapping_detail": "ParseCommand has no internal_leaf_accesses, so no resources. PlaceOrder's internal_leaf_accesses map to orders, inventory, payments (read_write). CancelOrder's map to orders, payments, inventory (read_write). TrackOrder's map to orders (read). These are exactly reflected in global_vars and data_operations.",
+    "global_vars_data_operations_sync_detail": "For each child, global_vars and data_operations are fully synchronized: same resources and same operation types. No discrepancies.",
+    "coverage_detail": "All resources declared in the parent's available data stores (orders, inventory, payments) are covered by the children that need them. ParseCommand accesses none. PlaceOrder and CancelOrder access all three. TrackOrder accesses only orders. No resource is accessed by a child without being declared in internal_leaf_accesses.",
+    "final_status": "ok"
+  }
+}

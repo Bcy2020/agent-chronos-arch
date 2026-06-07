@@ -1,0 +1,144 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": [
+        {
+          "condition": "Input is not valid JSON",
+          "action": "Return error with message 'Invalid JSON input'"
+        },
+        {
+          "condition": "Command field missing or not one of 'place', 'cancel', 'track'",
+          "action": "Return error with message 'Invalid or missing command'"
+        }
+      ],
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff_strategy": "none",
+        "retry_on": []
+      },
+      "timeout": "100ms"
+    },
+    {
+      "name": "PlaceOrder",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "store": "inventory",
+          "operation": "read",
+          "description": "Check availability of items"
+        },
+        {
+          "store": "inventory",
+          "operation": "write",
+          "description": "Reserve items by decrementing stock"
+        },
+        {
+          "store": "payments",
+          "operation": "write",
+          "description": "Record payment transaction"
+        },
+        {
+          "store": "orders",
+          "operation": "write",
+          "description": "Create new order record with status 'placed'"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "Insufficient inventory",
+          "action": "Rollback any partial changes, return error with message 'Insufficient inventory'"
+        },
+        {
+          "condition": "Payment processing fails",
+          "action": "Rollback inventory reservation, return error with message 'Payment failed'"
+        },
+        {
+          "condition": "Order creation fails",
+          "action": "Rollback inventory and payment changes, return error with message 'Order creation failed'"
+        }
+      ],
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff_strategy": "exponential",
+        "retry_on": ["Payment processing fails", "Order creation fails"]
+      },
+      "timeout": "5s"
+    },
+    {
+      "name": "CancelOrder",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "store": "orders",
+          "operation": "read",
+          "description": "Check current order status"
+        },
+        {
+          "store": "orders",
+          "operation": "write",
+          "description": "Update order status to 'cancelled'"
+        },
+        {
+          "store": "payments",
+          "operation": "write",
+          "description": "Process refund for the payment"
+        },
+        {
+          "store": "inventory",
+          "operation": "write",
+          "description": "Restore inventory items"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "Order does not exist",
+          "action": "Return error with message 'Order not found'"
+        },
+        {
+          "condition": "Order already shipped",
+          "action": "Return error with message 'Cannot cancel shipped order'"
+        },
+        {
+          "condition": "Refund fails",
+          "action": "Rollback order status change, return error with message 'Refund failed'"
+        },
+        {
+          "condition": "Inventory restoration fails",
+          "action": "Log warning but continue (order already cancelled and refunded)"
+        }
+      ],
+      "retry_policy": {
+        "max_retries": 1,
+        "backoff_strategy": "fixed",
+        "retry_on": ["Refund fails"]
+      },
+      "timeout": "5s"
+    },
+    {
+      "name": "TrackOrder",
+      "global_vars": [],
+      "data_operations": [
+        {
+          "store": "orders",
+          "operation": "read",
+          "description": "Retrieve order status and tracking information"
+        }
+      ],
+      "error_handling": [
+        {
+          "condition": "Order does not exist",
+          "action": "Return error with message 'Order not found'"
+        }
+      ],
+      "retry_policy": {
+        "max_retries": 1,
+        "backoff_strategy": "none",
+        "retry_on": ["Transient read failure"]
+      },
+      "timeout": "2s"
+    }
+  ]
+}

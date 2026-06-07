@@ -1,0 +1,112 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "call_inputs": [
+        {"name": "input", "type": "Any", "description": "JSON with command and order_data", "source": "parent input"}
+      ],
+      "call_outputs": [
+        {"name": "command", "type": "String", "description": "Validated command string (place/cancel/track)"},
+        {"name": "order_data", "type": "Any", "description": "Parsed order data object"}
+      ],
+      "internal_leaf_accesses": [],
+      "governance": {
+        "execution_mode": "synchronous",
+        "retry_policy": "none",
+        "timeout_ms": 1000,
+        "error_handling": "return error message in parent output"
+      },
+      "resources": {
+        "global_vars": [],
+        "data_operations": []
+      }
+    },
+    {
+      "name": "PlaceOrder",
+      "call_inputs": [
+        {"name": "order_data", "type": "Any", "description": "Order details including items and payment info", "source": "ParseCommand output"}
+      ],
+      "call_outputs": [
+        {"name": "order_id", "type": "String", "description": "Generated unique order ID"},
+        {"name": "status", "type": "String", "description": "Order status after placement"},
+        {"name": "message", "type": "String", "description": "Success or error message"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "orders", "access": "read_write"},
+        {"store": "inventory", "access": "read_write"},
+        {"store": "payments", "access": "read_write"}
+      ],
+      "governance": {
+        "execution_mode": "synchronous",
+        "retry_policy": "retry-on-failure, max 3 attempts, exponential backoff",
+        "timeout_ms": 5000,
+        "error_handling": "rollback all changes on failure, return error message"
+      },
+      "resources": {
+        "global_vars": [],
+        "data_operations": [
+          {"store": "orders", "operation": "create", "description": "Insert new order record with status 'placed'"},
+          {"store": "inventory", "operation": "update", "description": "Decrement stock for ordered items"},
+          {"store": "payments", "operation": "create", "description": "Process payment and store transaction record"}
+        ]
+      }
+    },
+    {
+      "name": "CancelOrder",
+      "call_inputs": [
+        {"name": "order_data", "type": "Any", "description": "Contains order_id to cancel", "source": "ParseCommand output"}
+      ],
+      "call_outputs": [
+        {"name": "order_id", "type": "String", "description": "ID of cancelled order"},
+        {"name": "status", "type": "String", "description": "New status after cancellation"},
+        {"name": "message", "type": "String", "description": "Success or error message"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "orders", "access": "read_write"},
+        {"store": "inventory", "access": "read_write"},
+        {"store": "payments", "access": "read_write"}
+      ],
+      "governance": {
+        "execution_mode": "synchronous",
+        "retry_policy": "retry-on-failure, max 3 attempts, exponential backoff",
+        "timeout_ms": 5000,
+        "error_handling": "rollback all changes on failure, return error message"
+      },
+      "resources": {
+        "global_vars": [],
+        "data_operations": [
+          {"store": "orders", "operation": "read", "description": "Look up order by order_id to check status"},
+          {"store": "orders", "operation": "update", "description": "Set order status to 'cancelled'"},
+          {"store": "inventory", "operation": "update", "description": "Restore stock for cancelled order items"},
+          {"store": "payments", "operation": "update", "description": "Process refund and update payment record"}
+        ]
+      }
+    },
+    {
+      "name": "TrackOrder",
+      "call_inputs": [
+        {"name": "order_data", "type": "Any", "description": "Contains order_id to track", "source": "ParseCommand output"}
+      ],
+      "call_outputs": [
+        {"name": "order_id", "type": "String", "description": "ID of tracked order"},
+        {"name": "status", "type": "String", "description": "Current order status"},
+        {"name": "message", "type": "String", "description": "Order details or error"}
+      ],
+      "internal_leaf_accesses": [
+        {"store": "orders", "access": "read_only"}
+      ],
+      "governance": {
+        "execution_mode": "synchronous",
+        "retry_policy": "none",
+        "timeout_ms": 2000,
+        "error_handling": "return error message if order not found"
+      },
+      "resources": {
+        "global_vars": [],
+        "data_operations": [
+          {"store": "orders", "operation": "read", "description": "Retrieve order record by order_id"}
+        ]
+      }
+    }
+  ]
+}

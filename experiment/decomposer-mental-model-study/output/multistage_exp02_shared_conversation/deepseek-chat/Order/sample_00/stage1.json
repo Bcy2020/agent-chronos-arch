@@ -1,0 +1,234 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Extract and validate the command type from the input JSON",
+      "behavior": "Parse the input JSON to extract the 'command' field and validate it is one of 'place', 'cancel', 'track'",
+      "boundary": {
+        "in_scope": [
+          "Parsing JSON",
+          "Validating command value"
+        ],
+        "out_of_scope": [
+          "Processing order data",
+          "Accessing data stores"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "command",
+          "description": "Validated command string",
+          "consumer": "parent"
+        },
+        {
+          "name": "order_data",
+          "description": "Remaining JSON data after command extraction",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command is one of 'place', 'cancel', 'track'"
+      ],
+      "guarantees": [
+        "Returns error if command is missing or invalid"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Pure parsing and validation function"
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the place order workflow",
+      "behavior": "Reserve inventory, process payment, create order record, return success with order_id",
+      "boundary": {
+        "in_scope": [
+          "Inventory reservation",
+          "Payment processing",
+          "Order creation"
+        ],
+        "out_of_scope": [
+          "Cancellation",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Order details including items and customer info",
+          "source": "ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Inventory available",
+        "Payment method valid"
+      ],
+      "postconditions": [
+        "Order created in orders store",
+        "Inventory decremented",
+        "Payment recorded"
+      ],
+      "guarantees": [
+        "Atomic operation: all or nothing"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Can be further decomposed into sub-steps"
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the cancel order workflow",
+      "behavior": "Check order status, if not shipped, cancel order, refund payment, restore inventory",
+      "boundary": {
+        "in_scope": [
+          "Order status check",
+          "Cancellation logic",
+          "Payment refund",
+          "Inventory restoration"
+        ],
+        "out_of_scope": [
+          "Placing orders",
+          "Tracking"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Contains order_id to cancel",
+          "source": "ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order exists",
+        "Order not shipped"
+      ],
+      "postconditions": [
+        "Order status set to cancelled",
+        "Payment refunded",
+        "Inventory restored"
+      ],
+      "guarantees": [
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "Can be further decomposed into sub-steps"
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Retrieve and return order tracking information",
+      "behavior": "Look up order by ID in orders store and return current status and tracking details",
+      "boundary": {
+        "in_scope": [
+          "Order lookup",
+          "Status retrieval"
+        ],
+        "out_of_scope": [
+          "Modifying order",
+          "Payment or inventory operations"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "order_data",
+          "description": "Contains order_id to track",
+          "source": "ParseCommand output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "result",
+          "description": "JSON with success, order_id, status, message, tracking_info",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "Order exists"
+      ],
+      "postconditions": [
+        "No state changes"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "Simple read operation"
+    }
+  ],
+  "decomposition_rationale": "The parent OrderSystem is decomposed into four children: ParseCommand to handle input validation and routing, and three command-specific executors (PlaceOrder, CancelOrder, TrackOrder) that each handle a distinct workflow. This covers all functional requirements without overlapping responsibilities.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ParseCommand",
+      "data": "input JSON",
+      "note": "Pass raw input for parsing"
+    },
+    {
+      "from": "ParseCommand",
+      "to": "parent",
+      "data": "command and order_data",
+      "note": "Return parsed command and data"
+    },
+    {
+      "from": "parent",
+      "to": "PlaceOrder",
+      "data": "order_data",
+      "note": "Route to place order if command is 'place'"
+    },
+    {
+      "from": "parent",
+      "to": "CancelOrder",
+      "data": "order_data",
+      "note": "Route to cancel order if command is 'cancel'"
+    },
+    {
+      "from": "parent",
+      "to": "TrackOrder",
+      "data": "order_data",
+      "note": "Route to track order if command is 'track'"
+    },
+    {
+      "from": "PlaceOrder",
+      "to": "parent",
+      "data": "result JSON",
+      "note": "Return order placement result"
+    },
+    {
+      "from": "CancelOrder",
+      "to": "parent",
+      "data": "result JSON",
+      "note": "Return cancellation result"
+    },
+    {
+      "from": "TrackOrder",
+      "to": "parent",
+      "data": "result JSON",
+      "note": "Return tracking result"
+    }
+  ]
+}

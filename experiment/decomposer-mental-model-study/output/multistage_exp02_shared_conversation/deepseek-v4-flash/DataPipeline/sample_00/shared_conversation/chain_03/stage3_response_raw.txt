@@ -1,0 +1,176 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read raw data from source and store in raw_data store",
+      "behavior": "Reads input source, parses data, writes to raw_data store, logs ingestion",
+      "boundary": {
+        "in_scope": ["reading source", "parsing", "storing raw data", "logging"],
+        "out_of_scope": ["transformation", "validation", "export"]
+      },
+      "preconditions": ["input.action == 'ingest'"],
+      "postconditions": ["raw_data store contains ingested records"],
+      "guarantees": ["logs ingestion details"],
+      "composition_role": "execute",
+      "call_inputs": [
+        {"name": "input", "type": "dict", "description": "JSON with action and source", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "raw_data", "op": "write", "reason": "store ingested records"}
+      ],
+      "outputs": [
+        {"name": "ingest_result", "type": "dict", "description": "JSON with success, records_ingested, errors", "consumer": "parent"}
+      ],
+      "signature": "def IngestData(input: dict) -> dict",
+      "global_vars": [
+        {"variable": "raw_data", "op": "write", "description": "write ingested records"}
+      ],
+      "data_operations": [
+        {"source_name": "raw_data", "operation_type": "write", "description": "write ingested records"}
+      ],
+      "requested_capabilities": ["raw_data.write"],
+      "constraints": [
+        {"constraint_id": "C-001", "description": "Must log ingestion details"}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-001", "description": "Records are stored in raw_data after ingestion"}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-001"]},
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformations to raw data and store in processed_data",
+      "behavior": "Reads raw_data, applies transformation rules, writes to processed_data, logs transformation",
+      "boundary": {
+        "in_scope": ["reading raw_data", "transformation logic", "writing processed_data", "logging"],
+        "out_of_scope": ["ingestion", "validation", "export"]
+      },
+      "preconditions": ["input.action == 'transform'", "raw_data store is populated"],
+      "postconditions": ["processed_data store contains transformed records"],
+      "guarantees": ["logs transformation details"],
+      "composition_role": "execute",
+      "call_inputs": [
+        {"name": "input", "type": "dict", "description": "JSON with action", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "raw_data", "op": "read", "reason": "read raw data for transformation"},
+        {"resource": "processed_data", "op": "write", "reason": "store transformed records"}
+      ],
+      "outputs": [
+        {"name": "transform_result", "type": "dict", "description": "JSON with success, records_transformed, errors", "consumer": "parent"}
+      ],
+      "signature": "def TransformData(input: dict) -> dict",
+      "global_vars": [
+        {"variable": "raw_data", "op": "read", "description": "read raw data for transformation"},
+        {"variable": "processed_data", "op": "write", "description": "store transformed records"}
+      ],
+      "data_operations": [
+        {"source_name": "raw_data", "operation_type": "read", "description": "read raw data for transformation"},
+        {"source_name": "processed_data", "operation_type": "write", "description": "store transformed records"}
+      ],
+      "requested_capabilities": ["raw_data.read", "processed_data.write"],
+      "constraints": [
+        {"constraint_id": "C-002", "description": "Must log transformation details"}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-002", "description": "Transformed records are stored in processed_data"}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-002"]},
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateData",
+      "purpose": "Check quality of processed data and mark invalid records",
+      "behavior": "Reads processed_data, applies validation rules, marks invalid records, logs validation",
+      "boundary": {
+        "in_scope": ["reading processed_data", "validation rules", "marking invalid records", "logging"],
+        "out_of_scope": ["ingestion", "transformation", "export"]
+      },
+      "preconditions": ["input.action == 'validate'", "processed_data store is populated"],
+      "postconditions": ["processed_data store has validity flags"],
+      "guarantees": ["logs validation details"],
+      "composition_role": "validate",
+      "call_inputs": [
+        {"name": "input", "type": "dict", "description": "JSON with action", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "processed_data", "op": "read_write", "reason": "read records and mark validity flags"}
+      ],
+      "outputs": [
+        {"name": "validate_result", "type": "dict", "description": "JSON with success, records_valid, records_invalid, errors", "consumer": "parent"}
+      ],
+      "signature": "def ValidateData(input: dict) -> dict",
+      "global_vars": [
+        {"variable": "processed_data", "op": "read_write", "description": "read records and mark validity flags"}
+      ],
+      "data_operations": [
+        {"source_name": "processed_data", "operation_type": "read_write", "description": "read records and mark validity flags"}
+      ],
+      "requested_capabilities": ["processed_data.read", "processed_data.write"],
+      "constraints": [
+        {"constraint_id": "C-003", "description": "Must log validation details"}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-003", "description": "Processed_data records have validity flags after validation"}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-003"]},
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ExportData",
+      "purpose": "Export only valid records from processed_data to output",
+      "behavior": "Reads processed_data, filters valid records, formats output, logs export",
+      "boundary": {
+        "in_scope": ["reading processed_data", "filtering valid records", "formatting output", "logging"],
+        "out_of_scope": ["ingestion", "transformation", "validation"]
+      },
+      "preconditions": ["input.action == 'export'", "processed_data store has validity flags"],
+      "postconditions": ["output contains only valid records"],
+      "guarantees": ["logs export details"],
+      "composition_role": "execute",
+      "call_inputs": [
+        {"name": "input", "type": "dict", "description": "JSON with action", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "processed_data", "op": "read", "reason": "read processed records to filter valid ones"}
+      ],
+      "outputs": [
+        {"name": "export_result", "type": "dict", "description": "JSON with success, records_exported, errors, data", "consumer": "parent"}
+      ],
+      "signature": "def ExportData(input: dict) -> dict",
+      "global_vars": [
+        {"variable": "processed_data", "op": "read", "description": "read processed records to filter valid ones"}
+      ],
+      "data_operations": [
+        {"source_name": "processed_data", "operation_type": "read", "description": "read processed records to filter valid ones"}
+      ],
+      "requested_capabilities": ["processed_data.read"],
+      "constraints": [
+        {"constraint_id": "C-004", "description": "Must log export details"},
+        {"constraint_id": "C-005", "description": "Export includes only valid records"}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-004", "description": "Output contains only valid records"}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-004"]},
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children are pure functions with no side effects beyond declared data operations. Logging is considered a side effect but is required by constraints. Each child's data_operations and global_vars are synchronized with internal_leaf_accesses. No additional resources are accessed.",
+  "resource_audit": {
+    "signature_preservation_detail": "Signatures unchanged from Stage 2; only call_inputs used.",
+    "internal_leaf_mapping_detail": "Each internal_leaf_accesses entry maps directly to a global_var and data_operation with same resource and op.",
+    "global_vars_data_operations_sync_detail": "global_vars and data_operations are identical in resource and op for each child, ensuring synchronization.",
+    "coverage_detail": "All resources (raw_data, processed_data) are covered by the children that access them. No resource is accessed without being declared.",
+    "final_status": "ok"
+  }
+}

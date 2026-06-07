@@ -1,0 +1,792 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Extract and validate action, repo, branch from input JSON",
+      "behavior": "Parse the input JSON and return the action, repo, branch, and any additional parameters",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "field extraction",
+          "validation of required fields"
+        ],
+        "out_of_scope": [
+          "executing any build action",
+          "accessing data stores"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "JSON with action, repo, branch",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "parsed_data",
+          "description": "Object with action, repo, branch, and optional params",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "parsed_data contains action, repo, branch"
+      ],
+      "guarantees": [
+        "returns error if required fields missing"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with action, repo, branch",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "parsed_data",
+          "type": "dict",
+          "description": "Object with action, repo, branch, and optional params",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseInput(input: dict) -> dict"
+    },
+    {
+      "name": "RouteAction",
+      "purpose": "Determine which build operation to perform based on action",
+      "behavior": "Inspect the action field and return a decision string (trigger, status, list, cancel)",
+      "boundary": {
+        "in_scope": [
+          "action routing logic"
+        ],
+        "out_of_scope": [
+          "executing any build operation",
+          "data store access"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "parsed_data",
+          "description": "Object with action field",
+          "source": "ParseInput"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "decision",
+          "description": "String indicating which child to invoke: trigger, status, list, cancel",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "parsed_data.action is one of trigger, status, list, cancel"
+      ],
+      "postconditions": [
+        "decision matches a valid action"
+      ],
+      "guarantees": [
+        "returns error for unknown action"
+      ],
+      "composition_role": "decide",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "parsed_data",
+          "type": "dict",
+          "description": "Object with action field",
+          "source": "ParseInput"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "decision",
+          "type": "str",
+          "description": "String indicating which child to invoke: trigger, status, list, cancel",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def RouteAction(parsed_data: dict) -> str"
+    },
+    {
+      "name": "CheckDuplicateBuild",
+      "purpose": "Verify no existing build for the same repo+branch",
+      "behavior": "Query builds data store for existing build with same repo and branch; return boolean",
+      "boundary": {
+        "in_scope": [
+          "querying builds data store",
+          "duplicate detection"
+        ],
+        "out_of_scope": [
+          "creating new build",
+          "modifying data"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "ParseInput"
+        },
+        {
+          "name": "branch",
+          "description": "Branch name",
+          "source": "ParseInput"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "is_duplicate",
+          "description": "True if build already exists for repo+branch",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "builds data store is accessible"
+      ],
+      "postconditions": [
+        "returns boolean"
+      ],
+      "guarantees": [
+        "does not modify data store"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "ParseInput"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "ParseInput"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read",
+          "reason": "Query builds data store to check for existing build with same repo and branch"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "is_duplicate",
+          "type": "bool",
+          "description": "True if build already exists for repo+branch",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CheckDuplicateBuild(repo: str, branch: str) -> bool"
+    },
+    {
+      "name": "CreateBuildRecord",
+      "purpose": "Create a new build record in builds data store",
+      "behavior": "Insert a new build entry with initial status, repo, branch, and generate build_id",
+      "boundary": {
+        "in_scope": [
+          "writing to builds data store",
+          "generating build_id"
+        ],
+        "out_of_scope": [
+          "triggering actual CI pipeline",
+          "writing logs"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "ParseInput"
+        },
+        {
+          "name": "branch",
+          "description": "Branch name",
+          "source": "ParseInput"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_id",
+          "description": "Unique identifier for the new build",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "no duplicate build exists"
+      ],
+      "postconditions": [
+        "new build record exists in builds data store"
+      ],
+      "guarantees": [
+        "build_id is unique"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "ParseInput"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "ParseInput"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "write",
+          "reason": "Insert new build record into builds data store"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "Unique identifier for the new build",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CreateBuildRecord(repo: str, branch: str) -> str"
+    },
+    {
+      "name": "ExecuteBuildPipeline",
+      "purpose": "Run the actual CI/CD pipeline for the build",
+      "behavior": "Invoke external build process (e.g., run tests, compile) and update build status incrementally",
+      "boundary": {
+        "in_scope": [
+          "triggering external build",
+          "updating build status",
+          "writing logs incrementally"
+        ],
+        "out_of_scope": [
+          "creating build record",
+          "cancelling builds"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_id",
+          "description": "ID of the build to execute",
+          "source": "CreateBuildRecord"
+        },
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "ParseInput"
+        },
+        {
+          "name": "branch",
+          "description": "Branch name",
+          "source": "ParseInput"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "Final status and logs of the build",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build record exists"
+      ],
+      "postconditions": [
+        "build status updated to success or failure",
+        "logs stored incrementally"
+      ],
+      "guarantees": [
+        "build is executed exactly once"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "ID of the build to execute",
+          "source": "CreateBuildRecord"
+        },
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "ParseInput"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "ParseInput"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "write",
+          "reason": "Update build status incrementally during execution"
+        },
+        {
+          "resource": "artifacts",
+          "op": "write",
+          "reason": "Store build artifacts produced by the pipeline"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "Final status and logs of the build",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ExecuteBuildPipeline(build_id: str, repo: str, branch: str) -> dict"
+    },
+    {
+      "name": "QueryBuildStatus",
+      "purpose": "Retrieve current status of a specific build",
+      "behavior": "Look up build by build_id in builds data store and return its status and logs",
+      "boundary": {
+        "in_scope": [
+          "reading builds data store",
+          "status retrieval"
+        ],
+        "out_of_scope": [
+          "modifying data",
+          "listing builds"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_id",
+          "description": "ID of the build to check",
+          "source": "ParseInput"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "status_info",
+          "description": "Object with status and logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build_id exists in builds data store"
+      ],
+      "postconditions": [
+        "returns status and logs"
+      ],
+      "guarantees": [
+        "does not modify data"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "ID of the build to check",
+          "source": "ParseInput"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read",
+          "reason": "Read build record to retrieve status and logs"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "status_info",
+          "type": "dict",
+          "description": "Object with status and logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def QueryBuildStatus(build_id: str) -> dict"
+    },
+    {
+      "name": "ListAllBuilds",
+      "purpose": "Return a list of all builds with their details",
+      "behavior": "Query builds data store for all records and return array of build summaries",
+      "boundary": {
+        "in_scope": [
+          "reading builds data store",
+          "listing"
+        ],
+        "out_of_scope": [
+          "filtering by repo/branch",
+          "modifying data"
+        ]
+      },
+      "semantic_inputs": [],
+      "semantic_outputs": [
+        {
+          "name": "builds_list",
+          "description": "Array of build objects with id, repo, branch, status",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "builds data store is accessible"
+      ],
+      "postconditions": [
+        "returns list of builds"
+      ],
+      "guarantees": [
+        "does not modify data"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read",
+          "reason": "Read all build records to return list"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "builds_list",
+          "type": "list",
+          "description": "Array of build objects with id, repo, branch, status",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ListAllBuilds() -> list"
+    },
+    {
+      "name": "CancelBuildRecord",
+      "purpose": "Mark a build as cancelled and stop execution if running",
+      "behavior": "Update build status to cancelled in builds data store and signal termination of running pipeline",
+      "boundary": {
+        "in_scope": [
+          "updating build status",
+          "signalling cancellation"
+        ],
+        "out_of_scope": [
+          "deleting build record",
+          "modifying logs"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "build_id",
+          "description": "ID of the build to cancel",
+          "source": "ParseInput"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "cancel_result",
+          "description": "Success indicator and updated status",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build exists and is not already cancelled"
+      ],
+      "postconditions": [
+        "build status is cancelled"
+      ],
+      "guarantees": [
+        "build execution stops if running"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "ID of the build to cancel",
+          "source": "ParseInput"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "write",
+          "reason": "Update build status to cancelled"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "cancel_result",
+          "type": "dict",
+          "description": "Success indicator and updated status",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelBuildRecord(build_id: str) -> dict"
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Construct the final output JSON with success, build_id, status, logs",
+      "behavior": "Aggregate results from the executed child into a standardized JSON response",
+      "boundary": {
+        "in_scope": [
+          "response formatting",
+          "error handling"
+        ],
+        "out_of_scope": [
+          "data store access",
+          "business logic"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "action_result",
+          "description": "Result from the executed child (build_result, status_info, builds_list, cancel_result, or error)",
+          "source": "parent"
+        },
+        {
+          "name": "action",
+          "description": "The original action for context",
+          "source": "ParseInput"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "output",
+          "description": "Final JSON with success, build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "action_result is available"
+      ],
+      "postconditions": [
+        "output is valid JSON"
+      ],
+      "guarantees": [
+        "response structure is consistent"
+      ],
+      "composition_role": "aggregate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "action_result",
+          "type": "dict",
+          "description": "Result from the executed child (build_result, status_info, builds_list, cancel_result, or error)",
+          "source": "parent"
+        },
+        {
+          "name": "action",
+          "type": "str",
+          "description": "The original action for context",
+          "source": "ParseInput"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "dict",
+          "description": "Final JSON with success, build_id, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def FormatResponse(action_result: dict, action: str) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseInput"
+    },
+    "parent_outputs_produced_by": {
+      "output": "FormatResponse"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseInput",
+      "to_input": "input",
+      "note": "parent passes input JSON to ParseInput"
+    },
+    {
+      "from_node": "ParseInput",
+      "from_output": "parsed_data",
+      "to_node": "RouteAction",
+      "to_input": "parsed_data",
+      "note": "ParseInput passes parsed data to RouteAction"
+    },
+    {
+      "from_node": "ParseInput",
+      "from_output": "parsed_data",
+      "to_node": "parent",
+      "to_input": "parsed_data",
+      "note": "ParseInput returns parsed data to parent for routing"
+    },
+    {
+      "from_node": "RouteAction",
+      "from_output": "decision",
+      "to_node": "parent",
+      "to_input": "decision",
+      "note": "RouteAction returns decision to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "repo",
+      "to_node": "CheckDuplicateBuild",
+      "to_input": "repo",
+      "note": "parent passes repo from parsed_data to CheckDuplicateBuild"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "branch",
+      "to_node": "CheckDuplicateBuild",
+      "to_input": "branch",
+      "note": "parent passes branch from parsed_data to CheckDuplicateBuild"
+    },
+    {
+      "from_node": "CheckDuplicateBuild",
+      "from_output": "is_duplicate",
+      "to_node": "parent",
+      "to_input": "is_duplicate",
+      "note": "CheckDuplicateBuild returns duplicate status to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "repo",
+      "to_node": "CreateBuildRecord",
+      "to_input": "repo",
+      "note": "parent passes repo from parsed_data to CreateBuildRecord"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "branch",
+      "to_node": "CreateBuildRecord",
+      "to_input": "branch",
+      "note": "parent passes branch from parsed_data to CreateBuildRecord"
+    },
+    {
+      "from_node": "CreateBuildRecord",
+      "from_output": "build_id",
+      "to_node": "parent",
+      "to_input": "build_id",
+      "note": "CreateBuildRecord returns build_id to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "build_id",
+      "to_node": "ExecuteBuildPipeline",
+      "to_input": "build_id",
+      "note": "parent passes build_id to ExecuteBuildPipeline"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "repo",
+      "to_node": "ExecuteBuildPipeline",
+      "to_input": "repo",
+      "note": "parent passes repo to ExecuteBuildPipeline"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "branch",
+      "to_node": "ExecuteBuildPipeline",
+      "to_input": "branch",
+      "note": "parent passes branch to ExecuteBuildPipeline"
+    },
+    {
+      "from_node": "ExecuteBuildPipeline",
+      "from_output": "build_result",
+      "to_node": "parent",
+      "to_input": "build_result",
+      "note": "ExecuteBuildPipeline returns build result to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "build_id",
+      "to_node": "QueryBuildStatus",
+      "to_input": "build_id",
+      "note": "parent passes build_id to QueryBuildStatus"
+    },
+    {
+      "from_node": "QueryBuildStatus",
+      "from_output": "status_info",
+      "to_node": "parent",
+      "to_input": "status_info",
+      "note": "QueryBuildStatus returns status info to parent"
+    },
+    {
+      "from_node": "ListAllBuilds",
+      "from_output": "builds_list",
+      "to_node": "parent",
+      "to_input": "builds_list",
+      "note": "ListAllBuilds returns builds list to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "build_id",
+      "to_node": "CancelBuildRecord",
+      "to_input": "build_id",
+      "note": "parent passes build_id to CancelBuildRecord"
+    },
+    {
+      "from_node": "CancelBuildRecord",
+      "from_output": "cancel_result",
+      "to_node": "parent",
+      "to_input": "cancel_result",
+      "note": "CancelBuildRecord returns cancel result to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "action_result",
+      "to_node": "FormatResponse",
+      "to_input": "action_result",
+      "note": "parent passes action result to FormatResponse"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "action",
+      "to_node": "FormatResponse",
+      "to_input": "action",
+      "note": "parent passes action from parsed_data to FormatResponse"
+    },
+    {
+      "from_node": "FormatResponse",
+      "from_output": "output",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "FormatResponse returns final output to parent"
+    }
+  ],
+  "interface_audit": {
+    "identity_preservation_detail": "All 9 child names and their order from Stage 1 are preserved exactly as provided.",
+    "semantic_preservation_detail": "All Stage 1 fields (purpose, behavior, boundary, semantic_inputs, semantic_outputs, preconditions, postconditions, guarantees, composition_role) are copied verbatim without modification.",
+    "call_signature_detail": "Each child's signature contains only the call_inputs parameters. Internal data store accesses (builds, artifacts) are excluded from signatures because they are implementation details, not parent-provided arguments.",
+    "internal_leaf_separation_detail": "Resources like 'builds' and 'artifacts' appear only in internal_leaf_accesses, not in call_inputs or signatures. This ensures the parent does not need to pass data store references as parameters.",
+    "dataflow_schema_detail": "All dataflow edges use valid from_node/to_node values: either 'parent' or an exact child name. No resource names (builds, artifacts) appear as endpoints.",
+    "final_status": "ok"
+  }
+}

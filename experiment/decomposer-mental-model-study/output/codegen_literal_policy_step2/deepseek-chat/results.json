@@ -1,0 +1,254 @@
+{
+  "experiment": "codegen_literal_policy_step2",
+  "model": "deepseek-v4-flash",
+  "timestamp": "2026-06-06T20:30:32.817255",
+  "prompt_delta": "VALUE ORIGIN RULES FOR HARDCODED LITERALS:\n\nYou may use hardcoded literals only when the value is a PRD-defined constant,\nan output-schema label, or a branch-conditioned fallback value directly entailed\nby the current control-flow branch.\n\nAllowed literals:\n- fixed output keys such as \"success\", \"message\", \"data\"\n- PRD-defined status strings, error messages, enum labels, or error codes\n- branch-conditioned constants such as success=False for invalid input or\n  \"Unsupported command\" for an unsupported-command branch\n- empty containers only when the PRD or branch semantics permit an empty result\n\nForbidden literals:\n- runtime facts such as ids, timestamps, counts, prices, inventory, payment\n  results, order status, user records, messages, appointments, build logs, or\n  any data that depends on parent input, child output, global state, or external\n  systems\n- any literal that substitutes for a child output\n- any literal that hides a missing child capability or failed child call\n\nBefore returning a literal, classify it:\n- PRD_LITERAL: fixed by PRD or output schema\n- BRANCH_LITERAL: fixed by the current branch condition\n- DYNAMIC_VALUE: must come from parent input, child output, computation, or data\n  access\n\nDYNAMIC_VALUE must never be hardcoded.\n\n5. LITERAL POLICY — Trace every literal value in every return statement and classify it:\n   - PRD_LITERAL: The value is explicitly fixed by the PRD, SubPRD, or output schema\n     (e.g., fixed output keys like \"success\", \"message\"; PRD-defined status strings,\n     error codes, enum labels).\n   - BRANCH_LITERAL: The value is a fallback constant directly entailed by the current\n     control-flow branch condition (e.g., success=False when the input is invalid,\n     \"Unsupported command\" when the command is not in the supported set, empty list when\n     the PRD says \"return empty if no records found\" AND the code already called the\n     relevant child to determine emptiness).\n   - DYNAMIC_VALUE: The value depends on runtime data — parent input, child output,\n     computation, global state, or external system. DYNAMIC_VALUE literals are FORBIDDEN.\n\n   A literal is FORBIDDEN if:\n   - It represents a runtime fact (id, timestamp, count, price, inventory, payment\n     result, order status, user record, message, appointment, build log, etc.)\n   - It substitutes for a child function's output (e.g., returning total=0.0 when\n     CalculateTotal child exists and should be called)\n   - It hides a missing child capability (e.g., returning an error message for a\n     payment path when no payment child exists)\n   - It is a DYNAMIC_VALUE masquerading as a branch literal (e.g., returning\n     status=\"delivered\" under an order-status branch when the status must come from\n     a child call)\n\n   If ANY forbidden literal is found, return status=\"cannot_compose\" with reason\n   \"return_value_origin\" and list the forbidden literals.",
+  "summary": {
+    "total_cases": 8,
+    "positive_cases": 3,
+    "positive_passed": 1,
+    "positive_failed": 2,
+    "negative_cases": 5,
+    "negative_passed": 5,
+    "negative_failed": 0
+  },
+  "confusion_matrix": {
+    "allowed_literal_accepted": 1,
+    "allowed_literal_rejected": 2,
+    "runtime_literal_rejected": 5,
+    "runtime_literal_accepted": 0
+  },
+  "category_counts": {
+    "false_rejection_allowed_literal": 2,
+    "valid_acceptance_for_positive": 1,
+    "valid_rejection_for_negative": 5
+  },
+  "trials": [
+    {
+      "case_id": "P1",
+      "expected": "accept",
+      "passed": false,
+      "category": "false_rejection_allowed_literal",
+      "generate_status": "ok",
+      "verify_status": "cannot_compose",
+      "failed_checks": [
+        "return_value_origin"
+      ],
+      "static_analysis": {
+        "defines_expected_parent": true,
+        "child_calls_found": [
+          "ParseInput",
+          "PlaceOrder",
+          "CancelOrder",
+          "TrackOrder"
+        ],
+        "child_calls_missing": [],
+        "sibling_call_patterns": [],
+        "direct_data_source_access": [],
+        "forbidden_literals_found": [],
+        "allowed_literals_found": [
+          "Unsupported command",
+          "success"
+        ],
+        "has_branch_logic": true,
+        "literal_in_return_plausible_branch": true,
+        "bypasses_child_output_with_literal": false
+      },
+      "reason": "cannot_satisfy_parent_output"
+    },
+    {
+      "case_id": "P2",
+      "expected": "accept",
+      "passed": false,
+      "category": "false_rejection_allowed_literal",
+      "generate_status": "generate",
+      "verify_status": "cannot_compose",
+      "failed_checks": [],
+      "static_analysis": {},
+      "reason": "CANNOT_COMPOSE: cannot_satisfy_parent_output"
+    },
+    {
+      "case_id": "P3",
+      "expected": "accept",
+      "passed": true,
+      "category": "valid_acceptance_for_positive",
+      "generate_status": "ok",
+      "verify_status": "ok",
+      "failed_checks": [],
+      "static_analysis": {
+        "defines_expected_parent": true,
+        "child_calls_found": [
+          "ParseInput",
+          "PlaceOrder",
+          "CancelOrder",
+          "TrackOrder",
+          "FormatResult"
+        ],
+        "child_calls_missing": [],
+        "sibling_call_patterns": [],
+        "direct_data_source_access": [],
+        "forbidden_literals_found": [],
+        "allowed_literals_found": [
+          "formatted"
+        ],
+        "has_branch_logic": true,
+        "literal_in_return_plausible_branch": true,
+        "bypasses_child_output_with_literal": false
+      },
+      "reason": ""
+    },
+    {
+      "case_id": "N1",
+      "expected": "reject",
+      "passed": true,
+      "category": "valid_rejection_for_negative",
+      "generate_status": "ok",
+      "verify_status": "cannot_compose",
+      "failed_checks": [
+        "return_value_origin"
+      ],
+      "static_analysis": {
+        "defines_expected_parent": true,
+        "child_calls_found": [
+          "ParseInput",
+          "ProcessPayment"
+        ],
+        "child_calls_missing": [],
+        "sibling_call_patterns": [],
+        "direct_data_source_access": [],
+        "forbidden_literals_found": [
+          "ORDER-001"
+        ],
+        "allowed_literals_found": [
+          "success"
+        ],
+        "has_branch_logic": false,
+        "literal_in_return_plausible_branch": true,
+        "bypasses_child_output_with_literal": false
+      },
+      "reason": "cannot_satisfy_parent_output"
+    },
+    {
+      "case_id": "N2",
+      "expected": "reject",
+      "passed": true,
+      "category": "valid_rejection_for_negative",
+      "generate_status": "ok",
+      "verify_status": "cannot_compose",
+      "failed_checks": [
+        "return_value_origin",
+        "child_coverage",
+        "dataflow_conformance"
+      ],
+      "static_analysis": {
+        "defines_expected_parent": true,
+        "child_calls_found": [
+          "ParseInput"
+        ],
+        "child_calls_missing": [
+          "CalculateTotal"
+        ],
+        "sibling_call_patterns": [],
+        "direct_data_source_access": [],
+        "forbidden_literals_found": [
+          "0.0"
+        ],
+        "allowed_literals_found": [],
+        "has_branch_logic": false,
+        "literal_in_return_plausible_branch": true,
+        "bypasses_child_output_with_literal": true
+      },
+      "reason": "missing_child_capability"
+    },
+    {
+      "case_id": "N3",
+      "expected": "reject",
+      "passed": true,
+      "category": "valid_rejection_for_negative",
+      "generate_status": "ok",
+      "verify_status": "cannot_compose",
+      "failed_checks": [
+        "return_value_origin",
+        "child_coverage",
+        "dataflow_conformance"
+      ],
+      "static_analysis": {
+        "defines_expected_parent": true,
+        "child_calls_found": [
+          "ParseRequest"
+        ],
+        "child_calls_missing": [
+          "FetchOrderStatus"
+        ],
+        "sibling_call_patterns": [],
+        "direct_data_source_access": [],
+        "forbidden_literals_found": [
+          "delivered"
+        ],
+        "allowed_literals_found": [
+          "status"
+        ],
+        "has_branch_logic": false,
+        "literal_in_return_plausible_branch": true,
+        "bypasses_child_output_with_literal": true
+      },
+      "reason": "missing_child_capability"
+    },
+    {
+      "case_id": "N4",
+      "expected": "reject",
+      "passed": true,
+      "category": "valid_rejection_for_negative",
+      "generate_status": "ok",
+      "verify_status": "cannot_compose",
+      "failed_checks": [
+        "return_value_origin"
+      ],
+      "static_analysis": {
+        "defines_expected_parent": true,
+        "child_calls_found": [
+          "ParseInput"
+        ],
+        "child_calls_missing": [],
+        "sibling_call_patterns": [],
+        "direct_data_source_access": [],
+        "forbidden_literals_found": [
+          "Payment failed"
+        ],
+        "allowed_literals_found": [
+          "Payment failed"
+        ],
+        "has_branch_logic": false,
+        "literal_in_return_plausible_branch": true,
+        "bypasses_child_output_with_literal": false
+      },
+      "reason": "missing_child_capability"
+    },
+    {
+      "case_id": "N5",
+      "expected": "reject",
+      "passed": true,
+      "category": "valid_rejection_for_negative",
+      "generate_status": "cannot_compose",
+      "verify_status": "N/A",
+      "failed_checks": [],
+      "static_analysis": {
+        "defines_expected_parent": false,
+        "child_calls_found": [],
+        "child_calls_missing": [
+          "PlaceOrder",
+          "CancelOrder",
+          "RouteCommand"
+        ],
+        "sibling_call_patterns": [],
+        "direct_data_source_access": [],
+        "forbidden_literals_found": [],
+        "allowed_literals_found": [],
+        "has_branch_logic": false,
+        "literal_in_return_plausible_branch": true,
+        "bypasses_child_output_with_literal": false
+      },
+      "reason": "CANNOT_COMPOSE: missing_child_capability"
+    }
+  ]
+}

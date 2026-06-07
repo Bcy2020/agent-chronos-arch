@@ -1,0 +1,249 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "Any",
+          "description": "Raw JSON input from parent"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "action_request",
+          "type": "Any",
+          "description": "Parsed and validated action, repo, branch"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "invalid_json": "Return error with message 'Invalid JSON input'",
+        "missing_fields": "Return error with message 'Missing required fields: action, repo, branch'"
+      },
+      "resource_limits": {
+        "max_input_size": "1 MB"
+      }
+    },
+    {
+      "name": "TriggerBuild",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "String",
+          "description": "Repository name"
+        },
+        {
+          "name": "branch",
+          "type": "String",
+          "description": "Branch name"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "build_result",
+          "type": "Any",
+          "description": "Success status and build_id or error"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "builds",
+          "access": "read_write",
+          "description": "Check for existing active build and create new build entry"
+        },
+        {
+          "store": "artifacts",
+          "access": "read_write",
+          "description": "Initialize empty log for new build"
+        }
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "read",
+          "store": "builds",
+          "condition": "Check if any active build exists for repo+branch"
+        },
+        {
+          "operation": "write",
+          "store": "builds",
+          "condition": "Create new build entry with unique ID and status 'running'"
+        },
+        {
+          "operation": "write",
+          "store": "artifacts",
+          "condition": "Initialize empty log for new build"
+        }
+      ],
+      "error_handling": {
+        "duplicate_build": "Return error with message 'Active build already exists for this repo and branch'",
+        "store_failure": "Return error with message 'Failed to create build due to store error'"
+      },
+      "resource_limits": {
+        "max_concurrent_builds_per_repo_branch": 1
+      }
+    },
+    {
+      "name": "CheckBuildStatus",
+      "call_inputs": [
+        {
+          "name": "build_id",
+          "type": "String",
+          "description": "Identifier of the build"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "status_result",
+          "type": "Any",
+          "description": "Build status and logs"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "builds",
+          "access": "read",
+          "description": "Look up build by build_id"
+        },
+        {
+          "store": "artifacts",
+          "access": "read",
+          "description": "Retrieve build logs"
+        }
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "read",
+          "store": "builds",
+          "condition": "Retrieve build record by build_id"
+        },
+        {
+          "operation": "read",
+          "store": "artifacts",
+          "condition": "Retrieve logs associated with build_id"
+        }
+      ],
+      "error_handling": {
+        "build_not_found": "Return error with message 'Build not found'",
+        "store_failure": "Return error with message 'Failed to retrieve build status'"
+      },
+      "resource_limits": {
+        "max_log_size": "10 MB per request"
+      }
+    },
+    {
+      "name": "ListBuilds",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "String",
+          "description": "Optional filter by repository"
+        },
+        {
+          "name": "branch",
+          "type": "String",
+          "description": "Optional filter by branch"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "builds_list",
+          "type": "Any",
+          "description": "List of build summaries"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "builds",
+          "access": "read",
+          "description": "Query builds store with optional filters"
+        }
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "read",
+          "store": "builds",
+          "condition": "Query builds with optional repo and branch filters"
+        }
+      ],
+      "error_handling": {
+        "store_failure": "Return error with message 'Failed to list builds'"
+      },
+      "resource_limits": {
+        "max_results": 100
+      }
+    },
+    {
+      "name": "CancelBuild",
+      "call_inputs": [
+        {
+          "name": "build_id",
+          "type": "String",
+          "description": "Identifier of the build to cancel"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "cancel_result",
+          "type": "Any",
+          "description": "Success or error"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "builds",
+          "access": "read_write",
+          "description": "Find build and update status to cancelled"
+        }
+      ],
+      "global_vars": [],
+      "data_operations": [
+        {
+          "operation": "read",
+          "store": "builds",
+          "condition": "Find build by build_id"
+        },
+        {
+          "operation": "write",
+          "store": "builds",
+          "condition": "Update build status to 'cancelled' if currently 'running'"
+        }
+      ],
+      "error_handling": {
+        "build_not_found": "Return error with message 'Build not found'",
+        "build_not_running": "Return error with message 'Build is not in a running state and cannot be cancelled'",
+        "store_failure": "Return error with message 'Failed to cancel build'"
+      },
+      "resource_limits": {}
+    },
+    {
+      "name": "FormatResponse",
+      "call_inputs": [
+        {
+          "name": "child_result",
+          "type": "Any",
+          "description": "Result from the executed child action"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "output",
+          "type": "Any",
+          "description": "Final JSON response"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "global_vars": [],
+      "data_operations": [],
+      "error_handling": {
+        "invalid_child_result": "Return error with message 'Internal error: invalid child result'"
+      },
+      "resource_limits": {}
+    }
+  ]
+}

@@ -1,0 +1,292 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Parse the input JSON to extract command and parameters",
+      "behavior": "Parse input JSON and return command type and parameters",
+      "boundary": {
+        "in_scope": ["JSON parsing", "command extraction"],
+        "out_of_scope": ["validation", "execution"]
+      },
+      "preconditions": ["input is valid JSON"],
+      "postconditions": ["command and params extracted"],
+      "guarantees": ["Returns command and params"],
+      "composition_role": "transform",
+      "call_inputs": [
+        {"name": "input", "type": "dict", "description": "Raw JSON input from parent", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {"name": "command", "type": "str", "description": "Command type string", "consumer": "parent"},
+        {"name": "params", "type": "dict", "description": "Parameters for the command", "consumer": "parent"}
+      ],
+      "signature": "def ParseCommand(input: dict) -> tuple[str, dict]",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [],
+      "acceptance_criteria": [
+        {"ac_id": "AC-001", "description": "Given valid JSON input, ParseCommand returns command and params correctly."},
+        {"ac_id": "AC-002", "description": "Given invalid JSON input, ParseCommand raises an exception."}
+      ],
+      "traceability": {"parent_requirement_ids": []},
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "ValidateSendMessage",
+      "purpose": "Validate send message parameters and user membership",
+      "behavior": "Check that user is in channel and message is non-empty",
+      "boundary": {
+        "in_scope": ["user membership check", "message validation"],
+        "out_of_scope": ["saving message"]
+      },
+      "preconditions": ["params contains user, channel, message"],
+      "postconditions": ["valid flag set"],
+      "guarantees": ["Returns validity and optional error"],
+      "composition_role": "validate",
+      "call_inputs": [
+        {"name": "params", "type": "dict", "description": "Parameters including user, channel, message", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "channels", "op": "read", "reason": "Check user membership in channel"}
+      ],
+      "outputs": [
+        {"name": "valid", "type": "bool", "description": "Boolean indicating validity", "consumer": "parent"},
+        {"name": "error", "type": "str", "description": "Error message if invalid", "consumer": "parent"}
+      ],
+      "signature": "def ValidateSendMessage(params: dict) -> tuple[bool, str]",
+      "global_vars": [
+        {"variable": "channels", "op": "read", "description": "Read channel membership data"}
+      ],
+      "data_operations": [
+        {"source_name": "channels", "operation_type": "read", "description": "Check user membership in channel"}
+      ],
+      "requested_capabilities": ["channels.read"],
+      "constraints": [
+        {"constraint_id": "C-001", "description": "User must be a member of the channel to send messages."}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-003", "description": "Given valid params with user in channel, returns valid=True."},
+        {"ac_id": "AC-004", "description": "Given user not in channel, returns valid=False with error message."},
+        {"ac_id": "AC-005", "description": "Given empty message, returns valid=False with error message."}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-001"]},
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "SaveMessage",
+      "purpose": "Save a message to the messages store",
+      "behavior": "Append message to channel's message list, enforce 100 limit",
+      "boundary": {
+        "in_scope": ["message storage", "history limit enforcement"],
+        "out_of_scope": ["validation"]
+      },
+      "preconditions": ["params validated", "messages store writable"],
+      "postconditions": ["Message appended, history trimmed to 100"],
+      "guarantees": ["Message saved"],
+      "composition_role": "mutate",
+      "call_inputs": [
+        {"name": "params", "type": "dict", "description": "Parameters with user, channel, message", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "messages", "op": "read_write", "reason": "Append message and enforce history limit"}
+      ],
+      "outputs": [
+        {"name": "success", "type": "bool", "description": "Boolean indicating save success", "consumer": "parent"}
+      ],
+      "signature": "def SaveMessage(params: dict) -> bool",
+      "global_vars": [
+        {"variable": "messages", "op": "read_write", "description": "Append message and enforce history limit"}
+      ],
+      "data_operations": [
+        {"source_name": "messages", "operation_type": "read_write", "description": "Append message and enforce history limit"}
+      ],
+      "requested_capabilities": ["messages.read", "messages.write"],
+      "constraints": [
+        {"constraint_id": "C-002", "description": "History limited to 100 messages per channel."}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-006", "description": "Given valid params, message is appended to channel's message list."},
+        {"ac_id": "AC-007", "description": "After appending, if history exceeds 100, oldest messages are removed."},
+        {"ac_id": "AC-008", "description": "Returns success=True on successful save."}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-001"]},
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Retrieve message history for a channel",
+      "behavior": "Return last 100 messages from channel",
+      "boundary": {
+        "in_scope": ["history retrieval"],
+        "out_of_scope": ["validation"]
+      },
+      "preconditions": ["channel exists"],
+      "postconditions": ["History returned"],
+      "guarantees": ["Returns up to 100 messages"],
+      "composition_role": "query",
+      "call_inputs": [
+        {"name": "params", "type": "dict", "description": "Parameters with channel", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "messages", "op": "read", "reason": "Retrieve messages for channel"}
+      ],
+      "outputs": [
+        {"name": "history", "type": "list", "description": "List of messages", "consumer": "parent"}
+      ],
+      "signature": "def GetHistory(params: dict) -> list",
+      "global_vars": [
+        {"variable": "messages", "op": "read", "description": "Retrieve messages for channel"}
+      ],
+      "data_operations": [
+        {"source_name": "messages", "operation_type": "read", "description": "Retrieve messages for channel"}
+      ],
+      "requested_capabilities": ["messages.read"],
+      "constraints": [
+        {"constraint_id": "C-003", "description": "History limited to 100 messages."}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-009", "description": "Given valid channel, returns list of up to 100 messages."},
+        {"ac_id": "AC-010", "description": "If channel has fewer than 100 messages, returns all."}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-002"]},
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel",
+      "behavior": "Add channel to channels store",
+      "boundary": {
+        "in_scope": ["channel creation"],
+        "out_of_scope": ["validation"]
+      },
+      "preconditions": ["channel name not empty", "channel does not exist"],
+      "postconditions": ["Channel added to store"],
+      "guarantees": ["Channel created"],
+      "composition_role": "mutate",
+      "call_inputs": [
+        {"name": "params", "type": "dict", "description": "Parameters with channel name", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "channels", "op": "read_write", "reason": "Check existence and add new channel"}
+      ],
+      "outputs": [
+        {"name": "success", "type": "bool", "description": "Boolean indicating creation success", "consumer": "parent"}
+      ],
+      "signature": "def CreateChannel(params: dict) -> bool",
+      "global_vars": [
+        {"variable": "channels", "op": "read_write", "description": "Check existence and add new channel"}
+      ],
+      "data_operations": [
+        {"source_name": "channels", "operation_type": "read_write", "description": "Check existence and add new channel"}
+      ],
+      "requested_capabilities": ["channels.read", "channels.write"],
+      "constraints": [
+        {"constraint_id": "C-004", "description": "Channel name must be non-empty."},
+        {"constraint_id": "C-005", "description": "Channel must not already exist."}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-011", "description": "Given non-existing channel name, creates channel and returns success=True."},
+        {"ac_id": "AC-012", "description": "Given existing channel name, returns success=False."},
+        {"ac_id": "AC-013", "description": "Given empty channel name, returns success=False."}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-003"]},
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Add user to a channel",
+      "behavior": "Add user to channel's member list",
+      "boundary": {
+        "in_scope": ["user membership"],
+        "out_of_scope": ["validation"]
+      },
+      "preconditions": ["channel exists", "user not already in channel"],
+      "postconditions": ["User added to channel members"],
+      "guarantees": ["User joined channel"],
+      "composition_role": "mutate",
+      "call_inputs": [
+        {"name": "params", "type": "dict", "description": "Parameters with user and channel", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "channels", "op": "read_write", "reason": "Check membership and add user"}
+      ],
+      "outputs": [
+        {"name": "success", "type": "bool", "description": "Boolean indicating join success", "consumer": "parent"}
+      ],
+      "signature": "def JoinChannel(params: dict) -> bool",
+      "global_vars": [
+        {"variable": "channels", "op": "read_write", "description": "Check membership and add user"}
+      ],
+      "data_operations": [
+        {"source_name": "channels", "operation_type": "read_write", "description": "Check membership and add user"}
+      ],
+      "requested_capabilities": ["channels.read", "channels.write"],
+      "constraints": [
+        {"constraint_id": "C-006", "description": "Channel must exist."},
+        {"constraint_id": "C-007", "description": "User must not already be a member."}
+      ],
+      "acceptance_criteria": [
+        {"ac_id": "AC-014", "description": "Given existing channel and non-member user, adds user and returns success=True."},
+        {"ac_id": "AC-015", "description": "Given non-existing channel, returns success=False."},
+        {"ac_id": "AC-016", "description": "Given user already in channel, returns success=False."}
+      ],
+      "traceability": {"parent_requirement_ids": ["FR-004"]},
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "BuildResponse",
+      "purpose": "Build the output JSON response",
+      "behavior": "Construct response with success, data, message fields",
+      "boundary": {
+        "in_scope": ["response construction"],
+        "out_of_scope": ["execution logic"]
+      },
+      "preconditions": ["success, data, message provided"],
+      "postconditions": ["Output JSON constructed"],
+      "guarantees": ["Returns valid JSON"],
+      "composition_role": "aggregate",
+      "call_inputs": [
+        {"name": "success", "type": "bool", "description": "Boolean success flag", "source": "parent input"},
+        {"name": "data", "type": "any", "description": "Data payload", "source": "parent input"},
+        {"name": "message", "type": "str", "description": "Status message", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {"name": "output", "type": "dict", "description": "JSON response object", "consumer": "parent"}
+      ],
+      "signature": "def BuildResponse(success: bool, data: any, message: str) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [],
+      "acceptance_criteria": [
+        {"ac_id": "AC-017", "description": "Given success, data, message, returns dict with those fields."}
+      ],
+      "traceability": {"parent_requirement_ids": []},
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children preserve Stage1 and Stage2 fields. Governance fields derived from internal_leaf_accesses. No global_vars or data_operations for children with no internal_leaf_accesses. Constraints and acceptance criteria align with functional requirements and pre/postconditions.",
+  "resource_audit": {
+    "signature_preservation_detail": "All signatures remain unchanged from Stage2.",
+    "internal_leaf_mapping_detail": "internal_leaf_accesses from Stage2 directly map to global_vars and data_operations. For example, ValidateSendMessage has channels read, which appears in global_vars and data_operations.",
+    "global_vars_data_operations_sync_detail": "For each child, global_vars and data_operations are identical in resource and operation type, ensuring synchronization.",
+    "coverage_detail": "All resources (channels, messages) are covered by the children that access them. No resource is accessed without being declared.",
+    "final_status": "ok"
+  }
+}

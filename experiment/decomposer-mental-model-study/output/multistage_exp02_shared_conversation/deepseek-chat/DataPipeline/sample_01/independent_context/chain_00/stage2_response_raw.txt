@@ -1,0 +1,359 @@
+{
+  "children": [
+    {
+      "name": "IngestData",
+      "purpose": "Read and parse input data from source into raw_data store",
+      "behavior": "Accepts input JSON, extracts source, reads data, parses it, and writes to raw_data store. Logs the operation.",
+      "boundary": {
+        "in_scope": [
+          "reading source",
+          "parsing data",
+          "writing to raw_data",
+          "logging"
+        ],
+        "out_of_scope": [
+          "transformation",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "JSON with action and source",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "ingest_result",
+          "description": "JSON with success status and records count",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input contains valid source"
+      ],
+      "postconditions": [
+        "raw_data store populated with ingested records"
+      ],
+      "guarantees": [
+        "logs operation",
+        "returns success/failure"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "JSON with action and source",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "raw_data",
+          "op": "write",
+          "reason": "store ingested records"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ingest_result",
+          "type": "dict",
+          "description": "JSON with success status and records count",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def IngestData(input: dict) -> dict"
+    },
+    {
+      "name": "TransformData",
+      "purpose": "Apply transformations to data in raw_data and write to processed_data",
+      "behavior": "Reads from raw_data, applies transformation rules (e.g., mapping, cleaning), writes transformed records to processed_data. Logs the operation.",
+      "boundary": {
+        "in_scope": [
+          "reading raw_data",
+          "applying transformations",
+          "writing to processed_data",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "validation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "transform_trigger",
+          "description": "Signal to start transformation",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "transform_result",
+          "description": "JSON with success status and records transformed",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "raw_data store is populated"
+      ],
+      "postconditions": [
+        "processed_data store contains transformed records"
+      ],
+      "guarantees": [
+        "logs operation",
+        "returns success/failure"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "transform_trigger",
+          "type": "dict",
+          "description": "Signal to start transformation",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "raw_data",
+          "op": "read",
+          "reason": "read source data for transformation"
+        },
+        {
+          "resource": "processed_data",
+          "op": "write",
+          "reason": "store transformed records"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "transform_result",
+          "type": "dict",
+          "description": "JSON with success status and records transformed",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TransformData(transform_trigger: dict) -> dict"
+    },
+    {
+      "name": "ValidateQuality",
+      "purpose": "Check quality of transformed data and mark valid/invalid records",
+      "behavior": "Reads from processed_data, applies validation rules (e.g., schema, range), updates processed_data with validity flags. Logs the operation.",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "applying validation rules",
+          "updating processed_data",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "export"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "validate_trigger",
+          "description": "Signal to start validation",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "validate_result",
+          "description": "JSON with success status, valid count, invalid count",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "processed_data store is populated"
+      ],
+      "postconditions": [
+        "processed_data store has validity flags set"
+      ],
+      "guarantees": [
+        "logs operation",
+        "returns success/failure"
+      ],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "validate_trigger",
+          "type": "dict",
+          "description": "Signal to start validation",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "processed_data",
+          "op": "read_write",
+          "reason": "read records and update with validity flags"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "validate_result",
+          "type": "dict",
+          "description": "JSON with success status, valid count, invalid count",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ValidateQuality(validate_trigger: dict) -> dict"
+    },
+    {
+      "name": "ExportResults",
+      "purpose": "Export only valid records from processed_data to output",
+      "behavior": "Reads from processed_data, filters for valid records, formats output JSON with success, records_processed, errors, data. Logs the operation.",
+      "boundary": {
+        "in_scope": [
+          "reading processed_data",
+          "filtering valid records",
+          "formatting output",
+          "logging"
+        ],
+        "out_of_scope": [
+          "ingestion",
+          "transformation",
+          "validation"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "export_trigger",
+          "description": "Signal to start export",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "output",
+          "description": "JSON with success, records_processed, errors, data",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "processed_data store has validity flags"
+      ],
+      "postconditions": [
+        "output is generated"
+      ],
+      "guarantees": [
+        "only exports valid records",
+        "logs operation"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "export_trigger",
+          "type": "dict",
+          "description": "Signal to start export",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "processed_data",
+          "op": "read",
+          "reason": "read records to filter valid ones"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "dict",
+          "description": "JSON with success, records_processed, errors, data",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ExportResults(export_trigger: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "IngestData"
+    },
+    "parent_outputs_produced_by": {
+      "output": "ExportResults"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "IngestData",
+      "to_input": "input",
+      "note": "parent passes input to IngestData"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "TransformData",
+      "to_input": "transform_trigger",
+      "note": "parent passes input as trigger to TransformData"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ValidateQuality",
+      "to_input": "validate_trigger",
+      "note": "parent passes input as trigger to ValidateQuality"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ExportResults",
+      "to_input": "export_trigger",
+      "note": "parent passes input as trigger to ExportResults"
+    },
+    {
+      "from_node": "IngestData",
+      "from_output": "ingest_result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "IngestData returns result to parent"
+    },
+    {
+      "from_node": "TransformData",
+      "from_output": "transform_result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "TransformData returns result to parent"
+    },
+    {
+      "from_node": "ValidateQuality",
+      "from_output": "validate_result",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "ValidateQuality returns result to parent"
+    },
+    {
+      "from_node": "ExportResults",
+      "from_output": "output",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "ExportResults returns final output to parent"
+    }
+  ],
+  "interface_audit": {
+    "identity_preservation_detail": "All four child names (IngestData, TransformData, ValidateQuality, ExportResults) are preserved exactly as in Stage 1, in the same order.",
+    "semantic_preservation_detail": "All Stage 1 fields (purpose, behavior, boundary, preconditions, postconditions, guarantees, composition_role) are copied verbatim without modification.",
+    "call_signature_detail": "Each child's signature contains only call_inputs parameters. IngestData receives 'input' dict; the other three receive a trigger dict. No internal resources appear in signatures.",
+    "internal_leaf_separation_detail": "raw_data and processed_data stores are listed as internal_leaf_accesses (read/write/read_write) and are NOT included in call_inputs or signatures, ensuring they remain implementation details.",
+    "dataflow_schema_detail": "All dataflow edges connect 'parent' or exact child names as from_node/to_node. No resource names (raw_data, processed_data) appear as endpoints.",
+    "final_status": "ok"
+  }
+}

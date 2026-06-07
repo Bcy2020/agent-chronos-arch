@@ -1,0 +1,348 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 100,
+          "max_concurrent_calls": 10
+        },
+        "error_handling": {
+          "retry_policy": "none",
+          "fallback_behavior": "return error to parent"
+        },
+        "logging": {
+          "log_level": "info",
+          "log_events": ["call", "success", "error"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [],
+        "external_services": [],
+        "compute": {
+          "cpu": "low",
+          "memory": "low",
+          "timeout_ms": 100
+        }
+      }
+    },
+    {
+      "name": "RouteAction",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 100,
+          "max_concurrent_calls": 10
+        },
+        "error_handling": {
+          "retry_policy": "none",
+          "fallback_behavior": "return error to parent"
+        },
+        "logging": {
+          "log_level": "info",
+          "log_events": ["call", "success", "error"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [],
+        "external_services": [],
+        "compute": {
+          "cpu": "low",
+          "memory": "low",
+          "timeout_ms": 50
+        }
+      }
+    },
+    {
+      "name": "CheckDuplicateBuild",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 50,
+          "max_concurrent_calls": 5
+        },
+        "error_handling": {
+          "retry_policy": "linear",
+          "retry_count": 3,
+          "retry_delay_ms": 100,
+          "fallback_behavior": "return true (assume duplicate) to prevent duplicate builds"
+        },
+        "logging": {
+          "log_level": "debug",
+          "log_events": ["call", "success", "error", "data_access"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [
+          {
+            "type": "read",
+            "target": "builds",
+            "description": "Query builds data store for existing build with same repo and branch"
+          }
+        ],
+        "external_services": [],
+        "compute": {
+          "cpu": "low",
+          "memory": "low",
+          "timeout_ms": 200
+        }
+      }
+    },
+    {
+      "name": "CreateBuildRecord",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 20,
+          "max_concurrent_calls": 5
+        },
+        "error_handling": {
+          "retry_policy": "linear",
+          "retry_count": 3,
+          "retry_delay_ms": 200,
+          "fallback_behavior": "return error to parent"
+        },
+        "logging": {
+          "log_level": "info",
+          "log_events": ["call", "success", "error", "data_access"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [
+          {
+            "type": "write",
+            "target": "builds",
+            "description": "Insert a new build entry with initial status, repo, branch, and generate build_id"
+          }
+        ],
+        "external_services": [],
+        "compute": {
+          "cpu": "low",
+          "memory": "low",
+          "timeout_ms": 200
+        }
+      }
+    },
+    {
+      "name": "ExecuteBuildPipeline",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 5,
+          "max_concurrent_calls": 2
+        },
+        "error_handling": {
+          "retry_policy": "exponential_backoff",
+          "retry_count": 3,
+          "retry_delay_ms": 1000,
+          "fallback_behavior": "mark build as failed and return error"
+        },
+        "logging": {
+          "log_level": "info",
+          "log_events": ["call", "success", "error", "data_access", "progress"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [
+          {
+            "type": "write",
+            "target": "builds",
+            "description": "Update build status incrementally"
+          },
+          {
+            "type": "write",
+            "target": "artifacts",
+            "description": "Store build artifacts incrementally"
+          }
+        ],
+        "external_services": [
+          {
+            "name": "ci_pipeline_runner",
+            "type": "internal",
+            "description": "Invoke external build process (e.g., run tests, compile)"
+          }
+        ],
+        "compute": {
+          "cpu": "high",
+          "memory": "high",
+          "timeout_ms": 600000
+        }
+      }
+    },
+    {
+      "name": "QueryBuildStatus",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system", "user"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 100,
+          "max_concurrent_calls": 20
+        },
+        "error_handling": {
+          "retry_policy": "linear",
+          "retry_count": 2,
+          "retry_delay_ms": 100,
+          "fallback_behavior": "return error to parent"
+        },
+        "logging": {
+          "log_level": "info",
+          "log_events": ["call", "success", "error", "data_access"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [
+          {
+            "type": "read",
+            "target": "builds",
+            "description": "Look up build by build_id and return its status and logs"
+          }
+        ],
+        "external_services": [],
+        "compute": {
+          "cpu": "low",
+          "memory": "low",
+          "timeout_ms": 200
+        }
+      }
+    },
+    {
+      "name": "ListAllBuilds",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system", "user"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 50,
+          "max_concurrent_calls": 10
+        },
+        "error_handling": {
+          "retry_policy": "linear",
+          "retry_count": 2,
+          "retry_delay_ms": 100,
+          "fallback_behavior": "return empty list"
+        },
+        "logging": {
+          "log_level": "info",
+          "log_events": ["call", "success", "error", "data_access"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [
+          {
+            "type": "read",
+            "target": "builds",
+            "description": "Query builds data store for all records"
+          }
+        ],
+        "external_services": [],
+        "compute": {
+          "cpu": "low",
+          "memory": "medium",
+          "timeout_ms": 500
+        }
+      }
+    },
+    {
+      "name": "CancelBuildRecord",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system", "user"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 20,
+          "max_concurrent_calls": 5
+        },
+        "error_handling": {
+          "retry_policy": "linear",
+          "retry_count": 3,
+          "retry_delay_ms": 200,
+          "fallback_behavior": "return error to parent"
+        },
+        "logging": {
+          "log_level": "info",
+          "log_events": ["call", "success", "error", "data_access"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [
+          {
+            "type": "write",
+            "target": "builds",
+            "description": "Update build status to cancelled"
+          }
+        ],
+        "external_services": [
+          {
+            "name": "ci_pipeline_runner",
+            "type": "internal",
+            "description": "Signal termination of running pipeline"
+          }
+        ],
+        "compute": {
+          "cpu": "low",
+          "memory": "low",
+          "timeout_ms": 500
+        }
+      }
+    },
+    {
+      "name": "FormatResponse",
+      "governance": {
+        "access_control": {
+          "allowed_callers": ["parent"],
+          "allowed_roles": ["system"]
+        },
+        "rate_limits": {
+          "max_calls_per_second": 100,
+          "max_concurrent_calls": 10
+        },
+        "error_handling": {
+          "retry_policy": "none",
+          "fallback_behavior": "return error to parent"
+        },
+        "logging": {
+          "log_level": "info",
+          "log_events": ["call", "success", "error"]
+        }
+      },
+      "resource_requirements": {
+        "global_vars": [],
+        "data_operations": [],
+        "external_services": [],
+        "compute": {
+          "cpu": "low",
+          "memory": "low",
+          "timeout_ms": 100
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "children": [
+    {
+      "name": "ValidateInput",
+      "purpose": "Ensure student_id and student_name are non-empty strings",
+      "behavior": "Check that student_id and student_name are non-empty strings; if not, return failure signal to parent",
+      "boundary": {
+        "in_scope": ["Check non-empty", "Check type is string"],
+        "out_of_scope": ["Duplicate check", "Format validation"]
+      },
+      "semantic_inputs": [
+        {"name": "student_id", "description": "Unique student identifier", "source": "parent input"},
+        {"name": "student_name", "description": "Student name", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "valid", "description": "Whether inputs are valid", "consumer": "parent"}
+      ],
+      "preconditions": ["Inputs are provided"],
+      "postconditions": ["Validation result is produced"],
+      "guarantees": ["No side effects"],
+      "composition_role": "validate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic validation operation"
+    },
+    {
+      "name": "InsertRecord",
+      "purpose": "Insert student record into data store",
+      "behavior": "Write student_id and student_name into the students data store; return success or failure based on write result",
+      "boundary": {
+        "in_scope": ["Write to data store", "Return write success"],
+        "out_of_scope": ["Duplicate checking", "Input validation"]
+      },
+      "semantic_inputs": [
+        {"name": "student_id", "description": "Unique student identifier", "source": "parent input"},
+        {"name": "student_name", "description": "Student name", "source": "parent input"}
+      ],
+      "semantic_outputs": [
+        {"name": "success", "description": "Whether insertion succeeded", "consumer": "parent"}
+      ],
+      "preconditions": ["Data store is accessible", "No duplicate student_id (guaranteed by context)"],
+      "postconditions": ["Record is inserted if successful"],
+      "guarantees": ["Atomic write"],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "Atomic data store operation"
+    }
+  ],
+  "decomposition_rationale": "The parent responsibility is split into validation and actual insertion. Validation ensures inputs are acceptable before attempting write, keeping concerns separate.",
+  "orchestration_model": "conditional",
+  "dataflow_sketch": [
+    {"from": "parent", "to": "ValidateInput", "data": "student_id, student_name", "note": "Pass inputs for validation"},
+    {"from": "ValidateInput", "to": "parent", "data": "valid", "note": "Return validation result"},
+    {"from": "parent", "to": "InsertRecord", "data": "student_id, student_name", "note": "Pass inputs for insertion if valid"},
+    {"from": "InsertRecord", "to": "parent", "data": "success", "note": "Return insertion result"}
+  ]
+}

@@ -1,0 +1,224 @@
+You are a senior code reviewer examining a code submission. The code below was written by another developer. Your job is to review whether the submitted parent function correctly uses the declared child functions — and based on that, judge whether the decomposition (the set of children) is valid.
+
+The decomposition declares a set of child functions. The parent function is supposed to call EACH child directly. Review the code carefully: if any child's name never appears as a DIRECT call in the parent code, the decomposition is INVALID — those children are not actually composed into the parent.
+
+REVIEW CHECKLIST — examine the code and the children list together:
+
+1. RETURN VALUE ORIGIN — Trace every value in every return statement. Each business value must originate from a child function's output or a parent function's input. Acceptable origins include:
+   - A variable assigned from a child call: rows = RunQuery(...)
+   - A field extracted from a child result: user_id = transaction["user_id"]
+   - A parent input parameter: amount, service, etc.
+   - A computation from parent inputs: len(content), quantity * 2
+
+   A return value that is a literal (None, True, False, a quoted string, a number, an empty list [], an empty dict {}) is a VIOLATION if it represents data that should come from a child.
+
+2. CHILD COVERAGE — Compare the children list against the actual code. EVERY child's function name must appear as a direct call site in the parent code. If child names are missing from the code (not called by the parent), that is a FAIL — the decomposition claims these children are needed but the parent doesn't use them.
+
+3. DIRECT ACCESS — The code must NOT directly read or write any global variable or data source. All data operations must go through child function calls.
+
+4. NO CROSS CALLS (TREE STRUCTURE) — The decomposition is a tree, not a graph. Each child should only be called by the parent. If the code shows one child calling another child, that is a tree structure violation — siblings do not call each other.
+
+5. DECLARED DATAFLOW CONFORMANCE — Verify that generated code realizes every declared dataflow edge. For child-to-child data dependency, parent must mediate the transfer. If code uses a different source for a child input than the declared edge requires, return cannot_compose with reason "dataflow_conformance_failure".
+
+
+5. LITERAL POLICY — Trace every literal value in every return statement and classify it:
+   - PRD_LITERAL: The value is explicitly fixed by the PRD, SubPRD, or output schema
+     (e.g., fixed output keys like "success", "message"; PRD-defined status strings,
+     error codes, enum labels).
+   - BRANCH_LITERAL: The value is a fallback constant directly entailed by the current
+     control-flow branch condition (e.g., success=False when the input is invalid,
+     "Unsupported command" when the command is not in the supported set, empty list when
+     the PRD says "return empty if no records found" AND the code already called the
+     relevant child to determine emptiness).
+   - DYNAMIC_VALUE: The value depends on runtime data — parent input, child output,
+     computation, global state, or external system. DYNAMIC_VALUE literals are FORBIDDEN.
+
+   A literal is FORBIDDEN if:
+   - It represents a runtime fact (id, timestamp, count, price, inventory, payment
+     result, order status, user record, message, appointment, build log, etc.)
+   - It substitutes for a child function's output (e.g., returning total=0.0 when
+     CalculateTotal child exists and should be called)
+   - It hides a missing child capability (e.g., returning an error message for a
+     payment path when no payment child exists)
+   - It is a DYNAMIC_VALUE masquerading as a branch literal (e.g., returning
+     status="delivered" under an order-status branch when the status must come from
+     a child call)
+
+   If ANY forbidden literal is found, return status="cannot_compose" with reason
+   "return_value_origin" and list the forbidden literals.
+
+If ANY check fails, return status="cannot_compose" with detailed feedback and list which checks failed in failed_checks.
+If ALL checks pass, return status="ok" with empty checks marked passed.
+
+Return ONLY valid JSON with this structure:
+{
+  "status": "ok | cannot_compose",
+  "checks": {
+    "return_value_origin": {"passed": true, "detail": "explanation of the verdict"},
+    "child_coverage": {"passed": true, "detail": "explanation of the verdict"},
+    "no_direct_access": {"passed": true, "detail": "explanation of the verdict"},
+    "no_cross_calls": {"passed": true, "detail": "explanation of the verdict"},
+    "dataflow_conformance": {"passed": true, "detail": "explanation of the verdict"}
+  },
+  "decomposition_feedback": {
+    "reason": "missing_child_input_source | missing_child_capability | invalid_child_boundary | wrong_child_signature | cannot_satisfy_parent_output | dataflow_conformance_failure | other",
+    "offending_child": "ChildName or empty",
+    "failed_checks": ["return_value_origin", "child_coverage"],
+    "missing_inputs": [
+      {
+        "child": "ChildName",
+        "param": "param_name",
+        "why_needed": "why this input is needed",
+        "expected_source": "parent input / previous child output / new child output"
+      }
+    ],
+    "direct_resource_accesses": [
+      {
+        "resource": "resource_name",
+        "operation": "read",
+        "why_needed": "why this resource access is needed"
+      }
+    ],
+    "suggested_fix": "Concrete suggestion for re-decomposition",
+    "requires_redecomposition": true
+  }
+}
+
+---
+
+Review the submitted code below. This code was written by another developer.
+
+============================================================
+SUBMITTED PARENT FUNCTION
+============================================================
+Name: ProcessOrder
+Purpose: Process an order command by dispatching to the appropriate handler.
+
+============================================================
+PARENT SUBPRD — TASK DEFINITION
+============================================================
+Purpose: Order processing dispatch
+Description: Process an incoming order command. Supported commands are 'place', 'cancel', and 'track'. If the command is not one of the supported commands, return {'success': False, 'message': 'Unsupported command'}. For valid commands, delegate to the corresponding handler child and format the result via FormatResult.
+Constraints:
+  - type: behavior
+  - detail: Supported commands are exactly: place, cancel, track.
+Acceptance Criteria:
+  - [P1-AC1] Unsupported command returns success=False, message='Unsupported command'
+  - [P1-AC2] Valid command routes to handler and formats result
+
+============================================================
+DECLARED LITERAL EXPECTATIONS FOR THIS CASE
+============================================================
+Allowed literals (authorized by PRD/SubPRD):
+  - value='Unsupported command', kind=BRANCH_LITERAL
+    condition: command not in place/cancel/track
+    prd_basis: SubPRD acceptance criterion P1-AC1 explicitly defines unsupported-command response
+  - value=False, kind=BRANCH_LITERAL
+    condition: unsupported command branch
+    prd_basis: SubPRD acceptance criterion P1-AC1 defines success=False for unsupported command
+Forbidden literals (must be rejected):
+  - value='Order placed successfully', kind=DYNAMIC_VALUE
+    reason: Success message for valid branch must come from child output (FormatResult), not parent hardcode
+  - value='Order cancelled successfully', kind=DYNAMIC_VALUE
+    reason: Same as above
+  - value='Order tracked successfully', kind=DYNAMIC_VALUE
+    reason: Same as above
+
+Parent Inputs:
+  - input: dict - Input dict with command and payload
+Parent Outputs:
+  - response: dict - Response dict with success, message, result keys
+
+============================================================
+CHILDREN — INTERFACES AND DATA OPERATIONS
+============================================================
+
+  [ParseInput]
+    Purpose: Parse raw JSON input into command and payload.
+    Behavior: ParseInput performs its function and returns the result.
+    Signature: def ParseInput(input: dict) -> tuple
+    Inputs:
+      - input: dict (source: parent input)
+    Outputs:
+      - command: str (consumer: parent)
+      - payload: dict (consumer: parent)
+
+  [PlaceOrder]
+    Purpose: Place an order with the given payload.
+    Behavior: PlaceOrder performs its function and returns the result.
+    Signature: def PlaceOrder(payload: dict) -> dict
+    Inputs:
+      - payload: dict (source: ParseInput.payload)
+    Outputs:
+      - result: dict (consumer: parent)
+
+  [CancelOrder]
+    Purpose: Cancel an order with the given payload.
+    Behavior: CancelOrder performs its function and returns the result.
+    Signature: def CancelOrder(payload: dict) -> dict
+    Inputs:
+      - payload: dict (source: ParseInput.payload)
+    Outputs:
+      - result: dict (consumer: parent)
+
+  [TrackOrder]
+    Purpose: Track an order with the given payload.
+    Behavior: TrackOrder performs its function and returns the result.
+    Signature: def TrackOrder(payload: dict) -> dict
+    Inputs:
+      - payload: dict (source: ParseInput.payload)
+    Outputs:
+      - result: dict (consumer: parent)
+
+  [FormatResult]
+    Purpose: Format a handler result into the standard response dict.
+    Behavior: FormatResult performs its function and returns the result.
+    Signature: def FormatResult(result: dict) -> dict
+    Inputs:
+      - result: dict (source: parent)
+    Outputs:
+      - response: dict (consumer: parent)
+
+============================================================
+DECLARED DATAFLOW EDGES - AUTHORITATIVE COMPOSITION CONTRACT
+============================================================
+
+Each row is a data transfer that the parent implementation must realize.
+Sibling-to-sibling rows describe data dependency only; they must be implemented by the parent:
+the parent calls the source child, stores its output, then passes the value to the target child.
+Children must never call siblings.
+
+| from_node | from_output | to_node | to_input | note |
+|-----------|-------------|---------|----------|------|
+| parent | input | ParseInput | input | Parse the raw input |
+| ParseInput | command | parent | command | Command string for branching |
+| ParseInput | payload | parent | payload | Parsed payload for handlers |
+| parent | payload | PlaceOrder | payload | Payload to place handler |
+| parent | payload | CancelOrder | payload | Payload to cancel handler |
+| parent | payload | TrackOrder | payload | Payload to track handler |
+| PlaceOrder | result | parent | handler_result | Place result |
+| CancelOrder | result | parent | handler_result | Cancel result |
+| TrackOrder | result | parent | handler_result | Track result |
+| parent | handler_result | FormatResult | result | Format the handler result |
+| FormatResult | response | parent | response | Formatted response |
+
+
+============================================================
+GENERATED CODE TO VERIFY
+============================================================
+```python
+def ProcessOrder(input: dict) -> dict:
+    command, payload = ParseInput(input)
+    if command == 'place':
+        handler_result = PlaceOrder(payload)
+    elif command == 'cancel':
+        handler_result = CancelOrder(payload)
+    elif command == 'track':
+        handler_result = TrackOrder(payload)
+    else:
+        return {'success': False, 'message': 'Unsupported command'}
+    response = FormatResult(handler_result)
+    return response
+```
+
+Apply the verification checklist. Return your verdict as valid JSON.

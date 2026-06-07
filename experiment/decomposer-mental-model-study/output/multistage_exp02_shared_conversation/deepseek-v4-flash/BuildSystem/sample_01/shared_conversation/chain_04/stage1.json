@@ -1,0 +1,333 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Parse and validate the input JSON to extract action, repo, branch",
+      "behavior": "Parse JSON input, validate required fields, return structured action request",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "field validation"
+        ],
+        "out_of_scope": [
+          "executing any action",
+          "accessing data stores"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "input",
+          "description": "Raw JSON input",
+          "source": "parent input"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "action_request",
+          "description": "Parsed action request with action, repo, branch",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "action_request contains valid action, repo, branch"
+      ],
+      "guarantees": [
+        "returns error if input invalid"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": true,
+      "stop_reason": "pure parsing function"
+    },
+    {
+      "name": "RouteAction",
+      "purpose": "Route the action to the appropriate child function based on action type",
+      "behavior": "Based on action_request.action, call the corresponding child function",
+      "boundary": {
+        "in_scope": [
+          "action routing",
+          "invoking children"
+        ],
+        "out_of_scope": [
+          "implementing action logic"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "action_request",
+          "description": "Parsed action request",
+          "source": "ParseInput output"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "action_result",
+          "description": "Result from the executed action",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "action_request is valid"
+      ],
+      "postconditions": [
+        "appropriate child function called"
+      ],
+      "guarantees": [
+        "only one child function called per request"
+      ],
+      "composition_role": "decide",
+      "stop_decompose": true,
+      "stop_reason": "pure routing logic"
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Trigger a new build for a given repo and branch",
+      "behavior": "Check if build already exists for repo+branch, if not create new build record, return build_id",
+      "boundary": {
+        "in_scope": [
+          "build creation",
+          "duplicate check"
+        ],
+        "out_of_scope": [
+          "cancelling builds",
+          "listing builds"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "action_request"
+        },
+        {
+          "name": "branch",
+          "description": "Branch name",
+          "source": "action_request"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "JSON with success, build_id",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build does not already exist for repo+branch"
+      ],
+      "postconditions": [
+        "new build record created in builds store"
+      ],
+      "guarantees": [
+        "build_id is unique"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "can be further decomposed"
+    },
+    {
+      "name": "CheckStatus",
+      "purpose": "Check the status of a specific build",
+      "behavior": "Look up build by repo and branch, return status and logs",
+      "boundary": {
+        "in_scope": [
+          "build lookup",
+          "status retrieval"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "cancelling"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "action_request"
+        },
+        {
+          "name": "branch",
+          "description": "Branch name",
+          "source": "action_request"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "JSON with success, status, logs",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build exists for repo+branch"
+      ],
+      "postconditions": [
+        "status and logs returned"
+      ],
+      "guarantees": [
+        "returns error if build not found"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "simple lookup"
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "List all builds for a given repo",
+      "behavior": "Query builds store for all builds matching repo, return list of build summaries",
+      "boundary": {
+        "in_scope": [
+          "build listing",
+          "filtering by repo"
+        ],
+        "out_of_scope": [
+          "individual build details"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "action_request"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "JSON with success, list of builds",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "none"
+      ],
+      "postconditions": [
+        "list of builds returned"
+      ],
+      "guarantees": [
+        "returns empty list if no builds"
+      ],
+      "composition_role": "query",
+      "stop_decompose": true,
+      "stop_reason": "simple query"
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Cancel a running build",
+      "behavior": "Find build by repo+branch, update status to cancelled, return success",
+      "boundary": {
+        "in_scope": [
+          "build cancellation",
+          "status update"
+        ],
+        "out_of_scope": [
+          "triggering",
+          "listing"
+        ]
+      },
+      "semantic_inputs": [
+        {
+          "name": "repo",
+          "description": "Repository name",
+          "source": "action_request"
+        },
+        {
+          "name": "branch",
+          "description": "Branch name",
+          "source": "action_request"
+        }
+      ],
+      "semantic_outputs": [
+        {
+          "name": "build_result",
+          "description": "JSON with success",
+          "consumer": "parent"
+        }
+      ],
+      "preconditions": [
+        "build exists and is not already cancelled"
+      ],
+      "postconditions": [
+        "build status set to cancelled"
+      ],
+      "guarantees": [
+        "idempotent if already cancelled"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": true,
+      "stop_reason": "simple state mutation"
+    }
+  ],
+  "decomposition_rationale": "The parent BuildSystem is decomposed into a parsing step, a routing decision, and four action-specific children (trigger, status, list, cancel). This covers all functional requirements without overlapping responsibilities.",
+  "orchestration_model": "sequence with conditional branching",
+  "dataflow_sketch": [
+    {
+      "from": "parent",
+      "to": "ParseInput",
+      "data": "input",
+      "note": "raw input"
+    },
+    {
+      "from": "ParseInput",
+      "to": "parent",
+      "data": "action_request",
+      "note": "parsed request"
+    },
+    {
+      "from": "parent",
+      "to": "RouteAction",
+      "data": "action_request",
+      "note": "route based on action"
+    },
+    {
+      "from": "RouteAction",
+      "to": "TriggerBuild",
+      "data": "repo, branch",
+      "note": "if action=trigger"
+    },
+    {
+      "from": "RouteAction",
+      "to": "CheckStatus",
+      "data": "repo, branch",
+      "note": "if action=status"
+    },
+    {
+      "from": "RouteAction",
+      "to": "ListBuilds",
+      "data": "repo",
+      "note": "if action=list"
+    },
+    {
+      "from": "RouteAction",
+      "to": "CancelBuild",
+      "data": "repo, branch",
+      "note": "if action=cancel"
+    },
+    {
+      "from": "TriggerBuild",
+      "to": "parent",
+      "data": "build_result",
+      "note": "trigger result"
+    },
+    {
+      "from": "CheckStatus",
+      "to": "parent",
+      "data": "build_result",
+      "note": "status result"
+    },
+    {
+      "from": "ListBuilds",
+      "to": "parent",
+      "data": "build_result",
+      "note": "list result"
+    },
+    {
+      "from": "CancelBuild",
+      "to": "parent",
+      "data": "build_result",
+      "note": "cancel result"
+    }
+  ]
+}

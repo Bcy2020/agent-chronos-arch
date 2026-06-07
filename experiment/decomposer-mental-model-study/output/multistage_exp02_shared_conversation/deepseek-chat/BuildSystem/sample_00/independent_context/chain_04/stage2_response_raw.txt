@@ -1,0 +1,473 @@
+{
+  "children": [
+    {
+      "name": "ParseInput",
+      "purpose": "Extract and validate action, repo, branch from input JSON",
+      "behavior": "Parse JSON input, validate required fields, return structured action request",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "field validation",
+          "error reporting"
+        ],
+        "out_of_scope": [
+          "build logic",
+          "status checking",
+          "cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        "input"
+      ],
+      "semantic_outputs": [
+        "action_request"
+      ],
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Action request is well-formed or error returned"
+      ],
+      "guarantees": [
+        "Returns error if fields missing or invalid"
+      ],
+      "composition_role": "transform",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "action_request",
+          "type": "dict",
+          "description": "Parsed and validated action, repo, branch",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseInput(input: dict) -> dict"
+    },
+    {
+      "name": "TriggerBuild",
+      "purpose": "Create a new build for given repo+branch if no active build exists",
+      "behavior": "Check builds store for existing active build, create new build entry with unique ID, initialize logs",
+      "boundary": {
+        "in_scope": [
+          "Build creation",
+          "Duplicate prevention",
+          "Log initialization"
+        ],
+        "out_of_scope": [
+          "Status checking",
+          "Listing",
+          "Cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        "repo",
+        "branch"
+      ],
+      "semantic_outputs": [
+        "build_result"
+      ],
+      "preconditions": [
+        "No active build for repo+branch"
+      ],
+      "postconditions": [
+        "New build created with initial status 'running'"
+      ],
+      "guarantees": [
+        "Build ID is unique",
+        "Logs initialized as empty"
+      ],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "str",
+          "description": "Repository name",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "type": "str",
+          "description": "Branch name",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read_write",
+          "reason": "Check for existing active build and create new build entry"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "build_result",
+          "type": "dict",
+          "description": "Success status and build_id or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TriggerBuild(repo: str, branch: str) -> dict"
+    },
+    {
+      "name": "CheckBuildStatus",
+      "purpose": "Retrieve current status and logs of a specific build",
+      "behavior": "Look up build by build_id in builds store, return status and logs",
+      "boundary": {
+        "in_scope": [
+          "Build lookup",
+          "Status retrieval",
+          "Log retrieval"
+        ],
+        "out_of_scope": [
+          "Build creation",
+          "Listing",
+          "Cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        "build_id"
+      ],
+      "semantic_outputs": [
+        "status_result"
+      ],
+      "preconditions": [
+        "Build exists in store"
+      ],
+      "postconditions": [
+        "Status and logs returned"
+      ],
+      "guarantees": [
+        "Returns error if build not found"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "Identifier of the build",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read",
+          "reason": "Retrieve build status and logs by build_id"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "status_result",
+          "type": "dict",
+          "description": "Build status and logs",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CheckBuildStatus(build_id: str) -> dict"
+    },
+    {
+      "name": "ListBuilds",
+      "purpose": "Return a list of all builds, optionally filtered by repo or branch",
+      "behavior": "Query builds store, apply optional filters, return list of build summaries",
+      "boundary": {
+        "in_scope": [
+          "Build listing",
+          "Filtering"
+        ],
+        "out_of_scope": [
+          "Individual build details",
+          "Creation",
+          "Cancellation"
+        ]
+      },
+      "semantic_inputs": [
+        "repo",
+        "branch"
+      ],
+      "semantic_outputs": [
+        "builds_list"
+      ],
+      "preconditions": [
+        "None"
+      ],
+      "postconditions": [
+        "List returned (possibly empty)"
+      ],
+      "guarantees": [
+        "Returns all builds if no filters"
+      ],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "repo",
+          "type": "Optional[str]",
+          "description": "Optional filter by repository",
+          "source": "parent input"
+        },
+        {
+          "name": "branch",
+          "type": "Optional[str]",
+          "description": "Optional filter by branch",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read",
+          "reason": "Query all builds and apply optional filters"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "builds_list",
+          "type": "list",
+          "description": "List of build summaries",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ListBuilds(repo: Optional[str] = None, branch: Optional[str] = None) -> list"
+    },
+    {
+      "name": "CancelBuild",
+      "purpose": "Mark a running build as cancelled",
+      "behavior": "Find build by build_id, update status to 'cancelled' if currently running",
+      "boundary": {
+        "in_scope": [
+          "Build cancellation",
+          "Status update"
+        ],
+        "out_of_scope": [
+          "Build creation",
+          "Status checking",
+          "Listing"
+        ]
+      },
+      "semantic_inputs": [
+        "build_id"
+      ],
+      "semantic_outputs": [
+        "cancel_result"
+      ],
+      "preconditions": [
+        "Build exists and is running"
+      ],
+      "postconditions": [
+        "Build status changed to 'cancelled'"
+      ],
+      "guarantees": [
+        "Does not cancel already finished builds"
+      ],
+      "composition_role": "mutate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "build_id",
+          "type": "str",
+          "description": "Identifier of the build to cancel",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "builds",
+          "op": "read_write",
+          "reason": "Find build by build_id and update its status to cancelled"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "cancel_result",
+          "type": "dict",
+          "description": "Success or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelBuild(build_id: str) -> dict"
+    },
+    {
+      "name": "FormatResponse",
+      "purpose": "Construct final JSON output from child results",
+      "behavior": "Aggregate success, build_id, status, logs from child outputs into unified JSON",
+      "boundary": {
+        "in_scope": [
+          "Response formatting",
+          "Error wrapping"
+        ],
+        "out_of_scope": [
+          "Build logic",
+          "Data store access"
+        ]
+      },
+      "semantic_inputs": [
+        "child_result"
+      ],
+      "semantic_outputs": [
+        "output"
+      ],
+      "preconditions": [
+        "Child result available"
+      ],
+      "postconditions": [
+        "Output JSON constructed"
+      ],
+      "guarantees": [
+        "Consistent JSON structure"
+      ],
+      "composition_role": "aggregate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {
+          "name": "child_result",
+          "type": "dict",
+          "description": "Result from the executed child action",
+          "source": "previous child output"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "dict",
+          "description": "Final JSON response",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def FormatResponse(child_result: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseInput"
+    },
+    "parent_outputs_produced_by": {
+      "output": "FormatResponse"
+    }
+  },
+  "dataflow_edges": [
+    {
+      "from_node": "parent",
+      "from_output": "input",
+      "to_node": "ParseInput",
+      "to_input": "input",
+      "note": "Pass raw JSON input for parsing"
+    },
+    {
+      "from_node": "ParseInput",
+      "from_output": "action_request",
+      "to_node": "parent",
+      "to_input": "action_request",
+      "note": "Return parsed request to parent for routing"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "repo",
+      "to_node": "TriggerBuild",
+      "to_input": "repo",
+      "note": "Pass repo from parsed request"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "branch",
+      "to_node": "TriggerBuild",
+      "to_input": "branch",
+      "note": "Pass branch from parsed request"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "build_id",
+      "to_node": "CheckBuildStatus",
+      "to_input": "build_id",
+      "note": "Pass build_id from parsed request"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "repo",
+      "to_node": "ListBuilds",
+      "to_input": "repo",
+      "note": "Pass optional repo filter"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "branch",
+      "to_node": "ListBuilds",
+      "to_input": "branch",
+      "note": "Pass optional branch filter"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "build_id",
+      "to_node": "CancelBuild",
+      "to_input": "build_id",
+      "note": "Pass build_id from parsed request"
+    },
+    {
+      "from_node": "TriggerBuild",
+      "from_output": "build_result",
+      "to_node": "parent",
+      "to_input": "child_result",
+      "note": "Return trigger result to parent"
+    },
+    {
+      "from_node": "CheckBuildStatus",
+      "from_output": "status_result",
+      "to_node": "parent",
+      "to_input": "child_result",
+      "note": "Return status result to parent"
+    },
+    {
+      "from_node": "ListBuilds",
+      "from_output": "builds_list",
+      "to_node": "parent",
+      "to_input": "child_result",
+      "note": "Return list result to parent"
+    },
+    {
+      "from_node": "CancelBuild",
+      "from_output": "cancel_result",
+      "to_node": "parent",
+      "to_input": "child_result",
+      "note": "Return cancel result to parent"
+    },
+    {
+      "from_node": "parent",
+      "from_output": "child_result",
+      "to_node": "FormatResponse",
+      "to_input": "child_result",
+      "note": "Pass child result for formatting"
+    },
+    {
+      "from_node": "FormatResponse",
+      "from_output": "output",
+      "to_node": "parent",
+      "to_input": "output",
+      "note": "Return final formatted JSON response"
+    }
+  ],
+  "interface_audit": {
+    "identity_preservation_detail": "All six child names from Stage 1 are preserved exactly: ParseInput, TriggerBuild, CheckBuildStatus, ListBuilds, CancelBuild, FormatResponse. No children were added, deleted, renamed, or reordered.",
+    "semantic_preservation_detail": "All Stage 1 fields (purpose, behavior, boundary, preconditions, postconditions, guarantees, composition_role) are copied verbatim. No semantic changes were introduced.",
+    "call_signature_detail": "Each signature contains only parameters from call_inputs. For example, TriggerBuild signature includes repo and branch but not builds store, because builds is an internal_leaf_access. This ensures the parent only passes data, not resources.",
+    "internal_leaf_separation_detail": "Resources like builds are listed under internal_leaf_accesses for children that need them (TriggerBuild, CheckBuildStatus, ListBuilds, CancelBuild). They are excluded from call_inputs because the parent should not pass data stores; the child accesses them internally.",
+    "dataflow_schema_detail": "All dataflow edges use valid from_node/to_node values: either 'parent' or exact child names. No resource names (builds, artifacts) appear as endpoints. Edges correctly map outputs to inputs as described in the dataflow sketch.",
+    "final_status": "ok"
+  }
+}

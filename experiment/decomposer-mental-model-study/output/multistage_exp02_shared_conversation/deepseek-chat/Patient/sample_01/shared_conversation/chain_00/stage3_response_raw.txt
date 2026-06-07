@@ -1,0 +1,264 @@
+{
+  "children": [
+    {
+      "name": "RegisterPatient",
+      "call_inputs": [
+        {
+          "name": "patientData",
+          "type": "object",
+          "description": "Patient registration details including name, contact, and unique identifier",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "registrationResult",
+          "type": "object",
+          "description": "JSON with success status, patient ID, and message",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "patients",
+          "access": "read_write",
+          "description": "Write new patient record and check for uniqueness"
+        }
+      ],
+      "governance": {
+        "error_handling": {
+          "invalid_input": "Return error with message 'Invalid patient data'",
+          "duplicate_patient": "Return error with message 'Patient already exists'",
+          "data_store_failure": "Return error with message 'Failed to register patient'"
+        },
+        "retry_policy": {
+          "max_retries": 3,
+          "backoff_ms": 100
+        },
+        "timeout_ms": 5000,
+        "logging": {
+          "level": "info",
+          "events": ["registration_started", "registration_succeeded", "registration_failed"]
+        }
+      },
+      "global_vars": [
+        {
+          "name": "patients_store",
+          "type": "memory",
+          "access": "read_write",
+          "description": "In-memory store for patient records"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "write",
+          "store": "patients",
+          "description": "Insert new patient record with unique ID"
+        },
+        {
+          "operation": "read",
+          "store": "patients",
+          "description": "Check for duplicate patient by identifier"
+        }
+      ]
+    },
+    {
+      "name": "BookAppointment",
+      "call_inputs": [
+        {
+          "name": "appointmentRequest",
+          "type": "object",
+          "description": "JSON with patient ID, date, time, and doctor details",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "appointmentResult",
+          "type": "object",
+          "description": "JSON with success status, appointment ID, and message",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "patients",
+          "access": "read",
+          "description": "Verify patient exists"
+        },
+        {
+          "store": "appointments",
+          "access": "read_write",
+          "description": "Check slot availability and store new appointment"
+        }
+      ],
+      "governance": {
+        "error_handling": {
+          "invalid_input": "Return error with message 'Invalid appointment request'",
+          "patient_not_found": "Return error with message 'Patient not registered'",
+          "slot_unavailable": "Return error with message 'Appointment slot not available'",
+          "data_store_failure": "Return error with message 'Failed to book appointment'"
+        },
+        "retry_policy": {
+          "max_retries": 2,
+          "backoff_ms": 200
+        },
+        "timeout_ms": 5000,
+        "logging": {
+          "level": "info",
+          "events": ["booking_started", "booking_succeeded", "booking_failed"]
+        }
+      },
+      "global_vars": [
+        {
+          "name": "patients_store",
+          "type": "memory",
+          "access": "read",
+          "description": "In-memory store for patient records"
+        },
+        {
+          "name": "appointments_store",
+          "type": "memory",
+          "access": "read_write",
+          "description": "In-memory store for appointments"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "store": "patients",
+          "description": "Verify patient existence"
+        },
+        {
+          "operation": "read",
+          "store": "appointments",
+          "description": "Check slot availability"
+        },
+        {
+          "operation": "write",
+          "store": "appointments",
+          "description": "Insert new appointment record"
+        }
+      ]
+    },
+    {
+      "name": "GetRecords",
+      "call_inputs": [
+        {
+          "name": "recordRequest",
+          "type": "object",
+          "description": "JSON with patient ID",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "recordsResult",
+          "type": "object",
+          "description": "JSON with success status, records data, and message",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "patients",
+          "access": "read",
+          "description": "Fetch patient records"
+        }
+      ],
+      "governance": {
+        "error_handling": {
+          "invalid_input": "Return error with message 'Invalid record request'",
+          "patient_not_found": "Return error with message 'Patient not registered'",
+          "data_store_failure": "Return error with message 'Failed to retrieve records'"
+        },
+        "retry_policy": {
+          "max_retries": 2,
+          "backoff_ms": 100
+        },
+        "timeout_ms": 3000,
+        "logging": {
+          "level": "info",
+          "events": ["records_requested", "records_retrieved", "records_failed"]
+        }
+      },
+      "global_vars": [
+        {
+          "name": "patients_store",
+          "type": "memory",
+          "access": "read",
+          "description": "In-memory store for patient records"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "store": "patients",
+          "description": "Fetch patient records"
+        }
+      ]
+    },
+    {
+      "name": "UpdateProfile",
+      "call_inputs": [
+        {
+          "name": "profileUpdate",
+          "type": "object",
+          "description": "JSON with patient ID and fields to update (e.g., name, contact)",
+          "source": "parent input"
+        }
+      ],
+      "call_outputs": [
+        {
+          "name": "updateResult",
+          "type": "object",
+          "description": "JSON with success status, updated profile, and message",
+          "consumer": "parent"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "store": "patients",
+          "access": "read_write",
+          "description": "Read current profile and write updated fields"
+        }
+      ],
+      "governance": {
+        "error_handling": {
+          "invalid_input": "Return error with message 'Invalid profile update data'",
+          "patient_not_found": "Return error with message 'Patient not registered'",
+          "data_store_failure": "Return error with message 'Failed to update profile'"
+        },
+        "retry_policy": {
+          "max_retries": 3,
+          "backoff_ms": 100
+        },
+        "timeout_ms": 5000,
+        "logging": {
+          "level": "info",
+          "events": ["update_started", "update_succeeded", "update_failed"]
+        }
+      },
+      "global_vars": [
+        {
+          "name": "patients_store",
+          "type": "memory",
+          "access": "read_write",
+          "description": "In-memory store for patient records"
+        }
+      ],
+      "data_operations": [
+        {
+          "operation": "read",
+          "store": "patients",
+          "description": "Read current patient profile"
+        },
+        {
+          "operation": "write",
+          "store": "patients",
+          "description": "Update patient profile with new fields"
+        }
+      ]
+    }
+  ]
+}

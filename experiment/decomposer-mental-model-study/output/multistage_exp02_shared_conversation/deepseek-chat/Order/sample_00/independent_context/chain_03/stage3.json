@@ -1,0 +1,455 @@
+{
+  "children": [
+    {
+      "name": "ParseCommand",
+      "purpose": "Extract and validate the command type from the input JSON",
+      "behavior": "Parse the input JSON to extract the 'command' field and validate it is one of 'place', 'cancel', 'track'",
+      "boundary": {
+        "in_scope": [
+          "Parsing JSON",
+          "Validating command value"
+        ],
+        "out_of_scope": [
+          "Processing order data",
+          "Accessing data stores"
+        ]
+      },
+      "preconditions": [
+        "Input is valid JSON"
+      ],
+      "postconditions": [
+        "Command is one of 'place', 'cancel', 'track'"
+      ],
+      "guarantees": [
+        "Returns error if command is missing or invalid"
+      ],
+      "composition_role": "validate",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "command",
+          "type": "str",
+          "description": "Validated command string",
+          "consumer": "parent"
+        },
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Remaining JSON data after command extraction",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseCommand(input: dict) -> tuple[str, dict]",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Input must be valid JSON"
+        },
+        {
+          "constraint_id": "C-002",
+          "description": "Command must be one of 'place', 'cancel', 'track'"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Given valid JSON with command 'place', returns ('place', order_data)"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Given invalid JSON, returns error"
+        },
+        {
+          "ac_id": "AC-003",
+          "description": "Given valid JSON with invalid command, returns error"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "PlaceOrder",
+      "purpose": "Execute the place order workflow",
+      "behavior": "Reserve inventory, process payment, create order record, return success with order_id",
+      "boundary": {
+        "in_scope": [
+          "Inventory reservation",
+          "Payment processing",
+          "Order creation"
+        ],
+        "out_of_scope": [
+          "Cancellation",
+          "Tracking"
+        ]
+      },
+      "preconditions": [
+        "Inventory available",
+        "Payment method valid"
+      ],
+      "postconditions": [
+        "Order created in orders store",
+        "Inventory decremented",
+        "Payment recorded"
+      ],
+      "guarantees": [
+        "Atomic operation: all or nothing"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Order details including items and customer info",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "inventory",
+          "op": "read_write",
+          "reason": "Reserve items for the order"
+        },
+        {
+          "resource": "payments",
+          "op": "read_write",
+          "reason": "Process payment for the order"
+        },
+        {
+          "resource": "orders",
+          "op": "read_write",
+          "reason": "Create order record"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def PlaceOrder(order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "inventory",
+          "op": "read_write",
+          "description": "Reserve items for the order"
+        },
+        {
+          "variable": "payments",
+          "op": "read_write",
+          "description": "Process payment for the order"
+        },
+        {
+          "variable": "orders",
+          "op": "read_write",
+          "description": "Create order record"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "inventory",
+          "operation_type": "read_write",
+          "description": "Reserve items for the order"
+        },
+        {
+          "source_name": "payments",
+          "operation_type": "read_write",
+          "description": "Process payment for the order"
+        },
+        {
+          "source_name": "orders",
+          "operation_type": "read_write",
+          "description": "Create order record"
+        }
+      ],
+      "requested_capabilities": [
+        "inventory.read_write",
+        "payments.read_write",
+        "orders.read_write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "Must have sufficient inventory before reserving"
+        },
+        {
+          "constraint_id": "C-004",
+          "description": "Payment must be processed before order creation"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-004",
+          "description": "Given valid order_data with sufficient inventory and valid payment, returns success with order_id"
+        },
+        {
+          "ac_id": "AC-005",
+          "description": "Given insufficient inventory, returns failure without creating order"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "Given payment failure, returns failure without creating order"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CancelOrder",
+      "purpose": "Execute the cancel order workflow",
+      "behavior": "Check order status, if not shipped, cancel order, refund payment, restore inventory",
+      "boundary": {
+        "in_scope": [
+          "Order status check",
+          "Cancellation logic",
+          "Payment refund",
+          "Inventory restoration"
+        ],
+        "out_of_scope": [
+          "Placing orders",
+          "Tracking"
+        ]
+      },
+      "preconditions": [
+        "Order exists",
+        "Order not shipped"
+      ],
+      "postconditions": [
+        "Order status set to cancelled",
+        "Payment refunded",
+        "Inventory restored"
+      ],
+      "guarantees": [
+        "Cannot cancel shipped order"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Contains order_id to cancel",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "orders",
+          "op": "read_write",
+          "reason": "Check order status and update to cancelled"
+        },
+        {
+          "resource": "payments",
+          "op": "read_write",
+          "reason": "Refund payment for the order"
+        },
+        {
+          "resource": "inventory",
+          "op": "read_write",
+          "reason": "Restore inventory items"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "JSON with success, order_id, status, message",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CancelOrder(order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read_write",
+          "description": "Check order status and update to cancelled"
+        },
+        {
+          "variable": "payments",
+          "op": "read_write",
+          "description": "Refund payment for the order"
+        },
+        {
+          "variable": "inventory",
+          "op": "read_write",
+          "description": "Restore inventory items"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read_write",
+          "description": "Check order status and update to cancelled"
+        },
+        {
+          "source_name": "payments",
+          "operation_type": "read_write",
+          "description": "Refund payment for the order"
+        },
+        {
+          "source_name": "inventory",
+          "operation_type": "read_write",
+          "description": "Restore inventory items"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read_write",
+        "payments.read_write",
+        "inventory.read_write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-005",
+          "description": "Order must exist before cancellation"
+        },
+        {
+          "constraint_id": "C-006",
+          "description": "Order must not be shipped"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-007",
+          "description": "Given valid order_id for an unshipped order, returns success with cancellation confirmation"
+        },
+        {
+          "ac_id": "AC-008",
+          "description": "Given order_id for a shipped order, returns failure"
+        },
+        {
+          "ac_id": "AC-009",
+          "description": "Given non-existent order_id, returns failure"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "TrackOrder",
+      "purpose": "Retrieve and return order tracking information",
+      "behavior": "Look up order by ID in orders store and return current status and tracking details",
+      "boundary": {
+        "in_scope": [
+          "Order lookup",
+          "Status retrieval"
+        ],
+        "out_of_scope": [
+          "Modifying order",
+          "Payment or inventory operations"
+        ]
+      },
+      "preconditions": [
+        "Order exists"
+      ],
+      "postconditions": [
+        "No state changes"
+      ],
+      "guarantees": [
+        "Read-only operation"
+      ],
+      "composition_role": "query",
+      "call_inputs": [
+        {
+          "name": "order_data",
+          "type": "dict",
+          "description": "Contains order_id to track",
+          "source": "ParseCommand output"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "orders",
+          "op": "read",
+          "reason": "Look up order by ID to retrieve status and tracking info"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "JSON with success, order_id, status, message, tracking_info",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def TrackOrder(order_data: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "orders",
+          "op": "read",
+          "description": "Look up order by ID to retrieve status and tracking info"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "orders",
+          "operation_type": "read",
+          "description": "Look up order by ID to retrieve status and tracking info"
+        }
+      ],
+      "requested_capabilities": [
+        "orders.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-007",
+          "description": "Order must exist"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-010",
+          "description": "Given valid order_id, returns success with order status and tracking info"
+        },
+        {
+          "ac_id": "AC-011",
+          "description": "Given non-existent order_id, returns failure"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children preserve Stage 1 semantics and Stage 2 interfaces exactly. Resource fields are derived solely from internal_leaf_accesses. ParseCommand has no data store accesses, so its global_vars and data_operations are empty. PlaceOrder, CancelOrder, and TrackOrder each have global_vars and data_operations synchronized with their internal_leaf_accesses. No exceptions needed.",
+  "resource_audit": {
+    "signature_preservation_detail": "All four signatures are copied verbatim from Stage 2 without any changes.",
+    "internal_leaf_mapping_detail": "For each child, internal_leaf_accesses are directly mapped to global_vars and data_operations. ParseCommand has no internal_leaf_accesses, so both fields are empty. PlaceOrder maps 3 resources (inventory, payments, orders) all with read_write. CancelOrder maps 3 resources (orders, payments, inventory) all with read_write. TrackOrder maps 1 resource (orders) with read.",
+    "global_vars_data_operations_sync_detail": "For every child, global_vars and data_operations contain exactly the same resources with the same operation types. ParseCommand has empty arrays for both. PlaceOrder has 3 entries each. CancelOrder has 3 entries each. TrackOrder has 1 entry each. No discrepancies.",
+    "coverage_detail": "All resources referenced in internal_leaf_accesses are covered in global_vars and data_operations. No resource is missing or has mismatched operation type.",
+    "final_status": "ok"
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "children": [
+    {
+      "name": "ParseAndValidateInput",
+      "purpose": "Parse the input JSON and validate the command field",
+      "behavior": "Parse input JSON, check if command is one of allowed values, return parsed command and payload",
+      "boundary": {
+        "in_scope": ["JSON parsing", "command validation"],
+        "out_of_scope": ["executing commands", "data access"]
+      },
+      "semantic_inputs": ["input"],
+      "semantic_outputs": ["parsed_command", "payload"],
+      "preconditions": ["input is valid JSON"],
+      "postconditions": ["command is one of send/history/create_channel/join"],
+      "guarantees": ["Returns error if command missing or invalid"],
+      "composition_role": "validate",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {"name": "input", "type": "Any", "description": "Raw JSON input from parent", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {"name": "parsed_command", "type": "str", "description": "Validated command string", "consumer": "parent"},
+        {"name": "payload", "type": "dict", "description": "Remaining fields after command extraction", "consumer": "parent"}
+      ],
+      "signature": "def ParseAndValidateInput(input: Any) -> tuple[str, dict]"
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Send a message to a channel the user has joined",
+      "behavior": "Check if user is member of channel, then store message in messages store",
+      "boundary": {
+        "in_scope": ["message storage", "membership check"],
+        "out_of_scope": ["channel creation", "history retrieval"]
+      },
+      "semantic_inputs": ["payload", "channels"],
+      "semantic_outputs": ["result"],
+      "preconditions": ["channel exists", "user is member"],
+      "postconditions": ["message stored with timestamp"],
+      "guarantees": ["Message not stored if user not member"],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {"name": "payload", "type": "dict", "description": "Contains user, channel, text", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "channels", "op": "read", "reason": "Check membership"},
+        {"resource": "messages", "op": "write", "reason": "Store message"}
+      ],
+      "outputs": [
+        {"name": "result", "type": "dict", "description": "Success or error response", "consumer": "parent"}
+      ],
+      "signature": "def SendMessage(payload: dict) -> dict"
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Retrieve last 100 messages from a channel the user has joined",
+      "behavior": "Check membership, then query messages store for channel, limit to 100",
+      "boundary": {
+        "in_scope": ["message retrieval", "membership check"],
+        "out_of_scope": ["message sending", "channel management"]
+      },
+      "semantic_inputs": ["payload", "messages"],
+      "semantic_outputs": ["result"],
+      "preconditions": ["channel exists", "user is member"],
+      "postconditions": ["Returns at most 100 messages"],
+      "guarantees": ["Returns error if not member"],
+      "composition_role": "query",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {"name": "payload", "type": "dict", "description": "Contains user, channel", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "channels", "op": "read", "reason": "Check membership"},
+        {"resource": "messages", "op": "read", "reason": "Retrieve messages"}
+      ],
+      "outputs": [
+        {"name": "result", "type": "dict", "description": "List of messages or error", "consumer": "parent"}
+      ],
+      "signature": "def GetHistory(payload: dict) -> dict"
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel and add creator as member",
+      "behavior": "Check if channel name already exists, if not create and add user to members list",
+      "boundary": {
+        "in_scope": ["channel creation", "membership initialization"],
+        "out_of_scope": ["message operations", "joining existing channels"]
+      },
+      "semantic_inputs": ["payload", "channels"],
+      "semantic_outputs": ["result"],
+      "preconditions": ["channel name not empty"],
+      "postconditions": ["channel exists with creator as member"],
+      "guarantees": ["Returns error if channel already exists"],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {"name": "payload", "type": "dict", "description": "Contains channel name, user", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "channels", "op": "read_write", "reason": "Check existence and add new channel"}
+      ],
+      "outputs": [
+        {"name": "result", "type": "dict", "description": "Success or error response", "consumer": "parent"}
+      ],
+      "signature": "def CreateChannel(payload: dict) -> dict"
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Add user to an existing channel's member list",
+      "behavior": "Check if channel exists and user not already member, then add user",
+      "boundary": {
+        "in_scope": ["membership addition"],
+        "out_of_scope": ["channel creation", "message operations"]
+      },
+      "semantic_inputs": ["payload", "channels"],
+      "semantic_outputs": ["result"],
+      "preconditions": ["channel exists"],
+      "postconditions": ["user added to channel members"],
+      "guarantees": ["Returns error if already member or channel missing"],
+      "composition_role": "execute",
+      "stop_decompose": false,
+      "stop_reason": "",
+      "call_inputs": [
+        {"name": "payload", "type": "dict", "description": "Contains channel name, user", "source": "parent input"}
+      ],
+      "internal_leaf_accesses": [
+        {"resource": "channels", "op": "read_write", "reason": "Check existence and update members"}
+      ],
+      "outputs": [
+        {"name": "result", "type": "dict", "description": "Success or error response", "consumer": "parent"}
+      ],
+      "signature": "def JoinChannel(payload: dict) -> dict"
+    }
+  ],
+  "interface_preservation": {
+    "parent_inputs_covered_by": {
+      "input": "ParseAndValidateInput"
+    },
+    "parent_outputs_produced_by": {
+      "output": "SendMessage",
+      "output": "GetHistory",
+      "output": "CreateChannel",
+      "output": "JoinChannel"
+    }
+  },
+  "dataflow_edges": [
+    {"from_node": "parent", "from_output": "input", "to_node": "ParseAndValidateInput", "to_input": "input", "note": "Raw input for parsing"},
+    {"from_node": "ParseAndValidateInput", "from_output": "parsed_command", "to_node": "parent", "to_input": "parsed_command", "note": "Command routing"},
+    {"from_node": "ParseAndValidateInput", "from_output": "payload", "to_node": "parent", "to_input": "payload", "note": "Payload for command handlers"},
+    {"from_node": "parent", "from_output": "payload", "to_node": "SendMessage", "to_input": "payload", "note": "If command is send"},
+    {"from_node": "parent", "from_output": "payload", "to_node": "GetHistory", "to_input": "payload", "note": "If command is history"},
+    {"from_node": "parent", "from_output": "payload", "to_node": "CreateChannel", "to_input": "payload", "note": "If command is create_channel"},
+    {"from_node": "parent", "from_output": "payload", "to_node": "JoinChannel", "to_input": "payload", "note": "If command is join"},
+    {"from_node": "SendMessage", "from_output": "result", "to_node": "parent", "to_input": "output", "note": "Response"},
+    {"from_node": "GetHistory", "from_output": "result", "to_node": "parent", "to_input": "output", "note": "Response"},
+    {"from_node": "CreateChannel", "from_output": "result", "to_node": "parent", "to_input": "output", "note": "Response"},
+    {"from_node": "JoinChannel", "from_output": "result", "to_node": "parent", "to_input": "output", "note": "Response"}
+  ],
+  "interface_audit": {
+    "identity_preservation_detail": "All five child names and order are exactly as in Stage 1.",
+    "semantic_preservation_detail": "Purpose, behavior, boundary, preconditions, postconditions, guarantees, composition_role are unchanged.",
+    "call_signature_detail": "Signatures include only call_inputs (payload for command handlers, input for parser). Internal resources are not in signatures.",
+    "internal_leaf_separation_detail": "channels and messages are listed as internal_leaf_accesses, not call_inputs, because they are accessed inside the child implementation.",
+    "dataflow_schema_detail": "All from_node/to_node are either 'parent' or a child name. No resource names used as endpoints.",
+    "final_status": "ok"
+  }
+}

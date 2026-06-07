@@ -68,8 +68,8 @@ stage3_interface_drift and governance_notes false self-check.
 
 ### New gaps introduced (3):
 
-- OrderSystem: payments:read_write
 - OrderSystem: inventory:read_write
+- OrderSystem: payments:read_write
 - ChatApp: users:write
 
 ## Verdict
@@ -96,7 +96,7 @@ stage3_interface_drift and governance_notes false self-check.
 #### ChatApp/trial_02/repeat_01
 
 - Child names: ['ValidateCommand', 'SendMessage', 'GetHistory', 'CreateChannel', 'JoinChannel']
-- Child resource union: {'messages': ['write', 'read'], 'users': ['read'], 'channels': ['write', 'read_write', 'read']}
+- Child resource union: {'messages': ['read', 'write'], 'users': ['read'], 'channels': ['read', 'write', 'read_write']}
 - Gaps:
   - users:write — No child covers users:write (child ops: ['read'])
 - Governance notes (excerpt): Parent global state conservation verified: messages (read_write) covered by SendMessage (write) and GetHistory (read); users (read) covered by SendMessage (read); channels (read_write) covered by SendMessage (read), CreateChannel (read_write), JoinChannel (read_write). All parent required operations
@@ -104,7 +104,7 @@ stage3_interface_drift and governance_notes false self-check.
 #### PatientPortal/trial_01/repeat_00
 
 - Child names: ['RegisterPatient', 'BookAppointment', 'RetrieveMedicalRecords', 'UpdatePatientProfile']
-- Child resource union: {'patients': ['read_write', 'write', 'read'], 'appointments': ['write'], 'records': ['read']}
+- Child resource union: {'patients': ['read', 'write', 'read_write'], 'appointments': ['write'], 'records': ['read']}
 - Gaps:
   - appointments:read_write — No child covers appointments:read_write (child ops: ['write'])
 - Governance notes (excerpt): Parent global state conservation verified: patients (read_write) covered by BookAppointment (read) + RegisterPatient (write) + UpdatePatientProfile (read_write); appointments (read_write) covered by BookAppointment (write); records (read_write) covered by RetrieveMedicalRecords (read). No parent ope

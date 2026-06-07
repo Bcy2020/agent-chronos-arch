@@ -1,0 +1,470 @@
+{
+  "children": [
+    {
+      "name": "ParseAndValidateInput",
+      "purpose": "Parse the input JSON and validate the command field",
+      "behavior": "Parse input JSON, check if command is one of allowed values, return parsed command and payload",
+      "boundary": {
+        "in_scope": [
+          "JSON parsing",
+          "command validation"
+        ],
+        "out_of_scope": [
+          "executing commands",
+          "data access"
+        ]
+      },
+      "preconditions": [
+        "input is valid JSON"
+      ],
+      "postconditions": [
+        "command is one of send/history/create_channel/join"
+      ],
+      "guarantees": [
+        "Returns error if command missing or invalid"
+      ],
+      "composition_role": "validate",
+      "call_inputs": [
+        {
+          "name": "input",
+          "type": "dict",
+          "description": "Raw JSON input from parent",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Contains parsed_command and payload or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def ParseAndValidateInput(input: dict) -> dict",
+      "global_vars": [],
+      "data_operations": [],
+      "requested_capabilities": [],
+      "constraints": [],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-001",
+          "description": "Returns error for invalid JSON"
+        },
+        {
+          "ac_id": "AC-002",
+          "description": "Returns error for unknown command"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-001"
+        ]
+      },
+      "node_type": "pure_function",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "SendMessage",
+      "purpose": "Send a message to a channel the user has joined",
+      "behavior": "Check if user is member of channel, then store message in messages store",
+      "boundary": {
+        "in_scope": [
+          "message storage",
+          "membership check"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "history retrieval"
+        ]
+      },
+      "preconditions": [
+        "channel exists",
+        "user is member"
+      ],
+      "postconditions": [
+        "message stored with timestamp"
+      ],
+      "guarantees": [
+        "Message not stored if user not member"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Contains user, channel, text",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "channels",
+          "op": "read",
+          "reason": "Check membership"
+        },
+        {
+          "resource": "messages",
+          "op": "write",
+          "reason": "Store message"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Success or error response",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def SendMessage(payload: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "channels",
+          "op": "read",
+          "description": "Check membership"
+        },
+        {
+          "variable": "messages",
+          "op": "write",
+          "description": "Store message"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Check membership"
+        },
+        {
+          "source_name": "messages",
+          "operation_type": "write",
+          "description": "Store message"
+        }
+      ],
+      "requested_capabilities": [
+        "channels.read",
+        "messages.write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-001",
+          "description": "Must not store message if user not member"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-003",
+          "description": "Message stored when user is member"
+        },
+        {
+          "ac_id": "AC-004",
+          "description": "Error returned when user not member"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-002"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "GetHistory",
+      "purpose": "Retrieve last 100 messages from a channel the user has joined",
+      "behavior": "Check membership, then query messages store for channel, limit to 100",
+      "boundary": {
+        "in_scope": [
+          "message retrieval",
+          "membership check"
+        ],
+        "out_of_scope": [
+          "message sending",
+          "channel management"
+        ]
+      },
+      "preconditions": [
+        "channel exists",
+        "user is member"
+      ],
+      "postconditions": [
+        "Returns at most 100 messages"
+      ],
+      "guarantees": [
+        "Returns error if not member"
+      ],
+      "composition_role": "query",
+      "call_inputs": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Contains user, channel",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "channels",
+          "op": "read",
+          "reason": "Check membership"
+        },
+        {
+          "resource": "messages",
+          "op": "read",
+          "reason": "Retrieve messages"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "List of messages or error",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def GetHistory(payload: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "channels",
+          "op": "read",
+          "description": "Check membership"
+        },
+        {
+          "variable": "messages",
+          "op": "read",
+          "description": "Retrieve messages"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read",
+          "description": "Check membership"
+        },
+        {
+          "source_name": "messages",
+          "operation_type": "read",
+          "description": "Retrieve messages"
+        }
+      ],
+      "requested_capabilities": [
+        "channels.read",
+        "messages.read"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-002",
+          "description": "Must return at most 100 messages"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-005",
+          "description": "Returns messages when user is member"
+        },
+        {
+          "ac_id": "AC-006",
+          "description": "Error returned when user not member"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-003"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "CreateChannel",
+      "purpose": "Create a new channel and add creator as member",
+      "behavior": "Check if channel name already exists, if not create and add user to members list",
+      "boundary": {
+        "in_scope": [
+          "channel creation",
+          "membership initialization"
+        ],
+        "out_of_scope": [
+          "message operations",
+          "joining existing channels"
+        ]
+      },
+      "preconditions": [
+        "channel name not empty"
+      ],
+      "postconditions": [
+        "channel exists with creator as member"
+      ],
+      "guarantees": [
+        "Returns error if channel already exists"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Contains channel name, user",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "channels",
+          "op": "read_write",
+          "reason": "Check existence and create channel"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Success or error response",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def CreateChannel(payload: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "channels",
+          "op": "read_write",
+          "description": "Check existence and create channel"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read_write",
+          "description": "Check existence and create channel"
+        }
+      ],
+      "requested_capabilities": [
+        "channels.read_write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-003",
+          "description": "Channel name must be unique"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-007",
+          "description": "Channel created when name does not exist"
+        },
+        {
+          "ac_id": "AC-008",
+          "description": "Error returned when channel already exists"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-004"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    },
+    {
+      "name": "JoinChannel",
+      "purpose": "Add user to an existing channel's member list",
+      "behavior": "Check if channel exists and user not already member, then add user",
+      "boundary": {
+        "in_scope": [
+          "membership addition"
+        ],
+        "out_of_scope": [
+          "channel creation",
+          "message operations"
+        ]
+      },
+      "preconditions": [
+        "channel exists"
+      ],
+      "postconditions": [
+        "user added to channel members"
+      ],
+      "guarantees": [
+        "Returns error if already member or channel missing"
+      ],
+      "composition_role": "execute",
+      "call_inputs": [
+        {
+          "name": "payload",
+          "type": "dict",
+          "description": "Contains channel name, user",
+          "source": "parent input"
+        }
+      ],
+      "internal_leaf_accesses": [
+        {
+          "resource": "channels",
+          "op": "read_write",
+          "reason": "Check existence and add member"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "result",
+          "type": "dict",
+          "description": "Success or error response",
+          "consumer": "parent"
+        }
+      ],
+      "signature": "def JoinChannel(payload: dict) -> dict",
+      "global_vars": [
+        {
+          "variable": "channels",
+          "op": "read_write",
+          "description": "Check existence and add member"
+        }
+      ],
+      "data_operations": [
+        {
+          "source_name": "channels",
+          "operation_type": "read_write",
+          "description": "Check existence and add member"
+        }
+      ],
+      "requested_capabilities": [
+        "channels.read_write"
+      ],
+      "constraints": [
+        {
+          "constraint_id": "C-004",
+          "description": "User must not already be a member"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "ac_id": "AC-009",
+          "description": "User added when channel exists and not already member"
+        },
+        {
+          "ac_id": "AC-010",
+          "description": "Error returned when channel missing or user already member"
+        }
+      ],
+      "traceability": {
+        "parent_requirement_ids": [
+          "FR-005"
+        ]
+      },
+      "node_type": "atomic_operation",
+      "stop_decompose": false,
+      "stop_reason": ""
+    }
+  ],
+  "governance_notes": "All children have derived global_vars and data_operations from internal_leaf_accesses. ParseAndValidateInput has no resource accesses, so fields are empty. For others, global_vars and data_operations are synchronized. Requested capabilities follow resource.operation pattern. Constraints and acceptance criteria added based on preconditions and guarantees.",
+  "resource_audit": {
+    "signature_preservation_detail": "No signatures changed; all match Stage 2.",
+    "internal_leaf_mapping_detail": "Each internal_leaf_access maps directly to a global_var and data_operation entry with same resource, op, and description.",
+    "global_vars_data_operations_sync_detail": "For each child, global_vars and data_operations lists are identical in content (same resource, op, description).",
+    "coverage_detail": "All resources from internal_leaf_accesses are covered in global_vars and data_operations. No missing or extra entries.",
+    "final_status": "ok"
+  }
+}
