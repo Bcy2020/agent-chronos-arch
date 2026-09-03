@@ -1,3 +1,17 @@
+> ## ⚠️ Successor notice
+>
+> This repository is the **predecessor** to **Axiom**
+> ([`Bcy2020/Axiom`](https://github.com/Bcy2020/Axiom)), which supersedes the
+> tree-centered direction documented here. Axiom derives structure from a PRD's
+> **acceptance criteria** (acceptance-driven structure derivation) instead of
+> recursive tree decomposition, and is captured as an MCP + skill + real
+> decompositions. See [`CHRONOS-PREDECESSOR.md`](CHRONOS-PREDECESSOR.md) in Axiom
+> and its [`docs/acceptance-driven-direction-change-zh.md`](docs/acceptance-driven-direction-change-zh.md).
+>
+> The tree-centered MVP modules in `mvp/` are preserved **as a historical archive**
+> (`mvp/archive-tree-centered/`); the "Chronos" name is retired as the active
+> direction and kept only as the historical reference here.
+
 # Agent Chronos 2.0
 
 **Tree-centered multi-agent software construction for large-scale projects.**
@@ -71,6 +85,59 @@ In 2.0:
 - changes and defects are governed by the **affected subtree**, not only by phase rollback
 
 This makes Chronos less like a process framework and more like a **software construction architecture**.
+
+---
+
+---
+
+## Direction change (2026): from recursive tree decomposition to acceptance-driven structure derivation
+
+The original Chronos 2.0 decomposed the system by infinitely recursing down a tree —
+each node locally implemented, validated, and repaired, with a fresh agent per node.
+
+That produced three compounding problems (recorded against MVP 0.4.5 / grade_prd):
+
+- **cost & latency**: hundreds of serial LLM calls, input tokens re-serialized per call,
+  near-zero prefix-cache hits, long wall-clock;
+- **upstream distortion**: a parent cannot foresee what a child will actually need, so
+  legitimate child requests were misread as violations (defensive overreach /
+  resource underallocation / interface selection gap turned out to share one root cause);
+- **no room for agent dialogue**: a one-shot, static, parent-dictates-all model cannot
+  express the negotiation a real coordinated build requires.
+
+Chronos is therefore shifting to **a few specialized agents**, deriving structure from the
+PRD's **acceptance criteria** instead of from an abstract top-down goal.
+
+### What stays the same (retained)
+
+- decomposition is still the organizing principle;
+- **composition-as-validation** (now "implementation-as-validation") is kept;
+- the parent/coordinator still governs the resource boundary;
+- validation locality (a failure is attributable to a block / subtree);
+- contract-first boundaries (pre/postconditions, `boundary` = parent guarantees / out-of-scope);
+- **invariant-first enforcement** — fix the invariant, don't pile on per-case patches;
+- LLM explores, a deterministic validator enforces (LLM self-check is not the enforcement point);
+- state-machine governance (`draft → compile → promote → snapshot`, accepted graph is read-only).
+
+### What changes (the shift)
+
+- a small number of agents (structure + implement + optional review) instead of many recursive nodes;
+- one structure agent emits the block graph in one go, instead of per-node recursion;
+- **graph instead of a mandatory tree** (blocks + ports + connectors + dependencies; shared
+  blocks across flows produce a DAG);
+- structure is derived from the **acceptance criteria**: AC → trigger→feedback tree → aggregated
+  layered block graph (not an abstract top-down goal);
+- **branching**: the trigger→feedback tree encodes the normal path plus each failure/degraded path;
+- **traceability**: every branch/block carries a `source` back to an AC/FR (guards against
+  defensive overreach);
+- **reuse of BlockGraph MCP** (`kuang-tu_MCP`) as the carrier — its block/port/connector model,
+  state machine, quality gates, and multi-agent governance are the already-built expression of
+  this design philosophy;
+- decomposition/aggregation has **no single correct answer**: invariants define legality,
+  the validator judges legality, review judges reasonableness.
+
+See [`docs/acceptance-driven-direction-change-zh.md`](docs/acceptance-driven-direction-change-zh.md)
+for the full direction document (in Chinese), and [`docs/ai/log/`](docs/ai/log/) for archives.
 
 ---
 
